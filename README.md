@@ -1,1 +1,1 @@
-# Lazy_mySQL
+# Lazy_SQL

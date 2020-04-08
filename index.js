@@ -1,3 +1,4 @@
+// Using regex, when provided a data point, predict what data type this will be
 async function predict_type (data) {
     return new Promise((resolve, reject) => {
         var reg = require('./helpers/regex.js')
@@ -59,6 +60,7 @@ async function predict_type (data) {
     })
 }
 
+// When provided two types of data, compare both to find the data type that would catch and allow both data types to be entered
 async function collate_types (currentType, overallType) {
     return new Promise((resolve, reject) => {
     var collated_type = null
@@ -185,6 +187,7 @@ async function collate_types (currentType, overallType) {
 }})
 }
 
+// Find column headers for JSON data provided
 async function get_headers (data) {
     return new Promise((resolve, reject) => {
     var all_columns = []
@@ -199,6 +202,7 @@ async function get_headers (data) {
     })
 }
 
+// Initialize meta data object to false/null/0 for all columnns
 async function initialize_meta_data (headers) {
     var metaData = []
     for (var h = 0; h < headers.length; h++) {
@@ -209,7 +213,8 @@ async function initialize_meta_data (headers) {
                 'allowNull': false,
                 'unique': false,
                 'index': false,
-                'pseudounique': false
+                'pseudounique': false,
+                'primary': false
             }
         }
         metaData.push(metaObj)
@@ -217,18 +222,72 @@ async function initialize_meta_data (headers) {
     return (metaData)
 }
 
-// This function when provided data, will find the most likely type, 
+// This function goes through provided headers to identify indexes or primary keys
+async function predict_indexes (headers, primary_key) {
+    return new Promise((resolve, reject) => {
+        var primary_key_found = false
+        // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set (indexes).
+        var groupings = require('./helpers/groupings.json')
+        for (var h = 0; h < headers.length; h++) {
+            var header_name = (Object.getOwnPropertyNames(headers[h])[0])
+            // Dates or Datetimes or Timestamps should be considered to be an index
+            date_group = groupings.date_group
+            if(date_group.includes(headers[h][header_name]['type'])) {
+                headers[h][header_name]['index'] = true
+            }
+            if(headers[h][header_name]['pseudounique'] || headers[h][header_name]['unique']) {
+                headers[h][header_name]['index'] = true
+            }
+            // If a primary key column(s) have been specified, this will take priority,
+            if(primary_key) {
+                if(primary_key.includes(header_name)) {
+                    headers[h][header_name]['primary'] = true
+                    primary_key_found = true
+                }
+            }
+        }
+        keys_group = groupings.keys_group
+        // If no such column exists, then a composite primary key will be made from non-nullable unique/pseudounique keys that have a valid key data type.
+        if(!primary_key_found) {
+            for (var h = 0; h < headers.length; h++) {
+                if(!headers[h][header_name]['allowNull'] && keys_group.includes(header_name) && 
+                (headers[h][header_name]['unique'] || headers[h][header_name]['pseudounique'])
+                ) {
+                    headers[h][header_name]['primary'] = true
+                }
+            }
+        }
+    resolve(headers)
+    })
+}
+
+// This function when provided data, will find the most likely type, length, indexes etc.
 async function get_meta_data (data, headers, config) {
     return new Promise((resolve, reject) => {
         // Variable for minimum number of datapoints required for unique-ness -- default 50        
         var minimum_unique = 50
+
         // Variable for % of values that need to be unique to be considered a pseudo-unique value -- default 95% (or 2 standard deviations)
         var pseudo_unique = 95
+
+        // Variable for primary key column -- default 'ID' only applies if such a column exists
+        var primary = ['ID']
+
         // Let user override this default via config object
         if(config) {
             if(config.minimum_unique) {minimum_unique = config.minimum_unique}
             if(config.pseudo_unique) {pseudo_unique = config.pseudo_unique}
+            if(config.primary) {primary = config.primary}
         }
+
+        /* Example config object to be provided
+        config = {
+            minimum_unique: 100,
+            pseudo_unnique: 97,
+            primary: ['key_1', 'key_2']
+        }
+        */ 
+
         // Check if headers object/array was provided, and if not create a default header object for use
         if(!headers) {
             headers = get_headers(data)
@@ -260,6 +319,7 @@ async function get_meta_data (data, headers, config) {
         for (var h = 0; h < headers.length; h++) {
             uniqueCheck[headers[h]] = (new Set())
         }
+
         // Repeat for each data row provided
         for (var i = 0; i < data.length; i++) {
             for (var h = 0; h < headers.length; h++) {
@@ -292,30 +352,32 @@ async function get_meta_data (data, headers, config) {
                 }
             }
         }
-        // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
+
+        // Find unique or pseudounique columns
         for (var h = 0; h < headers.length; h++) {
-            var header_name = (Object.getOwnPropertyNames(headers[h])[0])
-            // If no type has been specified, this suggests that no values for this column have been specified, as such disregard this column
-            if(!headers[h][header_name]['type']) {
-                delete headers[h][header_name]
-            } else {
-                if(uniqueCheck[headers[h]].size == data.length && data.length >= minimum_unique && data.length > 0) {
-                    headers[h][header_name]['unique'] = true
-                    headers[h][header_name]['index'] = true
-                }
-                if(uniqueCheck[h].size >= (data.length * pseudo_unique/100) && data.length >= minimum_unique && data.length > 0) {
-                    headers[h][header_name]['pseudounique'] = true
-                    headers[h][header_name]['index'] = true
-                }
-                var groupings = require('./helpers/groupings.json')
-                date_group = groupings.date_group
-                if(date_group.includes(headers[h][header_name]['type'])) {
-                    headers[h][header_name]['index'] = true
-                }
+            if(uniqueCheck[headers[h]].size == data.length && data.length > 0 && data.length >= minimum_unique) {
+                headers[h][header_name]['unique'] = true
             }
+            if(uniqueCheck[headers[h]].size >= (data.length * pseudo_unique/100) && data.length > 0 && data.length >= minimum_unique) {
+                headers[h][header_name]['pseudounique'] = true
+            }            
         }
+
+        // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
+        headers = await predict_indexes(headers, primary)
+
         resolve(headers)
     })
+}
+
+function isObject(val) {
+    if (val === null) { return false;}
+    return ( (typeof val === 'function') || (typeof val === 'object') );
+}
+
+// This function when provided the database/table and headers object will find changes
+async function catch_database_changes (database, table, headers) {
+    
 }
 
 module.exports = {
@@ -324,5 +386,7 @@ module.exports = {
     get_headers,
     initialize_meta_data,
     get_meta_data,
-    SQLize
+    predict_indexes,
+    SQLize,
+    catch_database_changes
 }

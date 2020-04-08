@@ -3,5 +3,6 @@
     "special_int_group": ["decimal", "exponent"],
     "text_group": ["varchar", "text", "mediumtext", "longtext"],
     "special_text_group": ["json"],
-    "date_group": ["date", "time", "datetime"]
+    "date_group": ["date", "time", "datetime"],
+    "keys_group": ["tinyint", "smallint", "int", "varchar"]
 }
