@@ -273,18 +273,37 @@ async function get_meta_data (data, headers, config) {
         // Variable for primary key column -- default 'ID' only applies if such a column exists
         var primary = ['ID']
 
+        // Variable for auto-indexing data, set as false to disable, defaults to true
+        var auto_indexing = true
+
+        // Variable for auto-creation of autoincrementing ID column, set as false to enable, defaults to false
+        var auto_id = false
+
         // Let user override this default via config object
         if(config) {
+            // Error when Primary key is specified but auto_id has also been set
+            if(config.primary && config.auto_id && config.primary != ['ID']) {
+                reject({
+                    err: 'primary key and auto_id was specified',
+                    step: 'get_meta_data',
+                    description: 'invalid configuration was provided to get_meta_data step',
+                    resolution: 'please only use ONE of primary OR auto_id configuration for this step, not both'
+                })
+            }
             if(config.minimum_unique) {minimum_unique = config.minimum_unique}
             if(config.pseudo_unique) {pseudo_unique = config.pseudo_unique}
             if(config.primary) {primary = config.primary}
+            if(config.auto_id) {auto_id = config.auto_id}
+            if(config.auto_indexing === true || config.auto_indexing === false) {auto_indexing = config.auto_indexing}
         }
 
         /* Example config object to be provided
         config = {
             minimum_unique: 100,
-            pseudo_unnique: 97,
-            primary: ['key_1', 'key_2']
+            pseudo_unique: 97,
+            primary: ['key_1', 'key_2'],
+            auto_indexing: true,
+            auto_id: false
         }
         */ 
 
@@ -313,6 +332,12 @@ async function get_meta_data (data, headers, config) {
                 }
             }
         }
+
+        if(!headers.includes('ID') && auto_id) {
+            headers.push({
+                
+            })
+        }
         
         // Reset uniqueCheck array to null for a fresh test of the uniqueness of dataset
         var uniqueCheck = {}
@@ -334,7 +359,7 @@ async function get_meta_data (data, headers, config) {
                 // Add data point to uniqueCheck array for particular header
                 uniqueCheck[headers[h]].add(dataPoint)
                 var overallType = headers[h][header_name]['type']
-                // If a data point is null, set this column as nullable
+                // If a data point is null, set this column as nullablecd ./
                 if (dataPoint == '') {
                     headers[h][header_name]['allowNull'] = true
                 } else {
@@ -363,10 +388,23 @@ async function get_meta_data (data, headers, config) {
             }            
         }
 
-        // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
-        headers = await predict_indexes(headers, primary)
+        if(auto_indexing) {
+            // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
+            headers = await predict_indexes(headers, primary)
+        }
 
         resolve(headers)
+    })
+}
+
+// Create table from meta data
+async function create_table (config, meta_data) {
+    return new Promise (async (resolve, reject) => {
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect]).exports
+
+        // Set default collation
+
+
     })
 }
 
@@ -380,6 +418,97 @@ async function catch_database_changes (database, table, headers) {
     
 }
 
+async function insert_data (config, data) {
+    return new Promise (async (resolve, reject) => {
+
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect]).exports
+
+        // Check if the target schema exists
+        var check_database_sql = sql_helper.check_database_exists(config.database)
+        check_database_results = await sql_helper.run_query(config.connection, check_database_sql).catch(err => catch_errors)
+        if (check_database_results.results[0][config.database] == 0) {
+            create_database_sql = sql_helper.create_database(config.database)
+            create_database = await sql_helper.run_query(config.connection, create_database_sql).catch(err => catch_errors)
+            // As this database is new, always create the tables regardless of current set option
+            config.create_table = true
+        }
+        // If create_tables is set to true, then don't bother checking if the table exists else, check if table exists (and overwrite create_tables)
+        if(!config.create_table) {
+            check_tables_sql = sql_helper.check_tables_exists(config.database, config.table)
+            check_tables_results = await sql_helper.run_query(config.connection, check_tables_sql).catch(err => catch_errors)
+            if(check_database_results.results[0][config.table] == 0) {config.create_table = true}
+        }
+        
+        // Get provided data's meta data
+        if(config.minimum_unique || config.pseudo_unique || config.primary || config.auto_indexing) {
+            var meta_data_config = {
+                "minimum_unique": config.minimum_unique,
+                "pseudo_unique": config.pseudo_unique,
+                "primary": config.primary,
+                "auto_indexing": config.auto_indexing,
+                "auto_id": config.auto_id
+            }
+        } else { var meta_data_config = null }
+        var new_meta_data = await get_meta_data(data, config.headers, meta_data_config)
+
+        // Now that the meta data associated with this data has been found, 
+        if(config.create_table) {
+
+        }
+    })
+}
+
+async function lazy_sql (config, data) {
+    return new Promise (async (resolve, reject) => {
+        if(!config) {
+            reject({
+                err: 'no configuration was set on automatic mode',
+                step: 'lazy_sql',
+                description: 'invalid configuration object provided to lazy_sql automated step',
+                resolution: 'please provide configuration object, additional details can be found in the documentation'
+            })
+        }
+    
+        if(!config.create_table) {
+            config.create_table = null
+        }
+
+        if(!config.sql_dialect || !config.database || !config.table) {
+            reject({
+                err: 'required configuration options not set on automatic mode',
+                step: 'lazy_sql',
+                description: 'invalid configuration object provided to lazy_sql automated step',
+                resolution: `please provide supported value for ${!sql_dialect ? 'sql_dialect' : ''} ${!database ? 'database (target database)' : ''}
+                ${!table ? 'table (target table)' : ''} in configuration object, additional details can be found in the documentation`
+            })
+        }
+                
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        if(!sql_dialect_lookup_object[config.sql_dialect]) {
+            reject({
+                err: 'no supported sql dialect was set on automatic mode',
+                step: 'lazy_sql',
+                description: 'invalid configuration object provided to lazy_sql automated step',
+                resolution: 'please provide supported sql_dialect value in configuration object, additional details can be found in the documentation'
+            })
+        }
+        
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect]).exports
+
+        // Establish a connection to the database (if no )
+        if(!config.connection) {
+            config.connection = sql_helper.establish_connection(config)
+        }
+
+        // From here begins the actual data insertion process
+        await insert_data(config, data).catch(err => {catch_errors(err)})
+    })
+}
+
+catch_errors = async function (err) {
+
+}
+
 module.exports = {
     predict_type,
     collate_types,
@@ -388,5 +517,7 @@ module.exports = {
     get_meta_data,
     predict_indexes,
     SQLize,
-    catch_database_changes
+    catch_database_changes,
+    lazy_sql,
+    insert_data
 }

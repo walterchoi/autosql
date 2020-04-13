@@ -1,0 +1,7 @@
+{
+    "mysql": {
+        "repository": "mysql2",
+        "helper": "./helpers/mysql.js"
+    }
+
+}
