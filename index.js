@@ -265,7 +265,7 @@ async function predict_indexes (headers, primary_key) {
 
 // This function when provided data, will find the most likely type, length, indexes etc.
 async function get_meta_data (data, headers, config) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         var defaults = require('./config/defaults.json')
         // Variable for minimum number of datapoints required for unique-ness -- default 50        
         var minimum_unique = defaults.minimum_unique
@@ -372,7 +372,7 @@ async function get_meta_data (data, headers, config) {
                 // Add data point to uniqueCheck array for particular header
                 uniqueCheck[headers[h]].add(dataPoint)
                 var overallType = headers[h][header_name]['type']
-                // If a data point is null, set this column as nullablecd ./
+                // If a data point is null, set this column as nullable 
                 if (dataPoint == '') {
                     headers[h][header_name]['allowNull'] = true
                 } else {
