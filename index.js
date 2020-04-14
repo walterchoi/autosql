@@ -214,7 +214,9 @@ async function initialize_meta_data (headers) {
                 'unique': false,
                 'index': false,
                 'pseudounique': false,
-                'primary': false
+                'primary': false,
+                'auto_increment': false,
+                'default': undefined
             }
         }
         metaData.push(metaObj)
@@ -264,20 +266,21 @@ async function predict_indexes (headers, primary_key) {
 // This function when provided data, will find the most likely type, length, indexes etc.
 async function get_meta_data (data, headers, config) {
     return new Promise((resolve, reject) => {
+        var defaults = require('./config/defaults.json')
         // Variable for minimum number of datapoints required for unique-ness -- default 50        
-        var minimum_unique = 50
+        var minimum_unique = defaults.minimum_unique
 
         // Variable for % of values that need to be unique to be considered a pseudo-unique value -- default 95% (or 2 standard deviations)
-        var pseudo_unique = 95
+        var pseudo_unique = defaults.pseudo_unique
 
         // Variable for primary key column -- default 'ID' only applies if such a column exists
-        var primary = ['ID']
+        var primary = defaults.primary
 
         // Variable for auto-indexing data, set as false to disable, defaults to true
-        var auto_indexing = true
+        var auto_indexing = defaults.auto_indexing
 
         // Variable for auto-creation of autoincrementing ID column, set as false to enable, defaults to false
-        var auto_id = false
+        var auto_id = defaults.auto_id
 
         // Let user override this default via config object
         if(config) {
@@ -326,6 +329,7 @@ async function get_meta_data (data, headers, config) {
                     // Check if current meta_data column of header contains data, if not, set to default (null/0/false)
                     if(headers[h][meta_data_columns[m]] === undefined) {
                         if(meta_data_columns[m] == 'type') {headers[h][meta_data_columns[m]] = null} 
+                        else if(meta_data_columns[m] == 'default') {headers[h][meta_data_columns[m]] = undefined} 
                         else if(meta_data_columns[m] == 'length') {headers[h][meta_data_columns[m]] = 0} 
                         else {headers[h][meta_data_columns[m]] = false} 
                     }
@@ -333,9 +337,18 @@ async function get_meta_data (data, headers, config) {
             }
         }
 
+        // If no ID field was included and auto_id config field was set to true, then create an auto_incrementing numeric ID column
         if(!headers.includes('ID') && auto_id) {
             headers.push({
-                
+                'type': 'int',
+                'length': 8,
+                'allowNull': false,
+                'unique': true,
+                'index': true,
+                'pseudounique': true,
+                'primary': true,
+                'auto_increment': true,
+                'default': undefined
             })
         }
         
@@ -401,8 +414,23 @@ async function get_meta_data (data, headers, config) {
 async function create_table (config, meta_data) {
     return new Promise (async (resolve, reject) => {
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect]).exports
+        var defaults = require('./config/defaults.json')
 
         // Set default collation
+        var collation = defaults.collation
+
+        // If no config or meta data has been provided, return an error
+        if(!config || !meta_data) {
+            // Error when no config or meta_data is provided
+                reject({
+                    err: `no ${config ? 'config' : ''} ${meta_data ? 'meta_data' : ''}  object(s) provided`,
+                    step: 'create_table',
+                    description: 'invalid configuration or meta_data was provided to create_table step',
+                    resolution: 'please provide configuration object, additional details can be found in the documentation'
+                })
+            }
+
+        if(config.collation) {collation = config.collation}
 
 
     })
@@ -453,7 +481,7 @@ async function insert_data (config, data) {
 
         // Now that the meta data associated with this data has been found, 
         if(config.create_table) {
-
+            await create_table(config, new_meta_data).catch(err => {catch_errors(err)})
         }
     })
 }

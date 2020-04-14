@@ -1,0 +1,8 @@
+{
+    "minimum_unique": 50,
+    "pseudo_unique": 97,
+    "primary": ["ID"],
+    "auto_indexing": true,
+    "auto_id": false,
+    "collation": "latin1_swedish_ci"
+}

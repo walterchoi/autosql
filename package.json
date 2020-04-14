@@ -2,7 +2,8 @@
   "name": "lazy_sql",
   "version": "1.0.0",
   "optionalDependencies": {
-    "mysql2": "^2.1.0"
+    "mysql2": "^2.1.0",
+    "csvtojson": "^2.0.10"
   },
   "description": "An auto-parser of JSON into SQL.",
   "main": "index.js",

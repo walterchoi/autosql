@@ -112,10 +112,10 @@ var exports = {
         var sql_query = "SELECT " + sql_query_part + "FROM DUAL;"
         return (sql_query)
     },
-    create_table : function (schema, table_name, meta_data, override) {
-        var create_table_sql = "CREATE TABLE IF NOT EXISTS " + schema + ".`" + table_name + "` (\n"
+    create_table : function (database, table, meta_data, override) {
+        var create_table_sql = "CREATE TABLE IF NOT EXISTS " + database + ".`" + table + "` (\n"
 
-        // Repeat for each meta_data row
+        // Get each column's data and repeat for each meta_data row
         for (var i = 0; i < meta_data.length; i++) {
             var column_data = meta_data[i]
             for (column in column_data) {
