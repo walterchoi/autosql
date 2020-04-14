@@ -1,5 +1,5 @@
 var exports = {
-    establish_connection = async function (key) {
+    establish_connection : async function (key) {
         return new Promise((resolve, reject) => {
             mysql = require('mysql2');
             if(!key.host || !key.username || !key.password) {
@@ -22,7 +22,7 @@ var exports = {
                 resolve(pool)
         })
     },
-    run_query = async function (pool, sql_query, repeat_number, max_repeat) {
+    run_query : async function (pool, sql_query, repeat_number, max_repeat) {
             return new Promise(async (resolve, reject) => {
                 // Automatically retry each query up to 25 times before erroring out
                 if(!max_repeat) {max_repeat = 25}
@@ -70,7 +70,7 @@ var exports = {
                 })
             })
     },
-    check_database_exists = function (database) {
+    check_database_exists : function (database) {
         var sql_query_part = ""
         // Handle multiple databases being provided as an array
         if(database.isArray) {
@@ -89,11 +89,11 @@ var exports = {
         var sql_query = "SELECT " + sql_query_part + "FROM DUAL;"
         return (sql_query)
     },
-    create_database = function (database) {
+    create_database : function (database) {
         var sql_query = "CREATE DATABASE " + database + ";"
         return(sql_query)
     },
-    check_tables_exists = function (database, table) {
+    check_tables_exists : function (database, table) {
         var sql_query_part = ""
         // Handle multiple tables being provided as an array
         if(table.isArray) {
@@ -210,7 +210,7 @@ var exports = {
         create_table_sql = create_table_sql + ")"
         return (create_table_sql) 
     },
-    get_table_description = function (database, table) {
+    get_table_description : function (database, table) {
         var sql_query = "SELECT COLUMN_NAME, DATA_TYPE, " +
         "CASE WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NOT NULL THEN CONCAT(NUMERIC_PRECISION,',',NUMERIC_SCALE) " +
         "WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NULL THEN NUMERIC_PRECISION " + 

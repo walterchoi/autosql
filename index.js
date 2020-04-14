@@ -506,8 +506,8 @@ async function lazy_sql (config, data) {
                 err: 'required configuration options not set on automatic mode',
                 step: 'lazy_sql',
                 description: 'invalid configuration object provided to lazy_sql automated step',
-                resolution: `please provide supported value for ${!sql_dialect ? 'sql_dialect' : ''} ${!database ? 'database (target database)' : ''}
-                ${!table ? 'table (target table)' : ''} in configuration object, additional details can be found in the documentation`
+                resolution: `please provide supported value for ${!config.sql_dialect ? 'sql_dialect' : ''} ${!config.database ? 'database (target database)' : ''}
+                ${!config.table ? 'table (target table)' : ''} in configuration object, additional details can be found in the documentation`
             })
         }
                 
@@ -521,7 +521,7 @@ async function lazy_sql (config, data) {
             })
         }
         
-        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect]).exports
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
         // Establish a connection to the database (if no )
         if(!config.connection) {
