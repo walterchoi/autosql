@@ -544,7 +544,6 @@ module.exports = {
     initialize_meta_data,
     get_meta_data,
     predict_indexes,
-    SQLize,
     catch_database_changes,
     lazy_sql,
     insert_data
