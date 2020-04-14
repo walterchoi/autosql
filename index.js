@@ -413,6 +413,7 @@ async function get_meta_data (data, headers, config) {
 // Create table from meta data
 async function create_table (config, meta_data) {
     return new Promise (async (resolve, reject) => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect]).exports
         var defaults = require('./config/defaults.json')
 
@@ -449,6 +450,7 @@ async function catch_database_changes (database, table, headers) {
 async function insert_data (config, data) {
     return new Promise (async (resolve, reject) => {
 
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect]).exports
 
         // Check if the target schema exists
