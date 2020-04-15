@@ -132,7 +132,7 @@ async function collate_types (currentType, overallType) {
         if (overallType_grouping == 'text' || currentType_grouping == 'text') {
             // Either set of data is a text type column
             var done = false
-            for(var i = text_group.length; i > 0 && done == false; i--) {
+            for(var i = text_group.length -1; i >= 0 && done == false; i--) {
                 if(text_group[i] == currentType || text_group[i] == overallType) {
                     done = true
                     collated_type = text_group[i]
@@ -377,9 +377,9 @@ async function get_meta_data (data, headers, config) {
                     headers[h][header_name]['allowNull'] = true
                 } else {
                     // Else attempt to 
-                    var currentType = await predict_type(dataPoint)
+                    var currentType = await predict_type(dataPoint).catch(err => {catch_errors(err)})
                     if(currentType != overallType) {
-                        var new_type = await collate_types(currentType, overallType)
+                        var new_type = await collate_types(currentType, overallType).catch(err => {catch_errors(err)})
                         headers[h][header_name]['type'] = new_type
                     }
                     var len = dataPoint.length
@@ -403,7 +403,7 @@ async function get_meta_data (data, headers, config) {
 
         if(auto_indexing) {
             // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
-            headers = await predict_indexes(headers, primary)
+            headers = await predict_indexes(headers, primary).catch(err => {catch_errors(err)})
         }
 
         resolve(headers)
@@ -414,7 +414,7 @@ async function get_meta_data (data, headers, config) {
 async function create_table (config, meta_data) {
     return new Promise (async (resolve, reject) => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
-        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect]).exports
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
         var defaults = require('./config/defaults.json')
 
         // Set default collation
@@ -451,7 +451,7 @@ async function insert_data (config, data) {
     return new Promise (async (resolve, reject) => {
 
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
-        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect]).exports
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
         // Check if the target schema exists
         var check_database_sql = sql_helper.check_database_exists(config.database)
@@ -462,6 +462,7 @@ async function insert_data (config, data) {
             // As this database is new, always create the tables regardless of current set option
             config.create_table = true
         }
+
         // If create_tables is set to true, then don't bother checking if the table exists else, check if table exists (and overwrite create_tables)
         if(!config.create_table) {
             check_tables_sql = sql_helper.check_tables_exists(config.database, config.table)
@@ -479,7 +480,7 @@ async function insert_data (config, data) {
                 "auto_id": config.auto_id
             }
         } else { var meta_data_config = null }
-        var new_meta_data = await get_meta_data(data, config.headers, meta_data_config)
+        var new_meta_data = await get_meta_data(data, config.headers, meta_data_config).catch(err => {catch_errors(err)})
 
         // Now that the meta data associated with this data has been found, 
         if(config.create_table) {
@@ -527,7 +528,7 @@ async function lazy_sql (config, data) {
 
         // Establish a connection to the database (if no )
         if(!config.connection) {
-            config.connection = sql_helper.establish_connection(config)
+            config.connection = await sql_helper.establish_connection(config).catch(err => {catch_errors(err)})
         }
 
         // From here begins the actual data insertion process
