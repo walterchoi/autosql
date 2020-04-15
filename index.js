@@ -150,7 +150,7 @@ async function collate_types (currentType, overallType) {
             // Either set of data is a special integer type column
             var done = false
             // Backwards for loop - most inclusive data column takes priority
-            for(var i = special_int_group.length; i > 0 && done == false; i--) {
+            for(var i = special_int_group.length -1; i >= 0 && done == false; i--) {
                 if(special_int_group[i] == currentType || special_int_group[i] == overallType) {
                 done = true
                 collated_type = special_int_group[i]
@@ -161,7 +161,7 @@ async function collate_types (currentType, overallType) {
             // Either set of data is an integer type column
             var done = false
             // Backwards for loop - most inclusive data column takes priority
-            for(var i = special_int_group.length; i > 0 && done == false; i--) {
+            for(var i = special_int_group.length -1; i >= 0 && done == false; i--) {
                 if(int_group[i] == currentType || int_group[i] == overallType) {
                 done = true
                 collated_type = int_group[i]
