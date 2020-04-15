@@ -312,8 +312,8 @@ async function get_meta_data (data, headers, config) {
 
         // Check if headers object/array was provided, and if not create a default header object for use
         if(!headers) {
-            headers = get_headers(data)
-            headers = initialize_meta_data(headers)
+            headers = await get_headers(data)
+            headers = await initialize_meta_data(headers)
         } else {
             var meta_data_columns = ['type','length','allowNull','unique','pseudounique','index']
             if(headers.length == 0) {
