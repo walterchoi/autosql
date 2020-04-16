@@ -438,7 +438,7 @@ async function create_table (config, meta_data) {
         if(config.collation) {collation = config.collation}
         create_table_sql = await sql_helper.create_table(config.database, config.table, meta_data).catch(err => {catch_errors(err)})
         create_table = await sql_helper.run_query(config.connection, create_table_sql).catch(err => {catch_errors(err)})
-        console.log(create_table)
+        resolve(create_table.results)
     })
 }
 
@@ -448,8 +448,15 @@ function isObject(val) {
 }
 
 // This function when provided the database/table and headers object will find changes
-async function catch_database_changes (database, table, headers) {
-    
+async function catch_database_changes (config, headers) {
+    return new Promise (async (resolve, reject) => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+
+        var get_table_description_sql = sql_helper.get_table_description(config.database, config.table)
+        table_description = await sql_helper.run_query(config.connection, get_table_description_sql).catch(err => catch_errors)
+        console.log(table_description)
+    })
 }
 
 async function insert_data (config, data) {
@@ -490,6 +497,8 @@ async function insert_data (config, data) {
         // Now that the meta data associated with this data has been found, 
         if(config.create_table) {
             await create_table(config, new_meta_data).catch(err => {catch_errors(err)})
+        } else {
+            await catch_database_changes(config, new_meta_data).catch(err => {catch_errors(err)})
         }
     })
 }
