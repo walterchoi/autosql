@@ -111,8 +111,8 @@ var exports = {
         return (sql_query)
     },
     create_table : function (database, table, headers, override) {
-        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
-        var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
+        var sql_dialect_lookup_object = require('../config/sql_dialect.json')
+        var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
 
         var create_table_sql = "CREATE TABLE IF NOT EXISTS " + database + ".`" + table + "` (\n"
 
@@ -182,7 +182,12 @@ var exports = {
                     primary_sql_part += ", `" + column_name + "`"
                 }
             }
+            create_table_sql += create_table_sql_part
+        }
 
+        // Close off primary_sql_part
+        if(primary_sql_part) {
+                primary_sql_part += ")"
         }
 
         create_table_sql = create_table_sql + ")"
