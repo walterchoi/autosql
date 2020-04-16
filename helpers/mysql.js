@@ -111,88 +111,90 @@ var exports = {
         return (sql_query)
     },
     create_table : function (database, table, headers, override) {
-        var sql_dialect_lookup_object = require('../config/sql_dialect.json')
-        var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
-
-        var create_table_sql = "CREATE TABLE IF NOT EXISTS " + database + ".`" + table + "` (\n"
-
-        var primary_sql_part = null
-        // Get each column's data and repeat for each meta_data row
-        for (var h = 0; h < headers.length; h++) {
-            var header_name = (Object.getOwnPropertyNames(headers[h])[0])
-            var header_data = headers[h][header_name]
-            
-            // Set variables required for create table statement
-            var column_name = header_name
-            var type = header_data["type"]
-            var length = header_data["length"]
-            var allowNull = header_data["allowNull"]
-            var unique = header_data["unique"]
-            var primary = header_data["primary"]
-            var index = header_data["index"]
-            var auto_increment = header_data["auto_increment"]
-            var def = header_data["default"]
-            var comment = header_data["comment"]
-            
-            if(sql_lookup_table.translate[header_data["type"]]) {
-                type = sql_lookup_table.translate[header_data["type"]]
-            }
-
-            var create_table_sql_part = "'" + column_name + "' " + type 
-
-            if(sql_lookup_table.require_length.includes(type) || (sql_lookup_table.optional_length.includes(type) && length)) {
-                create_table_sql_part += " (" + length + ")"
-            }
-            
-            // If allowNull is true/false add (NOT) NULL to SQL part
-            if(allowNull !== undefined) {
-                create_table_sql_part += ` ${!allowNull ? 'NOT' : ''} NULL`
-            }
-
-            // If unique is true then make this an unique contraint column
-            if(unique === true) {
-                create_table_sql_part += " UNIQUE"
-            }
-
-            // If index is true then make column into an indexed column
-            if(index === true) {
-                create_table_sql_part += ", INDEX (`" + column_name + "`) "
-            }
-
-            // If auto_increment is true then make column into an auto_incremental column
-            if(auto_increment === true) {
-                create_table_sql_part += " AUTO_INCREMENT"
-            }
-
-            // If comment is provided then add comment to the table schema
-            if(comment !== undefined) {
-                create_table_sql_part += " COMMENT '" + comment + "'"
-            }
-
-            // If default value is provided then add a default value to the column
-            if(def !== undefined) {
-                create_table_sql_part += " DEFAULT " + def + ""
-            }
-
-            // If column is part of the primary key, then add column to the primary constraint index
-            if(primary === true) {
-                if(primary_sql_part == null) {
-                    primary_sql_part = ", PRIMARY KEY (`" + column_name + "`"
-                } else {
-                    primary_sql_part += ", `" + column_name + "`"
+        return new Promise((resolve, reject) => {
+            var sql_dialect_lookup_object = require('../config/sql_dialect.json')
+            var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
+    
+            var create_table_sql = "CREATE TABLE IF NOT EXISTS " + database + ".`" + table + "` (\n"
+    
+            var primary_sql_part = null
+            // Get each column's data and repeat for each meta_data row
+            for (var h = 0; h < headers.length; h++) {
+                var header_name = (Object.getOwnPropertyNames(headers[h])[0])
+                var header_data = headers[h][header_name]
+                
+                // Set variables required for create table statement
+                var column_name = header_name
+                var type = header_data["type"]
+                var length = header_data["length"]
+                var allowNull = header_data["allowNull"]
+                var unique = header_data["unique"]
+                var primary = header_data["primary"]
+                var index = header_data["index"]
+                var auto_increment = header_data["auto_increment"]
+                var def = header_data["default"]
+                var comment = header_data["comment"]
+                
+                if(sql_lookup_table.translate[header_data["type"]]) {
+                    type = sql_lookup_table.translate[header_data["type"]]
                 }
+    
+                var create_table_sql_part = "'" + column_name + "' " + type 
+    
+                if(sql_lookup_table.require_length.includes(type) || (sql_lookup_table.optional_length.includes(type) && length)) {
+                    create_table_sql_part += " (" + length + ")"
+                }
+                
+                // If allowNull is true/false add (NOT) NULL to SQL part
+                if(allowNull !== undefined) {
+                    create_table_sql_part += ` ${!allowNull ? 'NOT' : ''} NULL`
+                }
+    
+                // If unique is true then make this an unique contraint column
+                if(unique === true) {
+                    create_table_sql_part += " UNIQUE"
+                }
+    
+                // If index is true then make column into an indexed column
+                if(index === true) {
+                    create_table_sql_part += ", INDEX (`" + column_name + "`) "
+                }
+    
+                // If auto_increment is true then make column into an auto_incremental column
+                if(auto_increment === true) {
+                    create_table_sql_part += " AUTO_INCREMENT"
+                }
+    
+                // If comment is provided then add comment to the table schema
+                if(comment !== undefined) {
+                    create_table_sql_part += " COMMENT '" + comment + "'"
+                }
+    
+                // If default value is provided then add a default value to the column
+                if(def !== undefined) {
+                    create_table_sql_part += " DEFAULT " + def + ""
+                }
+    
+                // If column is part of the primary key, then add column to the primary constraint index
+                if(primary === true) {
+                    if(primary_sql_part == null) {
+                        primary_sql_part = ", PRIMARY KEY (`" + column_name + "`"
+                    } else {
+                        primary_sql_part += ", `" + column_name + "`"
+                    }
+                }
+                create_table_sql += create_table_sql_part
             }
-            create_table_sql += create_table_sql_part
-        }
-
-        // Close off primary_sql_part
-        if(primary_sql_part) {
-                primary_sql_part += ")"
-                create_table_sql += primary_sql_part
-        }
-
-        create_table_sql = create_table_sql + ")"
-        return (create_table_sql) 
+    
+            // Close off primary_sql_part
+            if(primary_sql_part) {
+                    primary_sql_part += ")"
+                    create_table_sql += primary_sql_part
+            }
+    
+            create_table_sql = create_table_sql + ")"
+            return (create_table_sql) 
+        })
     },
     get_table_description : function (database, table) {
         var sql_query = "SELECT COLUMN_NAME, DATA_TYPE, " +
