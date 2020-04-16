@@ -415,7 +415,7 @@ async function get_meta_data (data, headers, config) {
 }
 
 // Create table from meta data
-async function create_table (config, meta_data) {
+async function auto_create_table (config, meta_data) {
     return new Promise (async (resolve, reject) => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
@@ -448,7 +448,7 @@ function isObject(val) {
 }
 
 // This function when provided the database/table and headers object will find changes
-async function alter_table (config, headers) {
+async function auto_alter_table (config, headers) {
     return new Promise (async (resolve, reject) => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
@@ -497,9 +497,9 @@ async function insert_data (config, data) {
 
         // Now that the meta data associated with this data has been found, 
         if(config.create_table) {
-            await create_table(config, new_meta_data).catch(err => {catch_errors(err)})
+            await auto_create_table(config, new_meta_data).catch(err => {catch_errors(err)})
         } else {
-            await alter_table(config, new_meta_data).catch(err => {catch_errors(err)})
+            await auto_alter_table(config, new_meta_data).catch(err => {catch_errors(err)})
         }
     })
 }
@@ -562,7 +562,8 @@ module.exports = {
     initialize_meta_data,
     get_meta_data,
     predict_indexes,
-    catch_database_changes,
+    auto_alter_table,
+    auto_create_table,
     lazy_sql,
     insert_data
 }
