@@ -68,7 +68,8 @@ var exports = {
                 })
             })
     },
-    check_database_exists : function (database) {
+    check_database_exists : function (config) {
+        var database = config.database
         var sql_query_part = ""
         // Handle multiple databases being provided as an array
         if(database.isArray) {
@@ -87,11 +88,15 @@ var exports = {
         var sql_query = "SELECT " + sql_query_part + "FROM DUAL;"
         return (sql_query)
     },
-    create_database : function (database) {
+    create_database : function (config) {
+        var database = config.database;
         var sql_query = "CREATE DATABASE " + database + ";"
         return(sql_query)
     },
-    check_tables_exists : function (database, table) {
+    check_tables_exists : function (config) {
+        var database = config.database;
+        var table = config.table;
+
         var sql_query_part = ""
         // Handle multiple tables being provided as an array
         if(table.isArray) {
@@ -110,11 +115,15 @@ var exports = {
         var sql_query = "SELECT " + sql_query_part + "FROM DUAL;"
         return (sql_query)
     },
-    create_table : function (database, table, headers, override) {
+    create_table : function (config, headers, override) {
         return new Promise((resolve, reject) => {
             var sql_dialect_lookup_object = require('../config/sql_dialect.json')
             var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
     
+            var database = config.database;
+            var table = config.table;
+            var collation = config.collation;
+
             var create_table_sql = "CREATE TABLE IF NOT EXISTS " + database + ".`" + table + "` (\n"
     
             var primary_sql_part = null
@@ -201,7 +210,10 @@ var exports = {
             resolve (create_table_sql) 
         })
     },
-    get_table_description : function (database, table) {
+    get_table_description : function (config) {
+        var database = config.database;
+        var table = config.table;
+        
         var sql_query = "SELECT COLUMN_NAME, DATA_TYPE, " +
         "CASE WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NOT NULL THEN CONCAT(NUMERIC_PRECISION,',',NUMERIC_SCALE) " +
         "WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NULL THEN NUMERIC_PRECISION " + 

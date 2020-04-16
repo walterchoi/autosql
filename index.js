@@ -436,7 +436,7 @@ async function create_table (config, meta_data) {
             }
 
         if(config.collation) {collation = config.collation}
-        create_table_sql = await sql_helper.create_table(config.database, config.table, meta_data).catch(err => {catch_errors(err)})
+        create_table_sql = await sql_helper.create_table(config, meta_data).catch(err => {catch_errors(err)})
         create_table = await sql_helper.run_query(config.connection, create_table_sql).catch(err => {catch_errors(err)})
         resolve(create_table.results)
     })
@@ -453,7 +453,7 @@ async function catch_database_changes (config, headers) {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
-        var get_table_description_sql = sql_helper.get_table_description(config.database, config.table)
+        var get_table_description_sql = sql_helper.get_table_description(config)
         table_description = await sql_helper.run_query(config.connection, get_table_description_sql).catch(err => catch_errors)
         console.log(table_description)
     })
@@ -466,10 +466,10 @@ async function insert_data (config, data) {
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
         // Check if the target schema exists
-        var check_database_sql = sql_helper.check_database_exists(config.database)
+        var check_database_sql = sql_helper.check_database_exists(config)
         check_database_results = await sql_helper.run_query(config.connection, check_database_sql).catch(err => catch_errors)
         if (check_database_results.results[0][config.database] == 0) {
-            create_database_sql = sql_helper.create_database(config.database)
+            create_database_sql = sql_helper.create_database(config)
             create_database = await sql_helper.run_query(config.connection, create_database_sql).catch(err => catch_errors)
             // As this database is new, always create the tables regardless of current set option
             config.create_table = true
@@ -477,7 +477,7 @@ async function insert_data (config, data) {
 
         // If create_tables is set to true, then don't bother checking if the table exists else, check if table exists (and overwrite create_tables)
         if(!config.create_table) {
-            check_tables_sql = sql_helper.check_tables_exists(config.database, config.table)
+            check_tables_sql = sql_helper.check_tables_exists(config)
             check_tables_results = await sql_helper.run_query(config.connection, check_tables_sql).catch(err => catch_errors)
             if(check_tables_results.results[0][config.table] == 0) {config.create_table = true}
         }
