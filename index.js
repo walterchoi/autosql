@@ -448,7 +448,7 @@ function isObject(val) {
 }
 
 // This function when provided the database/table and headers object will find changes
-async function catch_database_changes (config, headers) {
+async function alter_table (config, headers) {
     return new Promise (async (resolve, reject) => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
@@ -456,6 +456,7 @@ async function catch_database_changes (config, headers) {
         var get_table_description_sql = sql_helper.get_table_description(config)
         table_description = await sql_helper.run_query(config.connection, get_table_description_sql).catch(err => catch_errors)
         console.log(table_description)
+        console.log(headers)
     })
 }
 
@@ -498,7 +499,7 @@ async function insert_data (config, data) {
         if(config.create_table) {
             await create_table(config, new_meta_data).catch(err => {catch_errors(err)})
         } else {
-            await catch_database_changes(config, new_meta_data).catch(err => {catch_errors(err)})
+            await alter_table(config, new_meta_data).catch(err => {catch_errors(err)})
         }
     })
 }
