@@ -188,6 +188,7 @@ var exports = {
         // Close off primary_sql_part
         if(primary_sql_part) {
                 primary_sql_part += ")"
+                create_table_sql += primary_sql_part
         }
 
         create_table_sql = create_table_sql + ")"
