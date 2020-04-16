@@ -118,6 +118,7 @@ var exports = {
             var create_table_sql = "CREATE TABLE IF NOT EXISTS " + database + ".`" + table + "` (\n"
     
             var primary_sql_part = null
+            var create_table_sql_part = null
             // Get each column's data and repeat for each meta_data row
             for (var h = 0; h < headers.length; h++) {
                 var header_name = (Object.getOwnPropertyNames(headers[h])[0])
@@ -139,7 +140,11 @@ var exports = {
                     type = sql_lookup_table.translate[header_data["type"]]
                 }
     
-                var create_table_sql_part = "'" + column_name + "' " + type 
+                if(create_table_sql_part) {
+                    create_table_sql_part = ", '" + column_name + "' " + type 
+                } else {
+                    create_table_sql_part = "'" + column_name + "' " + type 
+                }
     
                 if(sql_lookup_table.require_length.includes(type) || (sql_lookup_table.optional_length.includes(type) && length)) {
                     create_table_sql_part += " (" + length + ")"
@@ -193,7 +198,7 @@ var exports = {
             }
     
             create_table_sql = create_table_sql + ")"
-            return (create_table_sql) 
+            resolve (create_table_sql) 
         })
     },
     get_table_description : function (database, table) {
