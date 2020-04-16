@@ -218,6 +218,9 @@ async function initialize_meta_data (headers) {
                 'auto_increment': false,
                 'default': undefined
             }
+            // default value is optional
+            // default value if provided, must be the full default value required (including quote marks if needed)
+            // e.g. 'lorem ipsum' or 123 or NULL
         }
         metaData.push(metaObj)
     }
@@ -252,6 +255,7 @@ async function predict_indexes (headers, primary_key) {
         // If no such column exists, then a composite primary key will be made from non-nullable unique/pseudounique keys that have a valid key data type.
         if(!primary_key_found) {
             for (var h = 0; h < headers.length; h++) {
+                var header_name = (Object.getOwnPropertyNames(headers[h])[0])
                 if(!headers[h][header_name]['allowNull'] && keys_group.includes(header_name) && 
                 (headers[h][header_name]['unique'] || headers[h][header_name]['pseudounique'])
                 ) {
@@ -433,7 +437,6 @@ async function create_table (config, meta_data) {
 
         if(config.collation) {collation = config.collation}
 
-
     })
 }
 
@@ -467,7 +470,7 @@ async function insert_data (config, data) {
         if(!config.create_table) {
             check_tables_sql = sql_helper.check_tables_exists(config.database, config.table)
             check_tables_results = await sql_helper.run_query(config.connection, check_tables_sql).catch(err => catch_errors)
-            if(check_database_results.results[0][config.table] == 0) {config.create_table = true}
+            if(check_tables_results.results[0][config.table] == 0) {config.create_table = true}
         }
         
         // Get provided data's meta data

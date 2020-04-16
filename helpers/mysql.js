@@ -110,101 +110,81 @@ var exports = {
         var sql_query = "SELECT " + sql_query_part + "FROM DUAL;"
         return (sql_query)
     },
-    create_table : function (database, table, meta_data, override) {
+    create_table : function (database, table, headers, override) {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
+
         var create_table_sql = "CREATE TABLE IF NOT EXISTS " + database + ".`" + table + "` (\n"
 
+        var primary_sql_part = null
         // Get each column's data and repeat for each meta_data row
-        for (var i = 0; i < meta_data.length; i++) {
-            var column_data = meta_data[i]
-            for (column in column_data) {
-                var index = ''
-                if(column == 'id' && !override) {var primary = " PRIMARY KEY "}
-                else {var primary = ""}
-                var type = column_data[column]["type"]
-                var length = column_data[column]["length"]
-                var allowNull = column_data[column]["allowNull"]
-                var unique = column_data[column]["unique"]
-                if(override) {
-                    if((override.type)[column]) {type = (override.type)[column]}
-                    if((override.length)[column]) {
-                        if(length < (override.length)[column]) {length = (override.length)[column]}
-                    }
-                }
-                if(unique === true && !override && length < 200 && length > 0 && type != 'date' && type != 'datetime') {
-                    var unique_sql = " UNIQUE "
+        for (var h = 0; h < headers.length; h++) {
+            var header_name = (Object.getOwnPropertyNames(headers[h])[0])
+            var header_data = headers[h][header_name]
+            
+            // Set variables required for create table statement
+            var column_name = header_name
+            var type = header_data["type"]
+            var length = header_data["length"]
+            var allowNull = header_data["allowNull"]
+            var unique = header_data["unique"]
+            var primary = header_data["primary"]
+            var index = header_data["index"]
+            var auto_increment = header_data["auto_increment"]
+            var def = header_data["default"]
+            var comment = header_data["comment"]
+            
+            if(sql_lookup_table.translate[header_data["type"]]) {
+                type = sql_lookup_table.translate[header_data["type"]]
+            }
+
+            var create_table_sql_part = "'" + column_name + "' " + type 
+
+            if(sql_lookup_table.require_length.includes(type) || (sql_lookup_table.optional_length.includes(type) && length)) {
+                create_table_sql_part += " (" + length + ")"
+            }
+            
+            // If allowNull is true/false add (NOT) NULL to SQL part
+            if(allowNull !== undefined) {
+                create_table_sql_part += ` ${!allowNull ? 'NOT' : ''} NULL`
+            }
+
+            // If unique is true then make this an unique contraint column
+            if(unique === true) {
+                create_table_sql_part += " UNIQUE"
+            }
+
+            // If index is true then make column into an indexed column
+            if(index === true) {
+                create_table_sql_part += ", INDEX (`" + column_name + "`) "
+            }
+
+            // If auto_increment is true then make column into an auto_incremental column
+            if(auto_increment === true) {
+                create_table_sql_part += " AUTO_INCREMENT"
+            }
+
+            // If comment is provided then add comment to the table schema
+            if(comment !== undefined) {
+                create_table_sql_part += " COMMENT '" + comment + "'"
+            }
+
+            // If default value is provided then add a default value to the column
+            if(def !== undefined) {
+                create_table_sql_part += " DEFAULT " + def + ""
+            }
+
+            // If column is part of the primary key, then add column to the primary constraint index
+            if(primary === true) {
+                if(primary_sql_part == null) {
+                    primary_sql_part = ", PRIMARY KEY (`" + column_name + "`"
                 } else {
-                    var unique_sql = ""
-                }
-                if(allowNull === true) {
-                    var null_sql = " NULL "
-                } else {
-                    var null_sql = " NOT NULL "
-                }
-                var length_brackets = true
-                if(type == 'decimal') {var new_type = 'FLOAT'}
-                if(type == 'integer') {var new_type = 'INT'}
-                if(type == 'string') {var new_type = 'VARCHAR'}
-                if(length > 20000) {
-                    new_type = 'LONGTEXT'
-                    length_brackets = false
-                    length = null
-                }
-                if(length > 5000) {
-                    new_type = 'MEDIUMTEXT'
-                    length_brackets = false
-                    length = null
-                }
-                if(length > 2000) {
-                    new_type = 'TEXT'
-                    length_brackets = false
-                    length = null
-                }
-                if(type == 'json') {
-                    var new_type = 'VARCHAR'
-                    length_brackets = true
-                }
-                if(type == 'date') {
-                    var new_type = 'DATE'
-                    length_brackets = false
-                    index = ', INDEX (`' + column + '`) '
-                }
-                if(type == 'datetime') {
-                    var new_type = 'DATETIME'
-                    length_brackets = false
-                    index = ', INDEX (`' + column + '`) '
-                }
-                if(type == 'binary') {var new_type = 'binary'}
-                if(type == 'binary' && length > 155) {
-                    var new_type = 'TEXT'
-                    length_brackets = false
-                    length = null
-                }
-                if(type == 'boolean') {var new_type = 'tinyint'}
-                if(length_brackets) {
-                    var column_sql = "`" + column + "` " + new_type + "(" + length + ")" + null_sql +  primary + unique_sql + index
-                } else {
-                    var column_sql = "`" + column + "` " + new_type + null_sql + primary + unique_sql + index
-                }
-                create_table_sql = create_table_sql + column_sql
-                if (i != meta_data.length -1) {
-                    create_table_sql = create_table_sql + ", \n"
+                    primary_sql_part += ", `" + column_name + "`"
                 }
             }
+
         }
-        if (override) {
-            for (var i = 0; i < override.unique.length; i++) {
-                create_table_sql = create_table_sql + ", UNIQUE(`" + override.unique[i] + "`)"
-            }
-            if (override.primary_key.length > 0) {
-                var prim_sql = ", PRIMARY KEY ("
-                for (var i = 0; i < override.primary_key.length; i++) {
-                    prim_sql = prim_sql + "`" + override.primary_key[i] + "`"
-                    if(i != override.primary_key.length-1) {prim_sql = prim_sql + ", "}
-                }
-                prim_sql = prim_sql + ")"
-                create_table_sql = create_table_sql + prim_sql
-            }
-        }
+
         create_table_sql = create_table_sql + ")"
         return (create_table_sql) 
     },

@@ -1,0 +1,9 @@
+{
+    "require_length": ["varchar", "binary", "decimal"],
+    "optional_length": ["boolean", "tinyint", "smallint", "int", "bigint"],
+    "no_length": ["date", "time", "datetime", "json", "text", "mediumtext", "longtext", "exponent", "double"],
+    "translate": {
+        "boolean": "tinyint",
+        "exponent": "double"
+    }
+}
