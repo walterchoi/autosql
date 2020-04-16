@@ -436,6 +436,7 @@ async function create_table (config, meta_data) {
             }
 
         if(config.collation) {collation = config.collation}
+        create_table_sql = await sql_helper.create_table(config.database, config.table, meta_data)
 
     })
 }
