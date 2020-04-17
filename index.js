@@ -472,8 +472,6 @@ async function auto_alter_table (config, new_headers) {
         var get_table_description_sql = sql_helper.get_table_description(config)
         table_description = await sql_helper.run_query(config.connection, get_table_description_sql).catch(err => catch_errors)
         var old_headers = await convert_table_description(table_description)
-        console.log(old_headers)
-        console.log(new_headers)
         var table_changes = await compare_two_headers(old_headers, new_headers).catch(err => catch_errors)
     })
 }
@@ -493,8 +491,8 @@ async function compare_two_headers (old_headers, new_headers) {
     new_headers.map(header => 
         new_headers_list.push(Object.getOwnPropertyNames(header)[0])
     )
-    connsole.log(old_headers_list)
-    connsole.log(new_headers_list)
+    console.log(old_headers_list)
+    console.log(new_headers_list)
 }
 
 // Translate description provided by SQL server into header object used by this repository
