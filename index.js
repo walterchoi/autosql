@@ -559,7 +559,7 @@ async function insert_data (config, data) {
                 "auto_id": config.auto_id,
                 "sql_dialect": config.sql_dialect
             }
-        } else { var meta_data_config = null }
+        } else { var meta_data_config = {"sql_dialect": config.sql_dialect} }
         var new_meta_data = await get_meta_data(data, config.headers, meta_data_config).catch(err => {catch_errors(err)})
 
         // Now that the meta data associated with this data has been found, 
