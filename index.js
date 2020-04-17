@@ -216,7 +216,8 @@ async function initialize_meta_data (headers) {
                 'pseudounique': false,
                 'primary': false,
                 'auto_increment': false,
-                'default': undefined
+                'default': undefined,
+                'decimal': 0
             }
             // default value is optional
             // default value if provided, must be the full default value required (including quote marks if needed)
@@ -334,7 +335,7 @@ async function get_meta_data (data, headers, config) {
                     if(headers[h][meta_data_columns[m]] === undefined) {
                         if(meta_data_columns[m] == 'type') {headers[h][meta_data_columns[m]] = null} 
                         else if(meta_data_columns[m] == 'default') {headers[h][meta_data_columns[m]] = undefined} 
-                        else if(meta_data_columns[m] == 'length') {headers[h][meta_data_columns[m]] = 0} 
+                        else if(meta_data_columns[m] == 'length' || meta_data_columns[m] == 'decimal') {headers[h][meta_data_columns[m]] = 0} 
                         else {headers[h][meta_data_columns[m]] = false} 
                     }
                 }
@@ -361,6 +362,9 @@ async function get_meta_data (data, headers, config) {
         for (var h = 0; h < headers.length; h++) {
             uniqueCheck[headers[h]] = (new Set())
         }
+        
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
 
         // Repeat for each data row provided
         for (var i = 0; i < data.length; i++) {
@@ -385,6 +389,18 @@ async function get_meta_data (data, headers, config) {
                     if(currentType != overallType) {
                         var new_type = await collate_types(currentType, overallType).catch(err => {catch_errors(err)})
                         headers[h][header_name]['type'] = new_type
+                    }
+                    if(sql_lookup_table.decimals.includes(headers[h][header_name]['type'])) {
+                        if(Math.floor(dataPoint) === dataPoint) {var decimal_len = 0}
+                        else {var decimal_len = dataPoint.toString().split(".")[1].length}
+                        
+                        if(headers[h][header_name]['decimal']) {
+                            if(decimal_len > headers[h][header_name]['decimal']) {
+                                headers[h][header_name]['decimal'] = decimal_len    
+                            }
+                        } else {
+                            headers[h][header_name]['decimal'] = decimal_len
+                        }
                     }
                     var len = dataPoint.length
                     var curLen = headers[h][header_name]['length']
@@ -448,16 +464,68 @@ function isObject(val) {
 }
 
 // This function when provided the database/table and headers object will find changes
-async function auto_alter_table (config, headers) {
+async function auto_alter_table (config, new_headers) {
     return new Promise (async (resolve, reject) => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
         var get_table_description_sql = sql_helper.get_table_description(config)
         table_description = await sql_helper.run_query(config.connection, get_table_description_sql).catch(err => catch_errors)
-        console.log(table_description)
-        console.log(headers)
+        var old_headers = await convert_table_description(table_description)
+        console.log(old_headers)
+        console.log(new_headers)
+        var table_changes = await compare_two_headers(old_headers, new_headers).catch(err => catch_errors)
     })
+}
+
+// Compare two sets of headers to identify changes
+async function compare_two_headers (old_headers, new_headers) {
+
+    // Currently the ALTER statements only support NEW columns, DELETE columns, ALTER lengths, ALTER types and to ALLOW NULL
+    // This compare headers function also only supports these
+
+    // Check for NEW or DELETIONS
+    var old_headers_list = []
+    old_headers.map(header => 
+        old_headers_list.push(Object.getOwnPropertyNames(header)[0])
+    )
+    var new_headers_list = []
+    new_headers.map(header => 
+        new_headers_list.push(Object.getOwnPropertyNames(header)[0])
+    )
+    connsole.log(old_headers_list)
+    connsole.log(new_headers_list)
+}
+
+// Translate description provided by SQL server into header object used by this repository
+async function convert_table_description (table_description) {
+    var table_desc = table_description.results
+    var old_headers = []
+    for (var c = 0; c < table_desc.length;  c++) {
+        var column_name = table_desc[c].COLUMN_NAME
+        var data_type = table_desc[c].DATA_TYPE
+        var length = table_desc[c]['LENGTH']
+        var nullable = table_desc[c].IS_NULLABLE
+        if(length.contains(',')) {
+            var decimal = length.toString().split(",")[1].length
+            length = length.toString().split(",")[0].length
+        }
+        if(nullable == 'NO') {
+            nullable = true
+        } else if (nullable == 'YES') {
+            nullable = true
+        }
+        var header_obj = {
+            [column_name]: {
+                "type": data_type,
+                "length": length,
+                "decimal": decimal,
+                "allowNull": nullable
+            }
+        }
+        old_headers.push(header_obj)
+    }
+    return(old_headers)
 }
 
 async function insert_data (config, data) {

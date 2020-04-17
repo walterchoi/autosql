@@ -4,5 +4,6 @@
     "primary": ["ID"],
     "auto_indexing": true,
     "auto_id": false,
-    "collation": "latin1_swedish_ci"
+    "collation": "latin1_swedish_ci",
+    "delete_columns": false
 }

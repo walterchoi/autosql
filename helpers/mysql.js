@@ -207,13 +207,16 @@ var exports = {
             }
     
             create_table_sql = create_table_sql + ")"
+            if(config.collation) {
+                create_table_sql += ' COLLATE ' + config.collation + ';'
+            }
             resolve (create_table_sql) 
         })
     },
     get_table_description : function (config) {
         var database = config.database;
         var table = config.table;
-        
+
         var sql_query = "SELECT COLUMN_NAME, DATA_TYPE, " +
         "CASE WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NOT NULL THEN CONCAT(NUMERIC_PRECISION,',',NUMERIC_SCALE) " +
         "WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NULL THEN NUMERIC_PRECISION " + 
