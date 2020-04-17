@@ -504,6 +504,7 @@ async function convert_table_description (table_description) {
         var data_type = table_desc[c].DATA_TYPE
         var old_length = table_desc[c]['LENGTH']
         var nullable = table_desc[c].IS_NULLABLE
+        console.log(old_length)
         if(old_length.contains(',')) {
             var decimal = old_length.toString().split(",")[1].length
             old_length = old_length.toString().split(",")[0].length
