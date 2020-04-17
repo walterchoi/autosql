@@ -502,11 +502,11 @@ async function convert_table_description (table_description) {
     for (var c = 0; c < table_desc.length;  c++) {
         var column_name = table_desc[c].COLUMN_NAME
         var data_type = table_desc[c].DATA_TYPE
-        var length = table_desc[c]['LENGTH']
+        var old_length = table_desc[c]['LENGTH']
         var nullable = table_desc[c].IS_NULLABLE
-        if(length.contains(',')) {
-            var decimal = length.toString().split(",")[1].length
-            length = length.toString().split(",")[0].length
+        if(old_length.contains(',')) {
+            var decimal = old_length.toString().split(",")[1].length
+            old_length = old_length.toString().split(",")[0].length
         }
         if(nullable == 'NO') {
             nullable = true
@@ -516,7 +516,7 @@ async function convert_table_description (table_description) {
         var header_obj = {
             [column_name]: {
                 "type": data_type,
-                "length": length,
+                "length": old_length,
                 "decimal": decimal,
                 "allowNull": nullable
             }
