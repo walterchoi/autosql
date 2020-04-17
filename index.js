@@ -556,7 +556,8 @@ async function insert_data (config, data) {
                 "pseudo_unique": config.pseudo_unique,
                 "primary": config.primary,
                 "auto_indexing": config.auto_indexing,
-                "auto_id": config.auto_id
+                "auto_id": config.auto_id,
+                "sql_dialect": config.sql_dialect
             }
         } else { var meta_data_config = null }
         var new_meta_data = await get_meta_data(data, config.headers, meta_data_config).catch(err => {catch_errors(err)})
