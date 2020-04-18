@@ -733,8 +733,14 @@ async function insert_data (config, data) {
             max_insert_size = config.max_insert_size
         }
 
+        console.log(data[0])
+
 
     })
+}
+
+async function separate_data (config, data) {
+
 }
 
 async function lazy_sql (config, data) {
