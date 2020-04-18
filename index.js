@@ -483,6 +483,11 @@ async function compare_two_headers (old_headers, new_headers) {
     // This compare headers function also only supports these
 
     // Check for NEW or DELETIONS
+    var new_columns = []
+    var delete_columns = []
+    var alter_columns = []
+    
+    // Get list of just column names for both old headers and new heeaderes
     var old_headers_list = []
     old_headers.map(header => 
         old_headers_list.push(Object.getOwnPropertyNames(header)[0])
@@ -493,6 +498,40 @@ async function compare_two_headers (old_headers, new_headers) {
     )
     console.log(old_headers_list)
     console.log(new_headers_list)
+    for(var oh = 0; oh < old_headers_list.length; oh++) {
+        if(new_headers_list.includes(old_headers_list[oh])) {
+            // Section to handle if this 'old header' is present in the new data too
+        } else {
+            
+        }
+    }
+
+    for(var nh = 0; nh < new_headers_list.length; nh++) {
+        if(old_headers_list.includes(new_headers_list[nh])) {
+            // Section to handle if this 'new header' is present in the current table too
+            var old_header_obj = old_headers[old_headers.indexOf(new_headers_list[nh])]
+            var new_header_obj = new_headers[new_headers.indexOf(new_headers_list[nh])]
+            var changes = {}
+            console.log(old_header_obj)
+            console.log(new_header_obj)
+            // If the types do not match, find the new collated type
+            if(new_header_obj.type != old_header_obj.type) {
+                var collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {catch_errors(err)})
+                if(collated_type != old_header_obj.type) {
+                    changes.type = collated_type
+                }
+            }
+            if(new_header_obj["length"] > old_header_obj["length"]) {
+                    changes["length"] = new_header_obj["length"]
+            }
+            if(new_header_obj.decimal > old_header_obj.decimal) {
+                changes.decimal = new_header_obj.decimal
+            }
+        } else {
+            // Because this new column with associated data does not exist on the existing database
+            new_columns.push(new_headers[nh])
+        }
+    }
 }
 
 // Translate description provided by SQL server into header object used by this repository
@@ -504,7 +543,6 @@ async function convert_table_description (table_description) {
         var data_type = table_desc[c].DATA_TYPE
         var old_length = table_desc[c]['LENGTH']
         var nullable = table_desc[c].IS_NULLABLE
-        console.log(old_length)
         if(old_length.includes(',')) {
             var decimal = old_length.toString().split(",")[1].length
             old_length = old_length.toString().split(",")[0].length
