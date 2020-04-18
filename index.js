@@ -289,6 +289,11 @@ async function get_meta_data (config, data) {
         // Variable for auto-creation of autoincrementing ID column, set as false to enable, defaults to false
         var auto_id = defaults.auto_id
 
+        // Variable for random sampling for getting meta data (only use for very large datasets) -- defaults to 0 or OFF
+        // Sampling must be between 0 and 1 (decimal) which sets a threshold percentage of data points to test for this meta data
+        // 1 (or 100%) means test all data points, whereas 0.5 means test only 50% (rounded up to nearest whole number data point - randomly chosen)
+        var sampling = defaults.sampling
+
         // Let user override this default via config object
         if(config) {
             // Error when Primary key is specified but auto_id has also been set
@@ -304,6 +309,7 @@ async function get_meta_data (config, data) {
             if(config.pseudo_unique) {pseudo_unique = config.pseudo_unique}
             if(config.primary) {primary = config.primary}
             if(config.auto_id) {auto_id = config.auto_id}
+            if(config.sampling) {sampling = config.sampling}
             if(config.auto_indexing === true || config.auto_indexing === false) {auto_indexing = config.auto_indexing}
             if(!config.sql_dialect) {
                 reject({
@@ -379,6 +385,11 @@ async function get_meta_data (config, data) {
         var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
 
         // Repeat for each data row provided
+        if(sampling && sampling < 1) {
+            var sampling_number = Math.round(data.length * sampling)
+            data = shuffle(data)
+            data.slice(0, sampling_number)
+        }
         for (var i = 0; i < data.length; i++) {
             for (var h = 0; h < headers.length; h++) {
                 var header_name = (Object.getOwnPropertyNames(headers[h])[0])
@@ -440,6 +451,15 @@ async function get_meta_data (config, data) {
 
         resolve(headers)
     })
+}
+
+// function to shuffle an array
+function shuffle(array) {
+    for (var i = array.length - 1; i > 0; i--) {
+        var j = Math.floor(Math.random() * (i + 1))
+        [array[i], array[j]] = [array[j], array[i]]
+    }
+    return (array)
 }
 
 // Create table from meta data
@@ -677,7 +697,7 @@ async function auto_configure_table (config, data) {
 
 async function insert_data (config, data) {
     return new Promise (async (resolve, reject) => {
-        
+
     })
 }
 
@@ -750,5 +770,6 @@ module.exports = {
     auto_alter_table,
     auto_create_table,
     lazy_sql,
-    auto_configure_table
+    auto_configure_table,
+    insert_data
 }
