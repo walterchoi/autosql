@@ -246,6 +246,8 @@ var exports = {
                 for(var n = 0; n < changed_headers.new.length; n++) {
                     var column_name = Object.getOwnPropertyNames(changed_headers.new[n])[0]
                     var header_data = changed_headers.new[n][column_name]
+                    console.log(column_name)
+                    console.log(header_data)
                 
                     // Set variables required for new column in alter table statement
                     var type = header_data["type"]
@@ -264,7 +266,7 @@ var exports = {
                     if(sql_query_part) {
                         sql_query_part = ",\n ADD `" + column_name + "` " + type 
                     } else {
-                        sql_query_part = "ADD `" + column_name + "`" + type 
+                        sql_query_part = "ADD `" + column_name + "` " + type 
                     }
     
                     if(sql_lookup_table.decimals.includes(type)) {
@@ -310,12 +312,18 @@ var exports = {
                 for(var a = 0; a < changed_headers.alter.length; a++) {
                     var column_name = Object.getOwnPropertyNames(changed_headers.alter[a])[0]
                     var header_data = changed_headers.alter[a][column_name]
+                    console.log(column_name)
+                    console.log(header_data)
 
                     // Set variables required for altering a column in alter table statement
                     var type = header_data["type"]
                     var length = header_data["length"]
                     var decimal = header_data["decimal"]
                     var allowNull = header_data["allowNull"]
+
+                    if(sql_lookup_table.translate[header_data["type"]]) {
+                        type = sql_lookup_table.translate[header_data["type"]]
+                    }
                     
                     if(sql_query_part) {
                         sql_query_part = ",\n MODIFY COLUMN `" + column_name + "` " + type 
