@@ -292,7 +292,9 @@ async function get_meta_data (config, data) {
         // Variable for random sampling for getting meta data (only use for very large datasets) -- defaults to 0 or OFF
         // Sampling must be between 0 and 1 (decimal) which sets a threshold percentage of data points to test for this meta data
         // 1 (or 100%) means test all data points, whereas 0.5 means test only 50% (rounded up to nearest whole number data point - randomly chosen)
+        // Sampling minimum prevents sampling from occurring if the data set provided is too low -- defaults to minimum of 100 data points AFTER sampling
         var sampling = defaults.sampling
+        var sampling_minimum = defaults.sampling_minimum
 
         // Let user override this default via config object
         if(config) {
@@ -310,6 +312,7 @@ async function get_meta_data (config, data) {
             if(config.primary) {primary = config.primary}
             if(config.auto_id) {auto_id = config.auto_id}
             if(config.sampling) {sampling = config.sampling}
+            if(config.sampling_minimum) {sampling_minimum = config.sampling_minimum}
             if(config.auto_indexing === true || config.auto_indexing === false) {auto_indexing = config.auto_indexing}
             if(!config.sql_dialect) {
                 reject({
@@ -387,8 +390,11 @@ async function get_meta_data (config, data) {
         // Repeat for each data row provided
         if(sampling && sampling < 1) {
             var sampling_number = Math.round(data.length * sampling)
-            data = shuffle(data)
-            data.slice(0, sampling_number)
+            // Check if the sampling number is larger than the minimum number for sampling
+            if(sampling_number >= sampling_minimum) {
+                data = shuffle(data)
+                data.slice(0, sampling_number)
+            }
         }
         for (var i = 0; i < data.length; i++) {
             for (var h = 0; h < headers.length; h++) {
@@ -686,17 +692,47 @@ async function auto_configure_table (config, data) {
 
         // Now that the meta data associated with this data has been found, 
         if(config.create_table) {
-            await auto_create_table(config, new_meta_data).catch(err => {catch_errors(err)})
+            var auto_create_table_results = await auto_create_table(config, new_meta_data).catch(err => {catch_errors(err)})
+            resolve(auto_create_table_results)
         } else {
             await auto_alter_table(config, new_meta_data).catch(err => {catch_errors(err)})
+            resolve(auto_create_table_results)
         }
-
         resolve(null)
     })
 }
 
 async function insert_data (config, data) {
     return new Promise (async (resolve, reject) => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+
+        var defaults = require('./config/defaults.json')
+        // Insert type (or style), determines how to insert this data set. -- default - REPLACE (which means ON DUPLICATE KEY REPLACE)
+        // Available options: 'REPLACE', 'IGNORE'
+        var insert_type = defaults.insert_type
+        if(config.insert_type) {
+            insert_type = config.insert_type
+        }
+
+        // max_insert size determines the largest number of rows to attempt to insert at one time -- defaults to 1000
+        var max_insert = defaults.max_insert
+        if(config.max_insert) {
+            max_insert = config.max_insert
+        }
+
+        // insert_stack determines the number of rows to attempt to add to insert query before checking if insertion size will exceed query max -- defaults to 50
+        var insert_stack = defaults.insert_stack
+        if(config.insert_stack) {
+            insert_stack = config.insert_stack
+        }
+
+        // max_insert_size determinnes maximum insert query size  -- defaults to 1048576 bytes (1MB) which is the default max_allowed_packet for MySQL databases
+        var max_insert_size = defaults.max_insert_size
+        if(config.max_insert_size) {
+            max_insert_size = config.max_insert_size
+        }
+
 
     })
 }
@@ -751,7 +787,7 @@ async function lazy_sql (config, data) {
         // First let us make sure that the table exists or the table is compatible with the new data being inserted
         await auto_configure_table(config, data).catch(err => {catch_errors(err)})
         // Now let us insert the data into the table
-        
+        await insert_data(config, data).catch(err => {catch_errors(err)})
 
     })
 }

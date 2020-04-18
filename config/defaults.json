@@ -2,9 +2,15 @@
     "minimum_unique": 50,
     "pseudo_unique": 97,
     "sampling": 0,
+    "sampling_minimum": 100,
     "primary": ["ID"],
     "auto_indexing": true,
     "auto_id": false,
+    "insert_type": "REPLACE",
+    "history": false,
     "collation": "latin1_swedish_ci",
-    "delete_columns": false
+    "delete_columns": false,
+    "max_insert": 1000,
+    "insert_stack": 50,
+    "max_insert_size": 1048576
 }
