@@ -393,7 +393,7 @@ async function get_meta_data (data, headers, config) {
                         headers[h][header_name]['type'] = new_type
                     }
                     if(sql_lookup_table.decimals.includes(headers[h][header_name]['type'])) {
-                        if(Math.floor(dataPoint) === dataPoint) {var decimal_len = 0}
+                        if(Math.floor(dataPoint) == dataPoint) {var decimal_len = 0}
                         else {var decimal_len = dataPoint.toString().split(".")[1].length}
                         
                         if(headers[h][header_name]['decimal']) {
@@ -556,6 +556,13 @@ async function compare_two_headers (old_headers, new_headers) {
                 if(changes.changed) {
                     if(!changes.type) {
                         changes.type = old_header_obj["type"]
+                    }
+                    // if the value is changed but no length or decimal length changes are found, but are required for ALTER statements
+                    if(sql_lookup_table.decimals.includes(changes.type) && changes.decimal === undefined) {
+                        changes.decimal = old_header_obj["decimal"]
+                    }
+                    if(changes["length"] === undefined) {
+                        changes["length"] = old_header_obj["length"]
                     }
                     delete changes.changed
                     alter_columns.push({

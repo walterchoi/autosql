@@ -157,6 +157,7 @@ var exports = {
                 }
     
                 if(sql_lookup_table.decimals.includes(type)) {
+                    if(!decimal) {decimal = 0}
                     create_table_sql_part += " (" + length + "," + decimal + ")"
                 }
                 else if(sql_lookup_table.require_length.includes(type) || (sql_lookup_table.optional_length.includes(type) && length)) {
@@ -270,6 +271,7 @@ var exports = {
                     }
     
                     if(sql_lookup_table.decimals.includes(type)) {
+                        if(!decimal) {decimal = 0}
                         sql_query_part += " (" + length + "," + decimal + ")"
                     }
                     else if(sql_lookup_table.require_length.includes(type) || (sql_lookup_table.optional_length.includes(type) && length)) {
@@ -312,8 +314,6 @@ var exports = {
                 for(var a = 0; a < changed_headers.alter.length; a++) {
                     var column_name = Object.getOwnPropertyNames(changed_headers.alter[a])[0]
                     var header_data = changed_headers.alter[a][column_name]
-                    console.log(column_name)
-                    console.log(header_data)
 
                     // Set variables required for altering a column in alter table statement
                     var type = header_data["type"]
@@ -332,6 +332,7 @@ var exports = {
                     }
         
                     if(sql_lookup_table.decimals.includes(type)) {
+                        if(!decimal) {decimal = 0}
                         sql_query_part += " (" + length + "," + decimal + ")"
                     }
                     else if(sql_lookup_table.require_length.includes(type) || (sql_lookup_table.optional_length.includes(type) && length)) {
