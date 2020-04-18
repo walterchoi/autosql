@@ -552,6 +552,9 @@ async function compare_two_headers (old_headers, new_headers) {
 
                 // If any change was found, add this to the 'ALTER_COLUMNS' array
                 if(changes.changed) {
+                    if(!changes.type) {
+                        changes.type = old_header_obj["type"]
+                    }
                     delete changes.changed
                     alter_columns.push({
                         [column_name]: changes
