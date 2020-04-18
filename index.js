@@ -473,13 +473,14 @@ async function auto_alter_table (config, new_headers) {
         table_description = await sql_helper.run_query(config.connection, get_table_description_sql).catch(err => catch_errors)
         var old_headers = await convert_table_description(table_description)
         var table_changes = await compare_two_headers(old_headers, new_headers).catch(err => catch_errors)
-        console.log(table_changes)
+        table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors)
+        console.log(table_alter_sql)
     })
 }
 
 // Compare two sets of headers to identify changes
 async function compare_two_headers (old_headers, new_headers) {
-    return new Promise((resolve, reject => {
+    return new Promise(async (resolve, reject) => {
         // Currently the ALTER statements only support NEW columns, ALTER lengths, ALTER types and to ALLOW NULL
         // This compare headers function also only supports these
 
@@ -571,7 +572,7 @@ async function compare_two_headers (old_headers, new_headers) {
             new: new_columns,
             alter: alter_columns
         })
-    }))
+    })
 }
 
 // Translate description provided by SQL server into header object used by this repository
