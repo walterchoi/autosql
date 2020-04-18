@@ -473,65 +473,105 @@ async function auto_alter_table (config, new_headers) {
         table_description = await sql_helper.run_query(config.connection, get_table_description_sql).catch(err => catch_errors)
         var old_headers = await convert_table_description(table_description)
         var table_changes = await compare_two_headers(old_headers, new_headers).catch(err => catch_errors)
+        console.log(table_changes)
     })
 }
 
 // Compare two sets of headers to identify changes
 async function compare_two_headers (old_headers, new_headers) {
+    return new Promise((resolve, reject => {
+        // Currently the ALTER statements only support NEW columns, ALTER lengths, ALTER types and to ALLOW NULL
+        // This compare headers function also only supports these
 
-    // Currently the ALTER statements only support NEW columns, DELETE columns, ALTER lengths, ALTER types and to ALLOW NULL
-    // This compare headers function also only supports these
-
-    // Check for NEW or DELETIONS
-    var new_columns = []
-    var delete_columns = []
-    var alter_columns = []
+        // Check for NEW
+        var new_columns = []
+        var alter_columns = []
     
-    // Get list of just column names for both old headers and new heeaderes
-    var old_headers_list = []
-    old_headers.map(header => 
-        old_headers_list.push(Object.getOwnPropertyNames(header)[0])
-    )
-    var new_headers_list = []
-    new_headers.map(header => 
-        new_headers_list.push(Object.getOwnPropertyNames(header)[0])
-    )
-    console.log(old_headers_list)
-    console.log(new_headers_list)
-    for(var oh = 0; oh < old_headers_list.length; oh++) {
-        if(new_headers_list.includes(old_headers_list[oh])) {
-            // Section to handle if this 'old header' is present in the new data too
-        } else {
-            
-        }
-    }
+        // Get list of just column names for both old headers and new heeaderes
+        var old_headers_list = []
+        old_headers.map(header => 
+            old_headers_list.push(Object.getOwnPropertyNames(header)[0])
+        )
+        var new_headers_list = []
+        new_headers.map(header => 
+            new_headers_list.push(Object.getOwnPropertyNames(header)[0])
+        )
 
-    for(var nh = 0; nh < new_headers_list.length; nh++) {
-        if(old_headers_list.includes(new_headers_list[nh])) {
-            // Section to handle if this 'new header' is present in the current table too
-            var old_header_obj = old_headers[old_headers.indexOf(new_headers_list[nh])]
-            var new_header_obj = new_headers[new_headers.indexOf(new_headers_list[nh])]
-            var changes = {}
-            console.log(old_header_obj)
-            console.log(new_header_obj)
-            // If the types do not match, find the new collated type
-            if(new_header_obj.type != old_header_obj.type) {
-                var collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {catch_errors(err)})
-                if(collated_type != old_header_obj.type) {
-                    changes.type = collated_type
+        for(var oh = 0; oh < old_headers_list.length; oh++) {
+            var column_name = old_headers_list[oh]
+            var old_header_obj = old_headers[oh][column_name]
+            if(new_headers_list.includes(old_headers_list[oh])) {
+                // Section to handle if this 'old header' is present in the new data too
+
+                // At this point, due to the symmetrical handling of the new headers object, the old headers object will not have this function run anything at all.
+
+            } else {
+                // If this column does not exist in the new dataset, this column must be NULLABLE to allow this new dataset to be entered
+                if(!old_header_obj.allowNull) {
+                    old_headers[oh][column_name].allowNull = true
                 }
+                alter_columns.push(old_headers[oh])
             }
-            if(new_header_obj["length"] > old_header_obj["length"]) {
-                    changes["length"] = new_header_obj["length"]
-            }
-            if(new_header_obj.decimal > old_header_obj.decimal) {
-                changes.decimal = new_header_obj.decimal
-            }
-        } else {
-            // Because this new column with associated data does not exist on the existing database
-            new_columns.push(new_headers[nh])
         }
-    }
+
+        for(var nh = 0; nh < new_headers_list.length; nh++) {
+            var column_name = new_headers_list[nh]
+            if(old_headers_list.includes(new_headers_list[nh])) {
+                // Section to handle if this 'new header' is present in the current table too
+                var old_header_obj = old_headers[old_headers_list.indexOf(new_headers_list[nh])][column_name]
+                var new_header_obj = new_headers[nh][column_name]
+                var changes = {
+                    changed: false
+                }
+                // If the types do not match, find the new collated type
+                if(new_header_obj.type != old_header_obj.type) {
+                    var collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {catch_errors(err)})
+                    if(collated_type != old_header_obj.type) {
+                        changes.type = collated_type
+                        changes["length"] = old_header_obj["length"]
+                        changes.decimal = old_header_obj.decimal
+                        changes.changed = true
+                    }
+                }
+
+                if(new_header_obj["length"] > old_header_obj["length"]) {
+                    changes["length"] = new_header_obj["length"]
+                    changes.changed = true
+                }
+
+                if(new_header_obj.decimal > old_header_obj.decimal) {
+                    changes.decimal = new_header_obj.decimal
+                    changes.changed = true
+                }
+
+                if(new_header_obj.allowNull && !old_header_obj.allowNull) {
+                    changes.allowNull = new_header_obj.allowNull
+                    changes.changed = true
+                }
+
+                // If any change was found, add this to the 'ALTER_COLUMNS' array
+                if(changes.changed) {
+                    delete changes.changed
+                    alter_columns.push({
+                        [column_name]: changes
+                    })
+                }
+
+            } else {
+                // Because this new column with associated data does not exist on the existing database, add this as a new column that IS NULLABLE
+                var new_header_obj = new_headers[nh][column_name]
+                // Check if allow null is false, and set as true - as there is likely already existing data that does not feature this column
+                if(!new_header_obj.allowNull) {
+                    new_headers[nh][column_name].allowNull = true
+                }
+                new_columns.push(new_headers[nh])
+            }
+        }
+        resolve({
+            new: new_columns,
+            alter: alter_columns
+        })
+    }))
 }
 
 // Translate description provided by SQL server into header object used by this repository
