@@ -483,6 +483,10 @@ async function auto_alter_table (config, new_headers) {
 // Compare two sets of headers to identify changes
 async function compare_two_headers (old_headers, new_headers) {
     return new Promise(async (resolve, reject) => {
+
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
+        
         // Currently the ALTER statements only support NEW columns, ALTER lengths, ALTER types and to ALLOW NULL
         // This compare headers function also only supports these
 
