@@ -715,6 +715,25 @@ async function insert_data (config, data) {
             insert_type = config.insert_type
         }
 
+        // Safe mode determines if the insert statement relies on autocommit or uses a rollback on failure -- defaults to true
+        var safe_mode = defaults.safe_mode
+        if(config.safe_mode) {
+            safe_mode = config.safe_mode
+        }
+
+        var stacked_data = await stack_data(config, data)
+
+
+    })
+}
+
+async function separate_data (config, data) {
+    
+}
+
+// Stack data into sets of arrays for smaller insert statements
+async function stack_data (config, data) {
+    return new Promise ((resolve, reject) => {
         // max_insert size determines the largest number of rows to attempt to insert at one time -- defaults to 1000
         var max_insert = defaults.max_insert
         if(config.max_insert) {
@@ -733,14 +752,16 @@ async function insert_data (config, data) {
             max_insert_size = config.max_insert_size
         }
 
-        console.log(data[0])
+        stacked_data_array = []
+        stacked_data_array_part = []
+        stacked_data_array_part_string = ''
 
+        for (var d = 0; d < data.length; d++) {
+            var values = Object.values(data[d])
+            console.log(values)
+        }
 
     })
-}
-
-async function separate_data (config, data) {
-
 }
 
 async function lazy_sql (config, data) {

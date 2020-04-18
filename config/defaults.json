@@ -12,5 +12,6 @@
     "delete_columns": false,
     "max_insert": 1000,
     "insert_stack": 50,
-    "max_insert_size": 1048576
+    "max_insert_size": 1048576,
+    "safe_mode": true
 }
