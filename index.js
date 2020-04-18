@@ -271,7 +271,7 @@ async function predict_indexes (headers, primary_key) {
 }
 
 // This function when provided data, will find the most likely type, length, indexes etc.
-async function get_meta_data (data, headers, config) {
+async function get_meta_data (config, data) {
     return new Promise(async (resolve, reject) => {
         var defaults = require('./config/defaults.json')
         // Variable for minimum number of datapoints required for unique-ness -- default 50        
@@ -305,6 +305,14 @@ async function get_meta_data (data, headers, config) {
             if(config.primary) {primary = config.primary}
             if(config.auto_id) {auto_id = config.auto_id}
             if(config.auto_indexing === true || config.auto_indexing === false) {auto_indexing = config.auto_indexing}
+            if(!config.sql_dialect) {
+                reject({
+                    err: 'no sql dialect',
+                    step: 'get_meta_data',
+                    description: 'invalid configuration was provided to get_meta_data step',
+                    resolution: 'please provide a sql_dialect (such as pgsql, mysql) to use as part of the configuration object'
+                })
+            }
         }
 
         /* Example config object to be provided
@@ -316,6 +324,8 @@ async function get_meta_data (data, headers, config) {
             auto_id: false
         }
         */ 
+
+        var headers = config.headers
 
         // Check if headers object/array was provided, and if not create a default header object for use
         if(!headers) {
@@ -476,9 +486,8 @@ async function auto_alter_table (config, new_headers) {
         var old_headers = await convert_table_description(table_description)
         var table_changes = await compare_two_headers(old_headers, new_headers).catch(err => catch_errors)
         table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors)
-        console.log(table_alter_sql)
         altered_table = await sql_helper.run_query(config.connection, table_alter_sql).catch(err => catch_errors)
-        console.log(altered_table)
+        resolve(altered_table)
     })
 }
 
@@ -624,7 +633,7 @@ async function convert_table_description (table_description) {
     return(old_headers)
 }
 
-async function insert_data (config, data) {
+async function auto_configure_table (config, data) {
     return new Promise (async (resolve, reject) => {
 
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
@@ -648,17 +657,12 @@ async function insert_data (config, data) {
         }
         
         // Get provided data's meta data
-        if(config.minimum_unique || config.pseudo_unique || config.primary || config.auto_indexing) {
-            var meta_data_config = {
-                "minimum_unique": config.minimum_unique,
-                "pseudo_unique": config.pseudo_unique,
-                "primary": config.primary,
-                "auto_indexing": config.auto_indexing,
-                "auto_id": config.auto_id,
-                "sql_dialect": config.sql_dialect
-            }
-        } else { var meta_data_config = {"sql_dialect": config.sql_dialect} }
-        var new_meta_data = await get_meta_data(data, config.headers, meta_data_config).catch(err => {catch_errors(err)})
+        if(!config.metaData) {
+            var new_meta_data = await get_meta_data(config, data).catch(err => {catch_errors(err)})
+            config.metaData = new_meta_data
+        } else {
+            var new_meta_data = config.metaData
+        }
 
         // Now that the meta data associated with this data has been found, 
         if(config.create_table) {
@@ -666,6 +670,14 @@ async function insert_data (config, data) {
         } else {
             await auto_alter_table(config, new_meta_data).catch(err => {catch_errors(err)})
         }
+
+        resolve(null)
+    })
+}
+
+async function insert_data (config, data) {
+    return new Promise (async (resolve, reject) => {
+        
     })
 }
 
@@ -712,7 +724,15 @@ async function lazy_sql (config, data) {
         }
 
         // From here begins the actual data insertion process
-        await insert_data(config, data).catch(err => {catch_errors(err)})
+        // First let us get the provided data's meta data
+        if(!config.metaData) {
+            config.metaData = await get_meta_data(config, data).catch(err => {catch_errors(err)})
+        }
+        // First let us make sure that the table exists or the table is compatible with the new data being inserted
+        await auto_configure_table(config, data).catch(err => {catch_errors(err)})
+        // Now let us insert the data into the table
+        
+
     })
 }
 
@@ -730,5 +750,5 @@ module.exports = {
     auto_alter_table,
     auto_create_table,
     lazy_sql,
-    insert_data
+    auto_configure_table
 }
