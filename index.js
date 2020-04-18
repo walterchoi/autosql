@@ -734,6 +734,9 @@ async function separate_data (config, data) {
 // Stack data into sets of arrays for smaller insert statements
 async function stack_data (config, data) {
     return new Promise ((resolve, reject) => {
+
+        var defaults = require('./config/defaults.json')
+
         // max_insert size determines the largest number of rows to attempt to insert at one time -- defaults to 1000
         var max_insert = defaults.max_insert
         if(config.max_insert) {
@@ -752,16 +755,61 @@ async function stack_data (config, data) {
             max_insert_size = config.max_insert_size
         }
 
-        stacked_data_array = []
-        stacked_data_array_part = []
-        stacked_data_array_part_string = ''
+        if(insert_stack > max_insert) {
+            reject({
+                err: 'invalid configuration was provided',
+                step: 'stack_data',
+                description: 'minimum insert size was larger than maximum insert size',
+                resolution: 'please provide insert_stack value (default 50) in configuration that is smaller than the max_insert value (default 1000)'
+            })
+        }
+
+        // Stacked_data = [stacked_data_groups(1), stacked_data_groups(2) ...] where each data_group will be smaller than the max_insert sizes
+        // Stacked_data_group = [row(1), row(2) ...] where each row is just the object (with headers)
+        // Stacked_data_array_part is just a working array that is used to check sizes per 'insert_stack'
+        var stacked_data = []
+        var stacked_data_group = []
+        var stacked_data_array_part = []
+        var stacked_data_array_group_string = ''
+        var stacked_data_array_part_string = ''
 
         for (var d = 0; d < data.length; d++) {
             var values = Object.values(data[d])
-            console.log(values)
-        }
+            stacked_data_array_part.push(data[d])
+            stacked_data_array_part_string += values.join(', ')
 
+            // Only run checks if minimum stack size has been achieved
+            if(d % insert_stack == 0 || d == data.length -1) {
+
+                var group_str_size = getBinarySize(stacked_data_array_group_string)
+                var group_size = stacked_data_group.length
+                var part_str_size = getBinarySize(stacked_data_array_part_string)
+                var part_size = stacked_data_array_part.length
+                var combined_str_size = group_str_size + part_str_size
+                var combined_array_size = group_size + part_size
+
+                // Check if adding this new (minimum stack) would push this group of data over the maximum insert limits
+                if(combined_str_size < max_insert_size && combined_array_size < max_insert) {
+                    // If it does not, keep adding this to this group
+                    stacked_data_group = stacked_data_group.concat(stacked_data_array_part)
+                    stacked_data_array_group_string += stacked_data_array_part_string
+                    if(d == data.length -1) {
+                        stacked_data.push(stacked_data_group)    
+                    }
+                } else {
+                    // If it does, add the current group to the overall array and start a new group
+                    stacked_data.push(stacked_data_group)
+                    stacked_data_group = stacked_data_array_part
+                    stacked_data_array_group_string = stacked_data_array_part_string
+                }
+            }
+        }
+        resolve(stacked_data)
     })
+}
+
+function getBinarySize (str) {
+    return Buffer.byteLength(str, 'utf8')
 }
 
 async function lazy_sql (config, data) {
