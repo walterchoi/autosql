@@ -175,6 +175,7 @@ async function collate_types (currentType, overallType) {
         }
     }
     if(collated_type) {
+        console.log('overallType: ' + overallType + '\ncurrentType: ' + currentType + '\ncollatedType: ' + collated_type)
         resolve(collated_type)
     } else {
         reject({
