@@ -387,7 +387,11 @@ var exports = {
                    if(isNaN(value)) {
                         values_sql += "`" + value + "`"
                     } else {
-                        values_sql += value
+                        if(value === null) {
+                            values_sql += 'null'
+                        } else {
+                            values_sql += value
+                        }
                     }
                     if(h != headers.length -1) {
                         values_sql += ", "
