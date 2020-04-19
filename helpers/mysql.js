@@ -354,7 +354,6 @@ var exports = {
             var insert_type = config.insert_type
             var metaData = config.headers
 
-            console.log(metaData)
             var headers = []
             metaData.map(header => 
                 headers.push(Object.getOwnPropertyNames(header)[0])
@@ -362,11 +361,17 @@ var exports = {
             var sql_query = `INSERT ${insert_type == 'IGNORE' ? '' : 'IGNORE'} INTO ` + '`' + database + '`.`' + table + '` ' 
             
             var column_sql = "('" + headers.join("', '") + "')"
-            console.log(column_sql)
             var replace_sql = ''
             if(insert_type == 'REPLACE') {
-                
+                replace_sql = 'ON DUPLICATE KEY UPDATE '
+                for (var h = 0; h < headers.length; h++) {
+                    replace_sql += "`" + headers[h] + "`=VALUES(`" + headers[h] + "`)"
+                    if(h != headers.length) {
+                        replace_sql += ", "
+                    }
+                }
             }
+            console.log(replace_sql)
             //resolve(uploadArray)
         })
     }
