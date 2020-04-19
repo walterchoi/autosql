@@ -543,13 +543,17 @@ async function compare_two_headers (old_headers, new_headers) {
     
         // Get list of just column names for both old headers and new heeaderes
         var old_headers_list = []
-        old_headers.map(header => 
-            old_headers_list.push(Object.getOwnPropertyNames(header)[0])
-        )
+        if(old_headers) {
+            old_headers.map(header => 
+                old_headers_list.push(Object.getOwnPropertyNames(header)[0])
+            )
+        }
         var new_headers_list = []
-        new_headers.map(header => 
-            new_headers_list.push(Object.getOwnPropertyNames(header)[0])
-        )
+        if(new_headers) {
+            new_headers.map(header => 
+                new_headers_list.push(Object.getOwnPropertyNames(header)[0])
+            )
+        }
 
         for(var oh = 0; oh < old_headers_list.length; oh++) {
             var column_name = old_headers_list[oh]
