@@ -858,7 +858,7 @@ function sqlize (config, data) {
                 for (var s = 0; s < sqlize.length; s++) {
                     var regex = new RegExp(sqlize[s].regex)
                     var type_req = sqlize[s].type
-                    if(type_req === true || type_req == metaData[headers.findIndex(key)][key].type) {
+                    if(type_req === true || type_req == metaData[headers.findIndex(column => column == key)][key].type) {
                         value = value.replace(regex, sqlize[s].replace)
                         data[d][key = value]
                     }
