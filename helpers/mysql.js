@@ -37,7 +37,6 @@ var exports = {
                 }
                 conn.query(sql_query, async function (err, results) {
                     if (err) {
-                        console.log(err)
                         if(repeat_number) {repeat_number = repeat_number + 1}
                         else {repeat_number = 1}
                         if (repeat_number < max_repeat) {
@@ -60,7 +59,6 @@ var exports = {
                         if(repeat_number > 0) {
                             console.log(sql_query.substring(0,50) + '... errored ' + repeat_number + ' times but completed successfully')
                         }
-                        console.log(results)
                         conn.release()
                         resolve({
                             results: results
