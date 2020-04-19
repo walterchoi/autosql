@@ -6,5 +6,31 @@
     "translate": {
         "boolean": "tinyint",
         "exponent": "double"
-    }
+    },
+    "sqlize": [
+        {
+            "find": "'",
+            "replace": "''",
+            "regex": "/'/gmi",
+            "type": true
+        },
+        {
+            "find": "\\",
+            "replace": "\\\\",
+            "regex": "/\\/gmi",
+            "type": true
+        },
+        {
+            "find": "true",
+            "replace": 1,
+            "regex": "/^true$/gmi",
+            "type": "boolean"
+        },
+        {
+            "find": "false",
+            "replace": 0,
+            "regex": "/^false$/gmi",
+            "type": "boolean"
+        }
+    ]
 }

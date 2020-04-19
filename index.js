@@ -231,8 +231,17 @@ async function initialize_meta_data (headers) {
 }
 
 // This function goes through provided headers to identify indexes or primary keys
-async function predict_indexes (headers, primary_key) {
+async function predict_indexes (config, primary_key) {
     return new Promise((resolve, reject) => {
+        var headers = config.headers
+        
+        // Max key length prevents long strings from becoming a part of a primary key
+        var defaults = require('./config/defaults.json')
+        var max_key_length = defaults.max_key_length
+        if(config.max_key_length) {
+            max_key_length = config.max_key_length
+        }
+        
         var primary_key_found = false
         // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set (indexes).
         var groupings = require('./helpers/groupings.json')
@@ -261,6 +270,7 @@ async function predict_indexes (headers, primary_key) {
                 var header_name = (Object.getOwnPropertyNames(headers[h])[0])
                 if(!headers[h][header_name]['allowNull'] && keys_group.includes(header_name) && 
                 (headers[h][header_name]['unique'] || headers[h][header_name]['pseudounique'])
+                && headers[h][header_name]['length'] < max_key_length
                 ) {
                     headers[h][header_name]['primary'] = true
                 }
@@ -452,7 +462,7 @@ async function get_meta_data (config, data) {
 
         if(auto_indexing) {
             // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
-            headers = await predict_indexes(headers, primary).catch(err => {catch_errors(err)})
+            headers = await predict_indexes(config, primary).catch(err => {catch_errors(err)})
         }
 
         resolve(headers)
@@ -475,7 +485,7 @@ async function auto_create_table (config, meta_data) {
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
         var defaults = require('./config/defaults.json')
 
-        // Set default collation
+        // Set default collation -- defaults to utf8mb4_unicode_ci
         var collation = defaults.collation
 
         // If no config or meta data has been provided, return an error
@@ -698,7 +708,6 @@ async function auto_configure_table (config, data) {
             await auto_alter_table(config, new_meta_data).catch(err => {catch_errors(err)})
             resolve(auto_create_table_results)
         }
-        resolve(null)
     })
 }
 
@@ -721,14 +730,18 @@ async function insert_data (config, data) {
             safe_mode = config.safe_mode
         }
 
+        // Group data into groups of rows for smaller inserts
         var stacked_data = await stack_data(config, data)
+        var insert_statements = []
 
+        data = await sqlize(config, data)
+        
+        for(var s = 0; s < stacked_data.length; s++) {
+            var insert_statement = sql_helper.create_insert_string(config, stacked_data[s])
+            insert_statements.push(insert_statement)
+        }
 
     })
-}
-
-async function separate_data (config, data) {
-    
 }
 
 // Stack data into sets of arrays for smaller insert statements
@@ -737,13 +750,13 @@ async function stack_data (config, data) {
 
         var defaults = require('./config/defaults.json')
 
-        // max_insert size determines the largest number of rows to attempt to insert at one time -- defaults to 1000
+        // max_insert size determines the largest number of rows to attempt to insert at one time -- defaults to 5000
         var max_insert = defaults.max_insert
         if(config.max_insert) {
             max_insert = config.max_insert
         }
 
-        // insert_stack determines the number of rows to attempt to add to insert query before checking if insertion size will exceed query max -- defaults to 50
+        // insert_stack determines the number of rows to attempt to add to insert query before checking if insertion size will exceed query max -- defaults to 100
         var insert_stack = defaults.insert_stack
         if(config.insert_stack) {
             insert_stack = config.insert_stack
@@ -810,6 +823,29 @@ async function stack_data (config, data) {
 
 function getBinarySize (str) {
     return Buffer.byteLength(str, 'utf8')
+}
+
+function sqlize (config, data) {
+    return new Promise(resolve => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
+        var sqlize = sql_lookup_table.sqlize
+        var metaData = config.metaData
+        console.log(metaData)
+    
+        for (var d = 0; d < data.length; d++) {
+            for (key in data[d]) {
+                var value = data[d][key]
+                for (var s = 0; s < sqlize.length; s++) {
+                    var regex = new RegExp(sqlize[s].regex)
+                    var type_req = sqlize[s].type
+                    if(type === true) {
+                        value = value.replace(regex, sqlize[s].replace)
+                    }
+                }
+            }
+        }
+    })
 }
 
 async function lazy_sql (config, data) {
