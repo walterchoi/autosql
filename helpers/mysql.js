@@ -370,7 +370,7 @@ var exports = {
                 replace_sql = 'ON DUPLICATE KEY UPDATE '
                 for (var h = 0; h < headers.length; h++) {
                     replace_sql += "`" + headers[h] + "`=VALUES(`" + headers[h] + "`)"
-                    if(h != headers.length) {
+                    if(h != headers.length - 1) {
                         replace_sql += ", "
                     }
                 }
