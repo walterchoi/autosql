@@ -247,8 +247,6 @@ var exports = {
                 for(var n = 0; n < changed_headers.new.length; n++) {
                     var column_name = Object.getOwnPropertyNames(changed_headers.new[n])[0]
                     var header_data = changed_headers.new[n][column_name]
-                    console.log(column_name)
-                    console.log(header_data)
                 
                     // Set variables required for new column in alter table statement
                     var type = header_data["type"]
@@ -357,10 +355,18 @@ var exports = {
             var metaData = config.headers
 
             console.log(metaData)
+            var headers = []
+            metaData.map(header => 
+                headers.push(Object.getOwnPropertyNames(header)[0])
+            )
             var sql_query = `INSERT ${insert_type == 'IGNORE' ? '' : 'IGNORE'} INTO ` + '`' + database + '`.`' + table + '` ' 
             
-            var column_sql = '('
-            
+            var column_sql = "('" + headers.join("', '") + "')"
+            console.log(column_sql)
+            var replace_sql = ''
+            if(insert_type == 'REPLACE') {
+                
+            }
             //resolve(uploadArray)
         })
     }
