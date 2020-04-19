@@ -349,6 +349,9 @@ var exports = {
     },
     create_insert_string : function (config, data) {
         return new Promise(resolve => {
+            var sql_dialect_lookup_object = require('../config/sql_dialect.json')
+            var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
+
             var database = config.database
             var table = config.table
             var insert_type = config.insert_type
@@ -358,10 +361,11 @@ var exports = {
             metaData.map(header => 
                 headers.push(Object.getOwnPropertyNames(header)[0])
             )
-            var sql_query = `INSERT ${insert_type == 'IGNORE' ? '' : 'IGNORE'} INTO ` + '`' + database + '`.`' + table + '` ' 
             
+            var sql_query = `INSERT ${insert_type == 'IGNORE' ? '' : 'IGNORE'} INTO ` + '`' + database + '`.`' + table + '` ' 
             var column_sql = "('" + headers.join("', '") + "')"
             var replace_sql = ''
+
             if(insert_type == 'REPLACE') {
                 replace_sql = 'ON DUPLICATE KEY UPDATE '
                 for (var h = 0; h < headers.length; h++) {
@@ -371,6 +375,30 @@ var exports = {
                     }
                 }
             }
+
+            var values_sql = "VALUES ("
+            for(var d = 0; d < data.length; d++) {
+                var row = data[d]
+                for(var h = 0; h < headers.length; h++) {
+                    var value = row[headers[h]]
+                   if(typeof value == 'string') {
+                        values_sql += "'" + value + "'"
+                    } else {
+                        values_sql += value
+                    }
+                    if(h != headers.length -1) {
+                        values_sql += ", "
+                    } else {
+                        values_sql += ") "
+                        if(d != data.length -1) {
+                            values_sql += ", ("
+                        }
+                    }
+                }
+            }
+            console.log(sql_query)
+            console.log(column_sql)
+            console.log(values_sql)
             console.log(replace_sql)
             //resolve(uploadArray)
         })
