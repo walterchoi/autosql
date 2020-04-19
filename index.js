@@ -454,6 +454,7 @@ async function get_meta_data (config, data) {
 
         // Find unique or pseudounique columns
         for (var h = 0; h < headers.length; h++) {
+            var header_name = (Object.getOwnPropertyNames(headers[h])[0])
             if(uniqueCheck[headers[h]].size == data.length && data.length > 0 && data.length >= minimum_unique) {
                 headers[h][header_name]['unique'] = true
             }
