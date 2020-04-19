@@ -25,13 +25,13 @@ async function predict_type (data) {
             currentType = 'varchar'
         }
         if(currentType == 'int') {
-            if(data <= 255 || data >= 0) {
+            if(data <= 127 && data >= -128) {
                 currentType = 'tinyint'
-            } else if(data <= 32767 || data >= -32768) {
+            } else if(data <= 32767 && data >= -32768) {
                 currentType = 'smallint'
-            } else if(data <= 2147483647 || data >= -2147483648) {
+            } else if(data <= 2147483647 && data >= -2147483648) {
                 currentType = 'int'
-            } else if(data <= 9223372036854775807 || data >= -9223372036854775808) {
+            } else if(data <= 9223372036854775807 && data >= -9223372036854775808) {
                 currentType = 'bigint'
             } else {
                 currentType = 'varchar'
