@@ -363,7 +363,7 @@ var exports = {
             )
             
             var sql_query = `INSERT ${insert_type == 'IGNORE' ? 'IGNORE' : ''} INTO ` + '`' + database + '`.`' + table + '` ' 
-            var column_sql = "('" + headers.join("', '") + "') "
+            var column_sql = "(`" + headers.join("`, `") + "`) "
             var replace_sql = ''
 
             if(insert_type == 'REPLACE') {
