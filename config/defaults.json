@@ -14,5 +14,5 @@
     "max_insert": 5000,
     "insert_stack": 100,
     "max_insert_size": 1048576,
-    "safe_mode": false
+    "safe_mode": true
 }
