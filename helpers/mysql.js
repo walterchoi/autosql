@@ -396,12 +396,18 @@ var exports = {
                     }
                 }
             }
-            console.log(sql_query)
-            console.log(column_sql)
-            console.log(values_sql)
-            console.log(replace_sql)
-            //resolve(uploadArray)
+            sql_query = sql_query + column_sql + values_sql + replace_sql
+            resolve(sql_query)
         })
+    },
+    start_transaction : function () {
+            return('START TRANSACTION;')
+    },
+    commit : function () {
+        return('COMMIT;')
+    },
+    rollback : function () {
+        return('ROLLBACK;')
     }
 }
 
