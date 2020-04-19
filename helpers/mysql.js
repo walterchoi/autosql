@@ -376,6 +376,9 @@ var exports = {
                 }
             }
 
+            sql_query = sql_query + column_sql
+            column_sql = ''
+
             var values_sql = "VALUES ("
             for(var d = 0; d < data.length; d++) {
                 var row = data[d]
@@ -395,8 +398,10 @@ var exports = {
                         }
                     }
                 }
+                sql_query += values_sql
+                values_sql = ''
             }
-            sql_query = sql_query + column_sql + values_sql + replace_sql
+            sql_query = sql_query + replace_sql
             resolve(sql_query)
         })
     },
