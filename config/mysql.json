@@ -24,13 +24,13 @@
             "find": "true",
             "replace": 1,
             "regex": "/^true$/gmi",
-            "type": "boolean"
+            "type": "tinyint"
         },
         {
             "find": "false",
             "replace": 0,
             "regex": "/^false$/gmi",
-            "type": "boolean"
+            "type": "tinyint"
         }
     ]
 }

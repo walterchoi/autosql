@@ -450,6 +450,8 @@ async function get_meta_data (config, data) {
             }
         }
 
+        config.headers = headers
+
         // Find unique or pseudounique columns
         for (var h = 0; h < headers.length; h++) {
             if(uniqueCheck[headers[h]].size == data.length && data.length > 0 && data.length >= minimum_unique) {
@@ -459,6 +461,8 @@ async function get_meta_data (config, data) {
                 headers[h][header_name]['pseudounique'] = true
             }            
         }
+
+        config.headers = headers
 
         if(auto_indexing) {
             // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
@@ -738,10 +742,9 @@ async function insert_data (config, data) {
         }
 
         // Group data into groups of rows for smaller inserts
+        data = await sqlize(config, data)
         var stacked_data = await stack_data(config, data)
         var insert_statements = []
-
-        data = await sqlize(config, data)
         
         for(var s = 0; s < stacked_data.length; s++) {
             var insert_statement = sql_helper.create_insert_string(config, stacked_data[s])
@@ -832,26 +835,37 @@ function getBinarySize (str) {
     return Buffer.byteLength(str, 'utf8')
 }
 
+// Function to handle special characters such as ' or \ and replace with '' or \\
+// And to handle columns that do not exist in certain rows, and add NULL to them
 function sqlize (config, data) {
     return new Promise(resolve => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
         var sqlize = sql_lookup_table.sqlize
         var metaData = config.metaData
-        console.log(metaData)
+        var headers = []
+        metaData.map(header => 
+            headers.push(Object.getOwnPropertyNames(header)[0])
+        )
     
         for (var d = 0; d < data.length; d++) {
             for (key in data[d]) {
                 var value = data[d][key]
+                if(value === undefined) {
+                    value = null
+                    data[d][key] = value
+                }
                 for (var s = 0; s < sqlize.length; s++) {
                     var regex = new RegExp(sqlize[s].regex)
                     var type_req = sqlize[s].type
-                    if(type === true) {
+                    if(type_req === true || type_req == metaData[headers.findIndex(key)][key].type) {
                         value = value.replace(regex, sqlize[s].replace)
+                        data[d][key = value]
                     }
                 }
             }
         }
+        resolve(data)
     })
 }
 

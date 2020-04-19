@@ -124,7 +124,7 @@ var exports = {
             var table = config.table;
             var collation = config.collation;
 
-            var create_table_sql = "CREATE TABLE IF NOT EXISTS " + database + ".`" + table + "` (\n"
+            var create_table_sql = "CREATE TABLE IF NOT EXISTS `" + database + "`.`" + table + "` (\n"
     
             var primary_sql_part = null
             var create_table_sql_part = null
@@ -351,38 +351,17 @@ var exports = {
     },
     create_insert_string : function (config, data) {
         return new Promise(resolve => {
-            var uploadArray = []
-            for (row in rows) {
-                var columnStr = '';
-                var valuesStr = '';
-                for (column in rows[row]) {
-                    if(table_fields.length > 0) {
-                        for (var i = 0; i < table_fields.length; i++) {
-                            if(column == table_fields[i]) {
-                                if (columnStr != '') {
-                                    columnStr = columnStr + ', ' + "`" + column + "`"
-                                    valuesStr = valuesStr + ', ' + "'" + rows[row][column] + "'"
-                                } else {
-                                    columnStr = "`" + column + "`"
-                                    valuesStr = "'" + rows[row][column] + "'"
-                                }
-                            }
-                        }
-                    } 
-                    else {
-                        if (columnStr != '') {
-                            columnStr = columnStr + ', ' + "`" + column + "`"
-                            valuesStr = valuesStr + ', ' + "'" + rows[row][column] + "'"
-                        } else {
-                            columnStr = "`" + column + "`"
-                            valuesStr = "'" + rows[row][column] + "'"
-                        }
-                    }
-                }
-                var uploadStr = 'INSERT INTO ' + database + '.' + table + ' (' + columnStr + ')' + ' VALUES (' + valuesStr + ')'
-                uploadArray.push(uploadStr)
-            }
-            resolve(uploadArray)
+            var database = config.database
+            var table = config.table
+            var insert_type = config.insert_type
+            var metaData = config.headers
+
+            console.log(metaData)
+            var sql_query = `INSERT ${insert_type == 'IGNORE' ? '' : 'IGNORE'} INTO ` + '`' + database + '`.`' + table + '` ' 
+            
+            var column_sql = '('
+            
+            //resolve(uploadArray)
         })
     }
 }
