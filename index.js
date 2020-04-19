@@ -733,6 +733,8 @@ async function insert_data (config, data) {
         var insert_type = defaults.insert_type
         if(config.insert_type) {
             insert_type = config.insert_type
+        } else {
+            config = config.insert_type
         }
 
         // Safe mode determines if the insert statement relies on autocommit or uses a rollback on failure -- defaults to true
