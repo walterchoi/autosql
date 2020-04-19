@@ -768,10 +768,12 @@ async function insert_data (config, data) {
             var commit = sql_helper.commit()
             await sql_helper.run_query(config.connection, commit).catch(err => {reject(await reject(await catch_errors(err)))})
         }
-        if(safe_mode && query_errors.length != 0) {
+        else if(safe_mode && query_errors.length != 0) {
             var rollback = sql_helper.rollback()
             await sql_helper.run_query(config.connection, rollback).catch(err => {reject(await catch_errors(err))})
+            reject(query_errors)
         }
+        resolve(query_results)
     })
 }
 
@@ -896,6 +898,7 @@ function sqlize (config, data) {
 
 async function lazy_sql (config, data) {
     return new Promise (async (resolve, reject) => {
+        var start_time = new Date()
         if(!config) {
             reject({
                 err: 'no configuration was set on automatic mode',
@@ -945,7 +948,11 @@ async function lazy_sql (config, data) {
         await auto_configure_table(config, data).catch(err => {reject(await catch_errors(err))})
         // Now let us insert the data into the table
         await insert_data(config, data).catch(err => {reject(await catch_errors(err))})
-
+        var completion_time = new Date()
+        resolve({
+            start: start_time,
+            end: completion_time
+        })
     })
 }
 
