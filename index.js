@@ -516,6 +516,9 @@ async function auto_alter_table (config, new_headers) {
     return new Promise (async (resolve, reject) => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+        if(!new_headers && config.metaData) {
+            new_headers = config.metaData
+        }
 
         var get_table_description_sql = sql_helper.get_table_description(config)
         table_description = await sql_helper.run_query(config.connection, get_table_description_sql).catch(err => catch_errors)
