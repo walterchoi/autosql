@@ -385,9 +385,9 @@ var exports = {
                 for(var h = 0; h < headers.length; h++) {
                     var value = row[headers[h]]
                    if(isNaN(value)) {
-                        values_sql += "`" + value + "`"
+                        values_sql += "'" + value + "'"
                     } else {
-                        if(value === null) {
+                        if(value === null || value == '') {
                             values_sql += 'null'
                         } else {
                             values_sql += value
