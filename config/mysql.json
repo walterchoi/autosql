@@ -11,7 +11,7 @@
         {
             "find": "'",
             "replace": "''",
-            "regex": "/'/gmi",
+            "regex": "'",
             "type": true
         },
         {
