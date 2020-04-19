@@ -749,7 +749,7 @@ async function insert_data (config, data) {
         var insert_statements = []
         
         for(var s = 0; s < stacked_data.length; s++) {
-            var insert_statement = sql_helper.create_insert_string(config, stacked_data[s])
+            var insert_statement = await sql_helper.create_insert_string(config, stacked_data[s])
             insert_statements.push(insert_statement)
         }
 
