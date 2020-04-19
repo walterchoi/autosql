@@ -363,7 +363,7 @@ var exports = {
             )
             
             var sql_query = `INSERT ${insert_type == 'IGNORE' ? 'IGNORE' : ''} INTO ` + '`' + database + '`.`' + table + '` ' 
-            var column_sql = "('" + headers.join("', '") + "')"
+            var column_sql = "('" + headers.join("', '") + "') "
             var replace_sql = ''
 
             if(insert_type == 'REPLACE') {
@@ -379,13 +379,13 @@ var exports = {
             sql_query = sql_query + column_sql
             column_sql = ''
 
-            var values_sql = "VALUES ("
+            var values_sql = " VALUES ("
             for(var d = 0; d < data.length; d++) {
                 var row = data[d]
                 for(var h = 0; h < headers.length; h++) {
                     var value = row[headers[h]]
                    if(isNaN(value)) {
-                        values_sql += "'" + value + "'"
+                        values_sql += "`" + value + "`"
                     } else {
                         values_sql += value
                     }
