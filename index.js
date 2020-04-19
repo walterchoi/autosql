@@ -759,7 +759,7 @@ async function insert_data (config, data) {
         }
         var query_results = []
         for(var s = 0; s < insert_statements.length; s++) {
-            var query_result = sql_helper.run_query(config.connection, insert_statements[s]).catch(err => {catch_errors(err)})
+            var query_result = await sql_helper.run_query(config.connection, insert_statements[s]).catch(err => {catch_errors(err)})
             query_results.push(query_results)
         }
         console.log(query_results)
