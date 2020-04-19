@@ -424,9 +424,9 @@ async function get_meta_data (config, data) {
                     headers[h][header_name]['allowNull'] = true
                 } else {
                     // Else attempt to 
-                    var currentType = await predict_type(dataPoint).catch(err => {catch_errors(err)})
+                    var currentType = await predict_type(dataPoint).catch(err => {reject(await catch_errors(err))})
                     if(currentType != overallType) {
-                        var new_type = await collate_types(currentType, overallType).catch(err => {catch_errors(err)})
+                        var new_type = await collate_types(currentType, overallType).catch(err => {reject(await catch_errors(err))})
                         headers[h][header_name]['type'] = new_type
                     }
                     if(sql_lookup_table.decimals.includes(headers[h][header_name]['type'])) {
@@ -467,7 +467,7 @@ async function get_meta_data (config, data) {
 
         if(auto_indexing) {
             // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
-            headers = await predict_indexes(config, primary).catch(err => {catch_errors(err)})
+            headers = await predict_indexes(config, primary).catch(err => {reject(await catch_errors(err))})
         }
 
         resolve(headers)
@@ -505,8 +505,8 @@ async function auto_create_table (config, meta_data) {
             }
 
         if(config.collation) {collation = config.collation}
-        create_table_sql = await sql_helper.create_table(config, meta_data).catch(err => {catch_errors(err)})
-        create_table = await sql_helper.run_query(config.connection, create_table_sql).catch(err => {catch_errors(err)})
+        create_table_sql = await sql_helper.create_table(config, meta_data).catch(err => {reject(await catch_errors(err))})
+        create_table = await sql_helper.run_query(config.connection, create_table_sql).catch(err => {reject(await catch_errors(err))})
         resolve(create_table.results)
     })
 }
@@ -591,7 +591,7 @@ async function compare_two_headers (old_headers, new_headers) {
                 }
                 // If the types do not match, find the new collated type
                 if(new_header_obj.type != old_header_obj.type) {
-                    var collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {catch_errors(err)})
+                    var collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {reject(await catch_errors(err))})
                     if(collated_type != old_header_obj.type) {
                         changes.type = collated_type
                         changes["length"] = old_header_obj["length"]
@@ -706,7 +706,7 @@ async function auto_configure_table (config, data) {
         
         // Get provided data's meta data
         if(!config.metaData) {
-            var new_meta_data = await get_meta_data(config, data).catch(err => {catch_errors(err)})
+            var new_meta_data = await get_meta_data(config, data).catch(err => {reject(await catch_errors(err))})
             config.metaData = new_meta_data
         } else {
             var new_meta_data = config.metaData
@@ -714,10 +714,10 @@ async function auto_configure_table (config, data) {
 
         // Now that the meta data associated with this data has been found, 
         if(config.create_table) {
-            var auto_create_table_results = await auto_create_table(config, new_meta_data).catch(err => {catch_errors(err)})
+            var auto_create_table_results = await auto_create_table(config, new_meta_data).catch(err => {reject(await catch_errors(err))})
             resolve(auto_create_table_results)
         } else {
-            await auto_alter_table(config, new_meta_data).catch(err => {catch_errors(err)})
+            await auto_alter_table(config, new_meta_data).catch(err => {reject(await catch_errors(err))})
             resolve(auto_create_table_results)
         }
     })
@@ -756,17 +756,21 @@ async function insert_data (config, data) {
 
         if(safe_mode) {
             var start = sql_helper.start_transaction()
-            await sql_helper.run_query(config.connection, start).catch(err => {catch_errors(err)})
+            await sql_helper.run_query(config.connection, start).catch(err => {reject(await catch_errors(err))})
         }
         var query_results = []
+        var query_errors = []
         for(var s = 0; s < insert_statements.length; s++) {
-            var query_result = await sql_helper.run_query(config.connection, insert_statements[s]).catch(err => {catch_errors(err)})
+            var query_result = await sql_helper.run_query(config.connection, insert_statements[s]).catch(err => {query_errors.push(err)})
             query_results.push(query_result)
         }
-        console.log(query_results)
-        if(safe_mode) {
+        if(safe_mode && query_errors.length == 0) {
             var commit = sql_helper.commit()
-            await sql_helper.run_query(config.connection, commit).catch(err => {catch_errors(err)})
+            await sql_helper.run_query(config.connection, commit).catch(err => {reject(await reject(await catch_errors(err)))})
+        }
+        if(safe_mode && query_errors.length != 0) {
+            var rollback = sql_helper.rollback()
+            await sql_helper.run_query(config.connection, rollback).catch(err => {reject(await catch_errors(err))})
         }
     })
 }
@@ -929,24 +933,27 @@ async function lazy_sql (config, data) {
 
         // Establish a connection to the database (if no )
         if(!config.connection) {
-            config.connection = await sql_helper.establish_connection(config).catch(err => {catch_errors(err)})
+            config.connection = await sql_helper.establish_connection(config).catch(err => {reject(await catch_errors(err))})
         }
 
         // From here begins the actual data insertion process
         // First let us get the provided data's meta data
         if(!config.metaData) {
-            config.metaData = await get_meta_data(config, data).catch(err => {catch_errors(err)})
+            config.metaData = await get_meta_data(config, data).catch(err => {reject(await catch_errors(err))})
         }
         // First let us make sure that the table exists or the table is compatible with the new data being inserted
-        await auto_configure_table(config, data).catch(err => {catch_errors(err)})
+        await auto_configure_table(config, data).catch(err => {reject(await catch_errors(err))})
         // Now let us insert the data into the table
-        await insert_data(config, data).catch(err => {catch_errors(err)})
+        await insert_data(config, data).catch(err => {reject(await catch_errors(err))})
 
     })
 }
 
 catch_errors = async function (err) {
-
+    return new Promise(resolve => {
+        console.log(err)
+        resolve(err)
+    })
 }
 
 module.exports = {
