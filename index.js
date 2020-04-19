@@ -849,18 +849,20 @@ function sqlize (config, data) {
         )
     
         for (var d = 0; d < data.length; d++) {
-            for (key in data[d]) {
-                var value = data[d][key]
+            var row = data[d]
+            for (key in row) {
+                var value = row[key]
                 if(value === undefined) {
                     value = null
                     data[d][key] = value
                 }
+                var index = headers.findIndex(column => column == key)
                 for (var s = 0; s < sqlize.length; s++) {
                     var regex = new RegExp(sqlize[s].regex)
                     var type_req = sqlize[s].type
-                    if(type_req === true || type_req == metaData[headers.findIndex(column => column == key)][key].type) {
+                    if(type_req === true || metaData[index][key]["type"] == type_req) {
                         value = value.replace(regex, sqlize[s].replace)
-                        data[d][key = value]
+                        data[d][key] = value
                     }
                 }
             }
