@@ -839,7 +839,9 @@ async function stack_data (config, data) {
                     // If it does, add the current group to the overall array and start a new group
                     stacked_data.push(stacked_data_group)
                     stacked_data_group = stacked_data_array_part
+                    stacked_data_array_part = []
                     stacked_data_array_group_string = stacked_data_array_part_string
+                    stacked_data_array_part_string = ''
                 }
             }
         }
