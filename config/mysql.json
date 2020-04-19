@@ -31,6 +31,12 @@
             "replace": 0,
             "regex": "/^false$/gmi",
             "type": "tinyint"
+        },
+        {
+            "find": ",",
+            "replace": "",
+            "regex": "/,/gmi",
+            "type": ["binary", "tinyint", "smallint", "int", "bigint", "decimal"]
         }
     ]
 }

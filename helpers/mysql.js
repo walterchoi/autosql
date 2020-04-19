@@ -381,9 +381,7 @@ var exports = {
                 var row = data[d]
                 for(var h = 0; h < headers.length; h++) {
                     var value = row[headers[h]]
-                    console.log(value)
-                    console.log(typeof value)
-                   if(typeof value == 'string') {
+                   if(isNaN(value)) {
                         values_sql += "'" + value + "'"
                     } else {
                         values_sql += value
