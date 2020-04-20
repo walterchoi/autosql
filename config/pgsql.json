@@ -34,16 +34,16 @@
             "type": true
         },
         {
-            "find": "true",
-            "replace": 1,
-            "regex": "/^true$/gmi",
-            "type": "tinyint"
+            "find": "1",
+            "replace": true,
+            "regex": "^1$",
+            "type": "boolean"
         },
         {
-            "find": "false",
-            "replace": 0,
-            "regex": "/^false$/gmi",
-            "type": "tinyint"
+            "find": "0",
+            "replace": false,
+            "regex": "^0$",
+            "type": "boolean"
         },
         {
             "find": ",",

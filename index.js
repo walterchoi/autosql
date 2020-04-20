@@ -442,11 +442,11 @@ async function get_meta_data (config, data) {
                     }
                     if(sql_lookup_table.decimals.includes(headers[h][header_name]['type'])) {
                         if(Math.floor(dataPoint) == dataPoint) {var decimal_len = 0}
-                        else {var decimal_len = dataPoint.toString().split(".")[1].length}
+                        else {var decimal_len = dataPoint.toString().split(".")[1].length + 1}
                         
                         if(headers[h][header_name]['decimal']) {
                             if(decimal_len > headers[h][header_name]['decimal']) {
-                                headers[h][header_name]['decimal'] = decimal_len    
+                                headers[h][header_name]['decimal'] = decimal_len  
                             }
                         } else {
                             headers[h][header_name]['decimal'] = decimal_len
@@ -454,6 +454,9 @@ async function get_meta_data (config, data) {
                     }
                     var len = dataPoint.length
                     var curLen = headers[h][header_name]['length']
+                    if(headers[h][header_name]['decimal']) {
+                        var len = dataPoint.length + 1
+                    }
                     if (len > curLen) {
                         headers[h][header_name]['length'] = len
                     }
@@ -612,7 +615,7 @@ async function compare_two_headers (old_headers, new_headers) {
                     }
                 }
 
-                if(sql_lookup_table.no_length.includes(collated_type)) {
+                if(!sql_lookup_table.no_length.includes(collated_type)) {
                     if(new_header_obj["length"] > old_header_obj["length"]) {
                         changes["length"] = new_header_obj["length"]
                         changes.changed = true
@@ -779,6 +782,13 @@ async function insert_data (config, data) {
             config.insert_type = insert_type
         }
 
+        // If this is a REPLACE type insert, check for Primary Keys -- only needed for pgsql
+        if(insert_type == 'REPLACE' && config.sql_dialect == 'pgsql' && !config.keys) {
+            var constraints_sql = sql_helper.find_constraint(config)
+            var constraints = await run_sql_query(config, constraints_sql).catch(err => {reject(catch_errors(err))})
+            config.keys = constraints[0].results[0].constraint_name
+        }
+
         // Safe mode determines if the insert statement relies on autocommit or uses a rollback on failure -- defaults to true
         var safe_mode = defaults.safe_mode
         if(config.safe_mode) {
@@ -791,7 +801,7 @@ async function insert_data (config, data) {
         var insert_statements = []
         
         for(var s = 0; s < stacked_data.length; s++) {
-            var insert_statement = await sql_helper.create_insert_string(config, stacked_data[s])
+            var insert_statement = await sql_helper.create_insert_string(config, stacked_data[s]).catch(err => {reject(catch_errors(err))})
             insert_statements.push(insert_statement)
         }
 

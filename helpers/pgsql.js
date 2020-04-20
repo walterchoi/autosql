@@ -416,6 +416,94 @@ var exports = {
                 resolve(sql_query)
             }
         })  
+    },
+    create_insert_string : function (config, data) {
+        return new Promise((resolve, reject) => {
+            var sql_dialect_lookup_object = require('../config/sql_dialect.json')
+            var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
+
+            var database = config.database
+            var table = config.table
+            var insert_type = config.insert_type
+            var metaData = config.headers
+
+            var headers = []
+            metaData.map(header => 
+                headers.push(Object.getOwnPropertyNames(header)[0])
+            )
+            
+            var sql_query = `INSERT ${insert_type == 'IGNORE' ? 'IGNORE' : ''} INTO "` + database + `"."` + table + `" ` 
+            var column_sql = `("` + headers.join(`", "`) + `") `
+            var replace_sql = ''
+
+            if(insert_type == 'REPLACE') {
+                var keys = config.keys
+                if(!keys) {
+                    reject({
+                        err: 'No unique or primary key columns was provided for REPLACE type insert',
+                        step: 'create_insert_string (pgsql variant)',
+                        description: 'at least one primary key or unique constraint index is required for a REPLACE type insert for pgsql',
+                        resolution: `please set one primary or unique constraint to table: ${table} and provide this within the config in either 'key' values`
+                    })
+                }
+                replace_sql = 'ON CONFLICT ON CONSTRAINT ' + `"` + keys + `" \n` + 'DO UPDATE SET '
+                for (var h = 0; h < headers.length; h++) {
+                    replace_sql += `"` + headers[h] + `"= excluded."` + headers[h] + `" `
+                    if(h != headers.length - 1) {
+                        replace_sql += ", "
+                    }
+                }
+            }
+
+            sql_query = sql_query + column_sql
+            column_sql = ''
+
+            var values_sql = " VALUES ("
+            for(var d = 0; d < data.length; d++) {
+                var row = data[d]
+                for(var h = 0; h < headers.length; h++) {
+                    var value = row[headers[h]]
+                   if(isNaN(value)) {
+                        values_sql += "'" + value + "'"
+                    } else {
+                        if(value === null || value == '') {
+                            values_sql += 'null'
+                        } else {
+                            values_sql += value
+                        }
+                    }
+                    if(h != headers.length -1) {
+                        values_sql += ", "
+                    } else {
+                        values_sql += ") "
+                        if(d != data.length -1) {
+                            values_sql += ", ("
+                        }
+                    }
+                }
+                sql_query += values_sql
+                values_sql = ''
+            }
+            sql_query = sql_query + replace_sql
+            resolve(sql_query)
+        })
+    },
+    find_constraint : function (config) {
+        var sql_query = `SELECT constraint_name FROM 
+        information_schema.table_constraints 
+        WHERE CONSTRAINT_SCHEMA = '${config.database}'
+        AND TABLE_NAME = '${config.table}'
+        AND constraint_type = 'PRIMARY KEY'`
+        return sql_query
+    },
+    start_transaction : function () {
+        return('START TRANSACTION;')
+    },
+    commit : function () {
+        return('COMMIT;')
+    },
+    rollback : function () {
+        return('ROLLBACK;')
     }
 }
 
