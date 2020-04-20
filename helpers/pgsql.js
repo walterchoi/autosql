@@ -53,7 +53,7 @@ var exports = {
                     if(repeat_number) {repeat_number = repeat_number + 1}
                         else {repeat_number = 1}
                         if (repeat_number < max_repeat) {
-                            var nested_query = await exports.run_query(pool, sql_query, repeat_number)
+                            var nested_query = await exports.run_query(config, sql_query, repeat_number)
                             if(!nested_query.err) {resolve ({err: nested_query.err, 
                                 results: nested_query.results
                             })}
@@ -179,7 +179,7 @@ var exports = {
     
                 // If index is true then make column into an indexed column (separate query done later)
                 if(index === true) {
-                    index_create_sql += `CREATE INDEX CONCURRENTLY "${table + '_' + column_name}" ON "${table}" ("${column_name}");\n`
+                    index_create_sql += `CREATE INDEX "${table + '_' + column_name}" ON "${table}" ("${column_name}");\n`
                 }
 
                 // If auto_increment is true then make column into an auto_incremental column (separate query done later)

@@ -853,6 +853,7 @@ async function run_sql_query (config, sql_query) {
         var query_results = []
         var query_errors = []
         var safe_mode = config.safe_mode
+        // Pass 'DISABLE_SAFE_MODE into the SQL queries array if you wish to turn off safe mode for single queries irregardless of the config
         if(Array.isArray(sql_query)) {
             if(sql_query.includes('DISABLE_SAFE_MODE')) {
                 sql_query.splice(sql_query.findIndex('DISABLE_SAFE_MODE'),1)
