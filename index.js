@@ -506,7 +506,7 @@ async function auto_create_table (config, meta_data) {
 
         if(config.collation) {collation = config.collation}
         create_table_sql = await sql_helper.create_table(config, meta_data).catch(err => {reject(catch_errors(err))})
-        create_table = await sql_helper.run_query(config.connection, create_table_sql).catch(err => {reject(catch_errors(err))})
+        create_table = await run_sql_query(config, create_table_sql).catch(err => {reject(catch_errors(err))})
         resolve(create_table.results)
     })
 }
@@ -526,11 +526,11 @@ async function auto_alter_table (config, new_headers) {
         }
 
         var get_table_description_sql = sql_helper.get_table_description(config)
-        table_description = await sql_helper.run_query(config.connection, get_table_description_sql).catch(err => catch_errors)
+        table_description = await run_sql_query(config, get_table_description_sql).catch(err => catch_errors)
         var old_headers = await convert_table_description(table_description)
         var table_changes = await compare_two_headers(old_headers, new_headers).catch(err => catch_errors)
         table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors)
-        altered_table = await sql_helper.run_query(config.connection, table_alter_sql).catch(err => catch_errors)
+        altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors)
         resolve(altered_table)
     })
 }
@@ -689,10 +689,10 @@ async function auto_configure_table (config, data) {
 
         // Check if the target schema exists
         var check_database_sql = sql_helper.check_database_exists(config)
-        check_database_results = await sql_helper.run_query(config.connection, check_database_sql).catch(err => catch_errors)
+        var check_database_results = await run_sql_query(config, check_database_sql).catch(err => {reject(catch_errors(err))})
         if (check_database_results.results[0][config.database] == 0) {
             create_database_sql = sql_helper.create_database(config)
-            create_database = await sql_helper.run_query(config.connection, create_database_sql).catch(err => catch_errors)
+            create_database = await run_sql_query(config, create_database_sql).catch(err => {reject(catch_errors(err))})
             // As this database is new, always create the tables regardless of current set option
             config.create_table = true
         }
@@ -700,7 +700,7 @@ async function auto_configure_table (config, data) {
         // If create_tables is set to true, then don't bother checking if the table exists else, check if table exists (and overwrite create_tables)
         if(!config.create_table) {
             check_tables_sql = sql_helper.check_tables_exists(config)
-            check_tables_results = await sql_helper.run_query(config.connection, check_tables_sql).catch(err => catch_errors)
+            check_tables_results = await run_sql_query(config, check_tables_sql).catch(err => catch_errors)
             if(check_tables_results.results[0][config.table] == 0) {config.create_table = true}
         }
         
@@ -754,26 +754,9 @@ async function insert_data (config, data) {
             insert_statements.push(insert_statement)
         }
 
-        if(safe_mode) {
-            var start = sql_helper.start_transaction()
-            await sql_helper.run_query(config.connection, start).catch(err => {reject(catch_errors(err))})
-        }
-        var query_results = []
-        var query_errors = []
-        for(var s = 0; s < insert_statements.length; s++) {
-            var query_result = await sql_helper.run_query(config.connection, insert_statements[s]).catch(err => {query_errors.push(err)})
-            query_results.push(query_result)
-        }
-        if(safe_mode && query_errors.length == 0) {
-            var commit = sql_helper.commit()
-            await sql_helper.run_query(config.connection, commit).catch(err => {reject(catch_errors(err))})
-        }
-        else if(safe_mode && query_errors.length != 0) {
-            var rollback = sql_helper.rollback()
-            await sql_helper.run_query(config.connection, rollback).catch(err => {reject(catch_errors(err))})
-            reject(query_errors)
-        }
-        resolve(query_results)
+        var query_result = await run_sql_query(config, insert_statements).catch(err => {reject(catch_errors(err))})
+        
+        resolve(query_result)
     })
 }
 
@@ -858,6 +841,48 @@ async function stack_data (config, data) {
 
 function getBinarySize (str) {
     return Buffer.byteLength(str, 'utf8')
+}
+
+// Function to run SQL queries - and run single or arrays of queries with/without transactions
+async function run_sql_query (config, sql_query) {
+    return new Promise ((resolve, reject) => {
+
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+
+        var query_results = []
+        var query_errors = []
+        if(config.safe_mode) {
+            var start = sql_helper.start_transaction()
+            await sql_helper.run_query(config, start).catch(err => {reject(catch_errors(err))})
+        }
+    
+        if(sql_query.isArray()) {
+            for(var sql = 0; sql < sql_query.length; sql++) {
+                var query_result = await sql_helper.run_query(config, insert_statements[sql]).catch(err => {query_errors.push(err)})
+                query_results.push(query_result)
+            }
+        } else {
+            var query_result = await sql_helper.run_query(config, insert_statements).catch(err => {query_errors.push(err)})
+                query_results.push(query_result)
+        }
+
+        if(safe_mode && query_errors.length == 0) {
+            var commit = sql_helper.commit()
+            await sql_helper.run_query(config, commit).catch(err => {reject(catch_errors(err))})
+            resolve(query_results)
+        }
+        else if(safe_mode && query_errors.length != 0) {
+            var rollback = sql_helper.rollback()
+            await sql_helper.run_query(config, rollback).catch(err => {reject(catch_errors(err))})
+            reject(query_errors)
+        }
+        if (!safe_mode && query_errors.length == 0) {
+            resolve(query_results)
+        } else {
+            reject(query_errors)
+        }
+    })
 }
 
 // Function to handle special characters such as ' or \ and replace with '' or \\

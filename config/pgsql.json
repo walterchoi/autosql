@@ -1,10 +1,10 @@
 {
-    "require_length": ["varchar", "binary", "decimal"],
-    "optional_length": ["boolean", "tinyint", "smallint", "int", "bigint"],
-    "no_length": ["date", "time", "datetime", "json", "text", "mediumtext", "longtext", "exponent", "double"],
+    "require_length": [],
+    "optional_length": ["varchar"],
+    "no_length": ["date", "time", "datetime", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "int", "bigint", "boolean"],
     "decimals": ["exponent", "double", "decimal"],
     "translate": {
-        "boolean": "tinyint",
+        "tinyint": "smallint",
         "exponent": "double"
     },
     "sqlize": [
@@ -12,6 +12,18 @@
             "find": "'",
             "replace": "''",
             "regex": "'",
+            "type": true
+        },
+        {
+            "find": "%",
+            "replace": "\\%",
+            "regex": "/%/gmi",
+            "type": true
+        },
+        {
+            "find": "_",
+            "replace": "\\_",
+            "regex": "/_/gmi",
             "type": true
         },
         {
