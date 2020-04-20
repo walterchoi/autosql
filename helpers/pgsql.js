@@ -34,7 +34,6 @@ var exports = {
             var pool = config.connection
             // Automatically retry each query up to 25 times before erroring out
             if(!max_repeat) {max_repeat = 25}
-            console.log(sql_query)
             pool.connect()
             .then(client => {
                 return client
@@ -99,7 +98,6 @@ var exports = {
     check_tables_exists : function (config) {
         var database = config.database;
         var table = config.table;
-        console.log(table)
         var sql_query_part = ""
         // Handle multiple tables being provided as an array
         if(table.isArray) {

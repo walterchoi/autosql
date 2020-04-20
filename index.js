@@ -783,10 +783,12 @@ async function insert_data (config, data) {
         }
 
         // If this is a REPLACE type insert, check for Primary Keys -- only needed for pgsql
-        if(insert_type == 'REPLACE' && config.sql_dialect == 'pgsql' && !config.keys) {
+        if(config.sql_dialect == 'pgsql' && !config.keys) {
             var constraints_sql = sql_helper.find_constraint(config)
             var constraints = await run_sql_query(config, constraints_sql).catch(err => {reject(catch_errors(err))})
-            config.keys = constraints[0].results[0].constraint_name
+            if(constraints[0].results[0]) {
+                config.keys = constraints[0].results[0].constraint_name
+            }
         }
 
         // Safe mode determines if the insert statement relies on autocommit or uses a rollback on failure -- defaults to true
