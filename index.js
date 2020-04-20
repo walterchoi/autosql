@@ -859,11 +859,11 @@ async function run_sql_query (config, sql_query) {
     
         if(sql_query.isArray) {
             for(var sql = 0; sql < sql_query.length; sql++) {
-                var query_result = await sql_helper.run_query(config, insert_statements[sql]).catch(err => {query_errors.push(err)})
+                var query_result = await sql_helper.run_query(config, sql_query[sql]).catch(err => {query_errors.push(err)})
                 query_results.push(query_result)
             }
         } else {
-            var query_result = await sql_helper.run_query(config, insert_statements).catch(err => {query_errors.push(err)})
+            var query_result = await sql_helper.run_query(config, sql_query).catch(err => {query_errors.push(err)})
                 query_results.push(query_result)
         }
 
