@@ -983,14 +983,14 @@ function sqlize (config, data) {
     })
 }
 
-async function lazy_sql (config, data) {
+async function auto_sql (config, data) {
     return new Promise (async (resolve, reject) => {
         var start_time = new Date()
         if(!config) {
             reject({
                 err: 'no configuration was set on automatic mode',
-                step: 'lazy_sql',
-                description: 'invalid configuration object provided to lazy_sql automated step',
+                step: 'auto_sql',
+                description: 'invalid configuration object provided to auto_sql automated step',
                 resolution: 'please provide configuration object, additional details can be found in the documentation'
             })
         }
@@ -1002,8 +1002,8 @@ async function lazy_sql (config, data) {
         if(!config.sql_dialect || !config.database || !config.table) {
             reject({
                 err: 'required configuration options not set on automatic mode',
-                step: 'lazy_sql',
-                description: 'invalid configuration object provided to lazy_sql automated step',
+                step: 'auto_sql',
+                description: 'invalid configuration object provided to auto_sql automated step',
                 resolution: `please provide supported value for ${!config.sql_dialect ? 'sql_dialect' : ''} ${!config.database ? 'database (target database)' : ''}
                 ${!config.table ? 'table (target table)' : ''} in configuration object, additional details can be found in the documentation`
             })
@@ -1013,8 +1013,8 @@ async function lazy_sql (config, data) {
         if(!sql_dialect_lookup_object[config.sql_dialect]) {
             reject({
                 err: 'no supported sql dialect was set on automatic mode',
-                step: 'lazy_sql',
-                description: 'invalid configuration object provided to lazy_sql automated step',
+                step: 'auto_sql',
+                description: 'invalid configuration object provided to auto_sql automated step',
                 resolution: 'please provide supported sql_dialect value in configuration object, additional details can be found in the documentation'
             })
         }
@@ -1057,7 +1057,7 @@ module.exports = {
     predict_indexes,
     auto_alter_table,
     auto_create_table,
-    lazy_sql,
+    auto_sql,
     auto_configure_table,
     insert_data
 }

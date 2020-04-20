@@ -12,17 +12,19 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/walterchoi/Lazy_SQL.git"
+    "url": "git+https://github.com/walterchoi/autosql.git"
   },
   "keywords": [
     "MySQL",
+    "PGSQL",
     "automation",
+    "laziness",
     "JSON"
   ],
   "author": "Walter Choi",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/walterchoi/Lazy_SQL/issues"
+    "url": "https://github.com/walterchoi/autosql/issues"
   },
-  "homepage": "https://github.com/walterchoi/Lazy_SQL#readme"
+  "homepage": "https://github.com/walterchoi/autosql#readme"
 }
