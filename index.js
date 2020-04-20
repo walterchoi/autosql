@@ -537,11 +537,11 @@ async function auto_alter_table (config, new_headers) {
         }
 
         var get_table_description_sql = sql_helper.get_table_description(config)
-        table_description = await run_sql_query(config, get_table_description_sql).catch(err => catch_errors)
+        table_description = await run_sql_query(config, get_table_description_sql).catch(err => catch_errors(err))
         var old_headers = await convert_table_description(table_description)
-        var table_changes = await compare_two_headers(old_headers, new_headers).catch(err => catch_errors)
-        table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors)
-        altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors)
+        var table_changes = await compare_two_headers(old_headers, new_headers).catch(err => catch_errors(err))
+        table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors(err))
+        altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors(err))
         resolve(altered_table)
     })
 }
@@ -682,6 +682,8 @@ function changeKeysToUpper(obj) {
 
 // Translate description provided by SQL server into header object used by this repository
 async function convert_table_description (table_description) {
+    var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+    var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
     var table_desc = table_description[0].results
     table_desc = changeKeysToUpper(table_desc)
     var old_headers = []
@@ -700,6 +702,9 @@ async function convert_table_description (table_description) {
             nullable = true
         } else if (nullable == 'YES') {
             nullable = true
+        }
+        if(sql_lookup_table.translate[data_type]) {
+            data_type = sql_lookup_table.translate[data_type]
         }
         var header_obj = {
             [column_name]: {
@@ -733,7 +738,7 @@ async function auto_configure_table (config, data) {
         // If create_tables is set to true, then don't bother checking if the table exists else, check if table exists (and overwrite create_tables)
         if(!config.create_table) {
             check_tables_sql = sql_helper.check_tables_exists(config)
-            check_tables_results = await run_sql_query(config, check_tables_sql).catch(err => catch_errors)
+            check_tables_results = await run_sql_query(config, check_tables_sql).catch(err => catch_errors(err))
             if(check_tables_results[0].results[0][config.table] == 0) {config.create_table = true}
         }
         

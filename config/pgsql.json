@@ -5,7 +5,8 @@
     "decimals": ["exponent", "double", "decimal"],
     "translate": {
         "tinyint": "smallint",
-        "exponent": "double"
+        "exponent": "double",
+        "character varying": "varchar"
     },
     "sqlize": [
         {
