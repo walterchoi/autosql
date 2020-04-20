@@ -386,9 +386,9 @@ var exports = {
                     }
                     
                     if(sql_query_part) {
-                        sql_query_part = `,\n ALTER COLUMN "` + column_name + `" ` + type 
+                        sql_query_part = `,\n ALTER COLUMN "` + column_name + `" TYPE ` + type 
                     } else {
-                        sql_query_part = ` ALTER COLUMN "` + column_name + `" ` + type 
+                        sql_query_part = ` ALTER COLUMN "` + column_name + `" TYPE ` + type 
                     }
         
                     if(sql_lookup_table.decimals.includes(type)) {

@@ -600,9 +600,10 @@ async function compare_two_headers (old_headers, new_headers) {
                 var changes = {
                     changed: false
                 }
+                var collated_type = old_header_obj.type
                 // If the types do not match, find the new collated type
                 if(new_header_obj.type != old_header_obj.type) {
-                    var collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {reject(catch_errors(err))})
+                    collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {reject(catch_errors(err))})
                     if(collated_type != old_header_obj.type) {
                         changes.type = collated_type
                         changes["length"] = old_header_obj["length"]
@@ -611,14 +612,16 @@ async function compare_two_headers (old_headers, new_headers) {
                     }
                 }
 
-                if(new_header_obj["length"] > old_header_obj["length"]) {
-                    changes["length"] = new_header_obj["length"]
-                    changes.changed = true
-                }
+                if(sql_lookup_table.no_length.includes(collated_type)) {
+                    if(new_header_obj["length"] > old_header_obj["length"]) {
+                        changes["length"] = new_header_obj["length"]
+                        changes.changed = true
+                    }
 
-                if(new_header_obj.decimal > old_header_obj.decimal) {
-                    changes.decimal = new_header_obj.decimal
-                    changes.changed = true
+                    if(new_header_obj.decimal > old_header_obj.decimal) {
+                        changes.decimal = new_header_obj.decimal
+                        changes.changed = true
+                    }
                 }
 
                 if(new_header_obj.allowNull && !old_header_obj.allowNull) {
