@@ -686,13 +686,15 @@ async function convert_table_description (table_description) {
     table_desc = changeKeysToUpper(table_desc)
     var old_headers = []
     for (var c = 0; c < table_desc.length;  c++) {
-        var column_name = table_desc[c].column_name
-        var data_type = table_desc[c].data_type
-        var old_length = table_desc[c]['length']
-        var nullable = table_desc[c].is_nullable
-        if(old_length.includes(',')) {
-            var decimal = old_length.toString().split(",")[1].length
-            old_length = old_length.toString().split(",")[0].length
+        var column_name = table_desc[c].COLUMN_NAME
+        var data_type = table_desc[c].DATA_TYPE
+        var old_length = table_desc[c]['LENGTH']
+        var nullable = table_desc[c].IS_NULLABLE
+        if(old_length) {
+            if(old_length.includes(',')) {
+                var decimal = old_length.toString().split(",")[1].length
+                old_length = old_length.toString().split(",")[0].length
+            }
         }
         if(nullable == 'NO') {
             nullable = true
