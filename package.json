@@ -1,5 +1,5 @@
 {
-  "name": "lazy_sql",
+  "name": "autosql",
   "version": "0.5.1",
   "optionalDependencies": {
     "mysql2": "^2.1.0"
