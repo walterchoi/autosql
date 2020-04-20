@@ -234,10 +234,18 @@ var exports = {
                 create_table_sql = create_table_sql + ";\n"
             }
             if(auto_increments_sql.length > 1) {
-                create_table_sql = auto_increments_sql + create_table_sql
+                if(create_table_sql.isArray) {
+                    create_table_sql = create_table_sql.push(auto_increments_sql)
+                } else {
+                    create_table_sql = [auto_increments_sql, create_table_sql]
+                }
             }
             if(index_create_sql.length > 1) {
-                create_table_sql = create_table_sql + index_create_sql
+                if(create_table_sql.isArray) {
+                    create_table_sql = create_table_sql.push(index_create_sql)
+                } else {
+                    create_table_sql = [create_table_sql, index_create_sql]
+                }
             }
             resolve (create_table_sql) 
         })

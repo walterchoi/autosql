@@ -652,7 +652,7 @@ async function compare_two_headers (old_headers, new_headers) {
 
 // Translate description provided by SQL server into header object used by this repository
 async function convert_table_description (table_description) {
-    var table_desc = table_description.results
+    var table_desc = table_description[0].results
     var old_headers = []
     for (var c = 0; c < table_desc.length;  c++) {
         var column_name = table_desc[c].COLUMN_NAME
@@ -690,7 +690,7 @@ async function auto_configure_table (config, data) {
         // Check if the target schema exists
         var check_database_sql = sql_helper.check_database_exists(config)
         var check_database_results = await run_sql_query(config, check_database_sql).catch(err => {reject(catch_errors(err))})
-        if (check_database_results.results[0][config.database] == 0) {
+        if (check_database_results[0].results[0][config.database] == 0) {
             create_database_sql = sql_helper.create_database(config)
             create_database = await run_sql_query(config, create_database_sql).catch(err => {reject(catch_errors(err))})
             // As this database is new, always create the tables regardless of current set option
@@ -701,7 +701,7 @@ async function auto_configure_table (config, data) {
         if(!config.create_table) {
             check_tables_sql = sql_helper.check_tables_exists(config)
             check_tables_results = await run_sql_query(config, check_tables_sql).catch(err => catch_errors)
-            if(check_tables_results.results[0][config.table] == 0) {config.create_table = true}
+            if(check_tables_results[0].results[0][config.table] == 0) {config.create_table = true}
         }
         
         // Get provided data's meta data
@@ -852,12 +852,20 @@ async function run_sql_query (config, sql_query) {
 
         var query_results = []
         var query_errors = []
-        if(config.safe_mode) {
+        var safe_mode = config.safe_mode
+        if(Array.isArray(sql_query)) {
+            if(sql_query.includes('DISABLE_SAFE_MODE')) {
+                sql_query.splice(sql_query.findIndex('DISABLE_SAFE_MODE'),1)
+                safe_mode = false
+            }
+        }
+
+        if(safe_mode) {
             var start = sql_helper.start_transaction()
             await sql_helper.run_query(config, start).catch(err => {reject(catch_errors(err))})
         }
     
-        if(sql_query.isArray) {
+        if(Array.isArray(sql_query)) {
             for(var sql = 0; sql < sql_query.length; sql++) {
                 var query_result = await sql_helper.run_query(config, sql_query[sql]).catch(err => {query_errors.push(err)})
                 query_results.push(query_result)
@@ -867,17 +875,17 @@ async function run_sql_query (config, sql_query) {
                 query_results.push(query_result)
         }
 
-        if(config.safe_mode && query_errors.length == 0) {
+        if(safe_mode && query_errors.length == 0) {
             var commit = sql_helper.commit()
             await sql_helper.run_query(config, commit).catch(err => {reject(catch_errors(err))})
             resolve(query_results)
         }
-        else if(config.safe_mode && query_errors.length != 0) {
+        else if(safe_mode && query_errors.length != 0) {
             var rollback = sql_helper.rollback()
             await sql_helper.run_query(config, rollback).catch(err => {reject(catch_errors(err))})
             reject(query_errors)
         }
-        if (!config.safe_mode && query_errors.length == 0) {
+        if (!safe_mode && query_errors.length == 0) {
             resolve(query_results)
         } else {
             reject(query_errors)
