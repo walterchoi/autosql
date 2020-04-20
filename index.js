@@ -857,7 +857,7 @@ async function run_sql_query (config, sql_query) {
             await sql_helper.run_query(config, start).catch(err => {reject(catch_errors(err))})
         }
     
-        if(sql_query.isArray()) {
+        if(sql_query.isArray) {
             for(var sql = 0; sql < sql_query.length; sql++) {
                 var query_result = await sql_helper.run_query(config, insert_statements[sql]).catch(err => {query_errors.push(err)})
                 query_results.push(query_result)
