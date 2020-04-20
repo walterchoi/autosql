@@ -867,17 +867,17 @@ async function run_sql_query (config, sql_query) {
                 query_results.push(query_result)
         }
 
-        if(safe_mode && query_errors.length == 0) {
+        if(config.safe_mode && query_errors.length == 0) {
             var commit = sql_helper.commit()
             await sql_helper.run_query(config, commit).catch(err => {reject(catch_errors(err))})
             resolve(query_results)
         }
-        else if(safe_mode && query_errors.length != 0) {
+        else if(config.safe_mode && query_errors.length != 0) {
             var rollback = sql_helper.rollback()
             await sql_helper.run_query(config, rollback).catch(err => {reject(catch_errors(err))})
             reject(query_errors)
         }
-        if (!safe_mode && query_errors.length == 0) {
+        if (!config.safe_mode && query_errors.length == 0) {
             resolve(query_results)
         } else {
             reject(query_errors)
