@@ -2,7 +2,8 @@
   "name": "autosql",
   "version": "0.5.1",
   "optionalDependencies": {
-    "mysql2": "^2.1.0"
+    "mysql2": "^2.1.0",
+    "pg": "^8.0.2"
   },
   "description": "An auto-parser of JSON into SQL.",
   "main": "index.js",
