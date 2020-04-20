@@ -432,7 +432,7 @@ var exports = {
                 headers.push(Object.getOwnPropertyNames(header)[0])
             )
             
-            var sql_query = `INSERT ${insert_type == 'IGNORE' ? 'IGNORE' : ''} INTO "` + database + `"."` + table + `" ` 
+            var sql_query = `INSERT INTO "` + database + `"."` + table + `" ` 
             var column_sql = `("` + headers.join(`", "`) + `") `
             var replace_sql = ''
 
@@ -452,6 +452,15 @@ var exports = {
                     if(h != headers.length - 1) {
                         replace_sql += ", "
                     }
+                }
+            }
+
+            if(insert_type == 'IGNORE') {
+                var keys = config.keys
+                if(keys) {
+                    replace_sql = 'ON CONFLICT ON CONSTRAINT ' + `"` + keys + `" \n` + 'DO NOTHING'
+                } else {
+                    replace_sql = ''
                 }
             }
 
