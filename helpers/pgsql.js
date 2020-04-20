@@ -179,7 +179,7 @@ var exports = {
     
                 // If index is true then make column into an indexed column (separate query done later)
                 if(index === true) {
-                    index_create_sql += `CREATE INDEX "${table + '_' + column_name}" ON "${table}" ("${column_name}");\n`
+                    index_create_sql += `CREATE INDEX "${table + '_' + column_name}" ON "${database}"."${table}" ("${column_name}");\n`
                 }
 
                 // If auto_increment is true then make column into an auto_incremental column (separate query done later)
@@ -249,6 +249,20 @@ var exports = {
             }
             resolve (create_table_sql) 
         })
+    },
+    get_table_description : function (config) {
+        var database = config.database;
+        var table = config.table;
+
+        var sql_query = "SELECT COLUMN_NAME, DATA_TYPE, " +
+        "CASE WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NOT NULL THEN CONCAT(NUMERIC_PRECISION,',',NUMERIC_SCALE) " +
+        "WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NULL THEN NUMERIC_PRECISION " + 
+        "WHEN CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN CHARACTER_MAXIMUM_LENGTH ELSE NULL END AS LENGTH, " + 
+        "IS_NULLABLE, COLUMN_KEY " +
+        "FROM INFORMATION_SCHEMA.COLUMNS " + 
+        "WHERE TABLE_SCHEMA = '" + database + "' " +
+        "AND TABLE_NAME = '" + table + "';"
+        return(sql_query)
     }
 }
 

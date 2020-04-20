@@ -1,5 +1,5 @@
 {
-    "int_group": ["boolean", "binary", "tinyint", "smallint", "int", "bigint"],
+    "int_group": ["boolean", "binary", "tinyint", "smallint", "int", "numeric", "bigint"],
     "special_int_group": ["decimal", "exponent"],
     "text_group": ["varchar", "text", "mediumtext", "longtext"],
     "special_text_group": ["json"],

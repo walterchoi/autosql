@@ -147,7 +147,7 @@ async function collate_types (currentType, overallType) {
     if(overallType_grouping == currentType_grouping) {
         // Compares exponent to decimals
         if(overallType_grouping == 'special_int') {
-            // Either set of data is a special integer type column
+            // Both sets of data are special integer type columns
             var done = false
             // Backwards for loop - most inclusive data column takes priority
             for(var i = special_int_group.length -1; i >= 0; i--) {
@@ -158,13 +158,24 @@ async function collate_types (currentType, overallType) {
             }
         }
         if(overallType_grouping == 'int') {
-            // Either set of data is an integer type column
+            // Both sets of data are an integer type column
             var done = false
             // Backwards for loop - most inclusive data column takes priority
             for(var i = int_group.length -1; i >= 0; i--) {
                 if((int_group[i] == currentType || int_group[i] == overallType) && !done) {
                 done = true
                 collated_type = int_group[i]
+                }
+            }
+        }
+        if(overallType_grouping == 'text') {
+            // Both sets of data are a text type column
+            var done = false
+            // Backwards for loop - most inclusive data column takes priority
+            for(var i = text_group.length -1; i >= 0; i--) {
+                if((text_group[i] == currentType || text_group[i] == overallType) && !done) {
+                done = true
+                collated_type = text_group[i]
                 }
             }
         }
@@ -183,7 +194,7 @@ async function collate_types (currentType, overallType) {
             err: 'unknown data type collation',
             step: 'collate_types',
             description: 'unknown data types entered into collation',
-            data: [overallType, currentType]
+            data: [overallType, overallType_grouping, currentType, currentType_grouping]
         })
     }
 }})
@@ -650,15 +661,35 @@ async function compare_two_headers (old_headers, new_headers) {
     })
 }
 
+// Returned keys are lowercase on pgsql while uppercase on mysql
+function changeKeysToUpper(obj) {
+    var key, upKey;
+    for (key in obj) {
+        if (obj.hasOwnProperty(key)) {
+            upKey = key.toUpperCase();
+            if (upKey !== key) {
+                obj[upKey] = obj[key];
+                delete(obj[key]);
+            }
+            // recurse
+            if (typeof obj[upKey] === "object") {
+                changeKeysToUpper(obj[upKey]);
+            }
+        }
+    }
+    return obj;
+}
+
 // Translate description provided by SQL server into header object used by this repository
 async function convert_table_description (table_description) {
     var table_desc = table_description[0].results
+    table_desc = changeKeysToUpper(table_desc)
     var old_headers = []
     for (var c = 0; c < table_desc.length;  c++) {
-        var column_name = table_desc[c].COLUMN_NAME
-        var data_type = table_desc[c].DATA_TYPE
-        var old_length = table_desc[c]['LENGTH']
-        var nullable = table_desc[c].IS_NULLABLE
+        var column_name = table_desc[c].column_name
+        var data_type = table_desc[c].data_type
+        var old_length = table_desc[c]['length']
+        var nullable = table_desc[c].is_nullable
         if(old_length.includes(',')) {
             var decimal = old_length.toString().split(",")[1].length
             old_length = old_length.toString().split(",")[0].length
