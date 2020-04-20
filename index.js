@@ -845,7 +845,7 @@ function getBinarySize (str) {
 
 // Function to run SQL queries - and run single or arrays of queries with/without transactions
 async function run_sql_query (config, sql_query) {
-    return new Promise ((resolve, reject) => {
+    return new Promise (async (resolve, reject) => {
 
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
