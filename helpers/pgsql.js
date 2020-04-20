@@ -29,8 +29,9 @@ var exports = {
             resolve(pool)
         })
     },
-    run_query : async function (pool, sql_query, repeat_number, max_repeat) {
+    run_query : async function (config, sql_query, repeat_number, max_repeat) {
         return new Promise(async (resolve, reject) => {
+            var pool = config.connection
             // Automatically retry each query up to 25 times before erroring out
             if(!max_repeat) {max_repeat = 25}
             console.log(sql_query)
