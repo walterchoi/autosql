@@ -23,20 +23,45 @@ var exports = {
                 resolve(pool)
         })
     },
+    test_connection : async function (key) {
+        return new Promise(async (resolve, reject) => {
+            var pool = await this.establish_connection(key)
+            var sql_query = "SELECT 1 AS SOLUTION;"
+            var config = {
+                "connection": pool
+            }
+            var result = await this.run_query(config, sql_query).catch(err => {
+                console.log(err)
+                if(err) {reject(err)}
+            })
+            resolve(result)
+        })
+    },
+    test_query : async function (config, query) {
+        return new Promise(async (resolve, reject) => {
+            var pool = await this.establish_connection(config)
+            config.connection = pool
+            sql_query = 'EXPLAIN ' + query
+            var result = await this.run_query(config, sql_query, 0, 1).catch(err => {
+                if(err) {reject(err)}
+            })
+            resolve(result)
+        })
+    },
     run_query : async function (config, sql_query, repeat_number, max_repeat) {
         return new Promise(async (resolve, reject) => {
             var pool = config.connection
             // Automatically retry each query up to 25 times before erroring out
             if(!max_repeat) {max_repeat = 25}
-            pool.getConnection(function(err, conn) {
+            pool.getConnection((err, conn) => {
                 if (err) {
                     reject({
-                        err: 'mysql connection errored',
-                        step: 'establish_connection (mysql variant)',
-                        description: err,
-                        resolution: `please check your SQL server authentication details and SQL server firewall`
+                        "err": 'mysql connection errored',
+                        "step": 'establish_connection (mysql variant)',
+                        "description": err,
+                        "resolution": `please check your SQL server authentication details and SQL server firewall`
                     })
-                }
+                } else {
                 conn.query(sql_query, async function (err, results) {
                     if (err) {
                         if(repeat_number) {repeat_number = repeat_number + 1}
@@ -67,7 +92,7 @@ var exports = {
                         })
                     }
                 })
-            })
+            }})
         })
     },
     check_database_exists : function (config) {

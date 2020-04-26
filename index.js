@@ -767,6 +767,30 @@ async function auto_configure_table (config, data) {
     })
 }
 
+async function validate_database (config) {
+    return new Promise (async (resolve) => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+
+        var check = await sql_helper.test_connection(config).catch(err => {
+            resolve(err)
+        })
+        resolve(null)
+    })
+}
+
+async function validate_query (config, query) {
+    return new Promise (async (resolve) => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+
+        var check = await sql_helper.test_query(config, query).catch(err => {
+            resolve(err)
+        })
+        resolve(null)
+    })
+}
+
 async function insert_data (config, data) {
     return new Promise (async (resolve, reject) => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
@@ -1059,5 +1083,7 @@ module.exports = {
     auto_create_table,
     auto_sql,
     auto_configure_table,
-    insert_data
+    insert_data,
+    validate_database,
+    validate_query
 }
