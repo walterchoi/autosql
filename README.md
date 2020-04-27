@@ -1,4 +1,4 @@
-# Lazy_SQL
+# AUTO_SQL
 Documentation coming soon.
 
 NodeJS repository to automate inserts from JSON data into SQL
