@@ -25,27 +25,45 @@ var exports = {
     },
     test_connection : async function (key) {
         return new Promise(async (resolve, reject) => {
-            var pool = await this.establish_connection(key)
+            var _err = null
+            var pool = await this.establish_connection(key).catch(err => {
+                if(err) {reject(err)}
+                _err = err
+            })
             var sql_query = "SELECT 1 AS SOLUTION;"
             var config = {
                 "connection": pool
             }
-            var result = await this.run_query(config, sql_query).catch(err => {
-                console.log(err)
-                if(err) {reject(err)}
-            })
-            resolve(result)
+            if(!_err) {
+                var result = await this.run_query(config, sql_query).catch(err => {
+                    _err = err
+                    if(err) {reject(err)}
+                })
+                resolve(result)
+            } else {
+                resolve(_err)
+            }
         })
     },
     test_query : async function (config, query) {
         return new Promise(async (resolve, reject) => {
-            var pool = await this.establish_connection(config)
+            var _err = null
+            var pool = await this.establish_connection(config).catch(err => {
+                if(err) {reject(err)}
+                _err = err
+            })
             config.connection = pool
             sql_query = 'EXPLAIN ' + query
+            if(!_err) {
             var result = await this.run_query(config, sql_query, 0, 1).catch(err => {
+                _err = err
                 if(err) {reject(err)}
             })
             resolve(result)
+        } else {
+            resolve(_err)
+        }
+            
         })
     },
     run_query : async function (config, sql_query, repeat_number, max_repeat) {
