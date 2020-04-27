@@ -4,6 +4,8 @@ Documentation coming soon.
 NodeJS repository to automate inserts from JSON data into SQL
 Current support only for MySQL and PostgreSQL
 
+If you have any feedback regarding this repository, please contact me on w@walterchoi.com
+
 This repository aims to help automate commonly used SQL processes.
 
 The primary function provided is "auto_sql" which should be provided a configuration variable and a data variable.
