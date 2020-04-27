@@ -90,6 +90,31 @@ var exports = {
         var sql_query = "SELECT " + sql_query_part + ";"
         return (sql_query)
     },
+    test_connection : async function (key) {
+        return new Promise(async (resolve, reject) => {
+            var pool = await this.establish_connection(key)
+            var sql_query = "SELECT 1 AS SOLUTION;"
+            var config = {
+                "connection": pool
+            }
+            var result = await this.run_query(config, sql_query).catch(err => {
+                console.log(err)
+                if(err) {reject(err)}
+            })
+            resolve(result)
+        })
+    },
+    test_query : async function (config, query) {
+        return new Promise(async (resolve, reject) => {
+            var pool = await this.establish_connection(config)
+            config.connection = pool
+            sql_query = 'EXPLAIN ' + query
+            var result = await this.run_query(config, sql_query, 0, 1).catch(err => {
+                if(err) {reject(err)}
+            })
+            resolve(result)
+        })
+    },
     create_database : function (config) {
         var database = config.database;
         var sql_query = 'CREATE SCHEMA "' + database + '";'
