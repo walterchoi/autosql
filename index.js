@@ -1085,5 +1085,6 @@ module.exports = {
     auto_configure_table,
     insert_data,
     validate_database,
-    validate_query
+    validate_query,
+    run_sql_query
 }
