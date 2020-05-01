@@ -7,7 +7,9 @@
         "tinyint": "smallint",
         "exponent": "double",
         "character varying": "varchar",
-        "datetime": "timestamp"
+        "datetime": "timestamp",
+        "integer": "int",
+        "timestamp": "datetime"
     },
     "sqlize": [
         {
