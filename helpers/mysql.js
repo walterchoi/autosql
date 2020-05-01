@@ -11,6 +11,18 @@ var exports = {
                     ${!key.password ? 'password' : ''} in configuration object, additional details can be found in the documentation`
                 })
             }
+            if(key.schema) {
+                pool = mysql.createPool({
+                    host: key.host,
+                    user: key.username,
+                    password: key.password,
+                    port: key.port,
+                    database: key.schema,
+                    waitForConnections: true,
+                    connectionLimit: 20,
+                    queueLimit: 0
+                })
+            } else {
                 pool = mysql.createPool({
                     host: key.host,
                     user: key.username,
@@ -20,6 +32,7 @@ var exports = {
                     connectionLimit: 20,
                     queueLimit: 0
                 })
+            }
                 resolve(pool)
         })
     },
@@ -35,7 +48,7 @@ var exports = {
                 "connection": pool
             }
             if(!_err) {
-                var result = await this.run_query(config, sql_query).catch(err => {
+                var result = await this.run_query(config, sql_query, 0, 1).catch(err => {
                     _err = err
                     if(err) {reject(err)}
                 })

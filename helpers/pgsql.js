@@ -11,12 +11,23 @@ var exports = {
                 })
             }
             var { Pool, Client } = require('pg')
-            var pool = new Pool({
-                host: key.host,
-                user: key.username,
-                password: key.password,
-                port: key.port
-            })
+            if(key.schema) {
+                var pool = new Pool({
+                    host: key.host,
+                    user: key.username,
+                    password: key.password,
+                    port: key.port,
+                    database: key.schema
+                })
+            } else {
+                var pool = new Pool({
+                    host: key.host,
+                    user: key.username,
+                    password: key.password,
+                    port: key.port
+                })
+            }
+            
             pool.on('error', (err, client) => {
                 reject({
                     err: 'pgsql connection was invalid',
@@ -104,7 +115,7 @@ var exports = {
                 "connection": pool
             }
             if(!_err) {
-                var result = await this.run_query(config, sql_query).catch(err => {
+                var result = await this.run_query(config, sql_query, 0, 1).catch(err => {
                     _err = err
                     if(err) {reject(err)}
                 })

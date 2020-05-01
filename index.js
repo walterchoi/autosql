@@ -541,8 +541,8 @@ async function auto_alter_table (config, new_headers) {
 
         var get_table_description_sql = sql_helper.get_table_description(config)
         table_description = await run_sql_query(config, get_table_description_sql).catch(err => catch_errors(err))
-        var old_headers = await convert_table_description(table_description)
-        var table_changes = await compare_two_headers(old_headers, new_headers).catch(err => catch_errors(err))
+        var old_headers = await convert_table_description(config, table_description)
+        var table_changes = await compare_two_headers(config, old_headers, new_headers).catch(err => catch_errors(err))
         table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors(err))
         altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors(err))
         resolve(altered_table)
@@ -550,7 +550,7 @@ async function auto_alter_table (config, new_headers) {
 }
 
 // Compare two sets of headers to identify changes
-async function compare_two_headers (old_headers, new_headers) {
+async function compare_two_headers (config, old_headers, new_headers) {
     return new Promise(async (resolve, reject) => {
 
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
@@ -687,7 +687,7 @@ function changeKeysToUpper(obj) {
 }
 
 // Translate description provided by SQL server into header object used by this repository
-async function convert_table_description (table_description) {
+async function convert_table_description (config, table_description) {
     var sql_dialect_lookup_object = require('./config/sql_dialect.json')
     var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
     var table_desc = table_description[0].results
