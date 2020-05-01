@@ -209,7 +209,10 @@ var exports = {
                 var def = header_data["default"]
                 var comment = header_data["comment"]
                 
-                if(!header_data["type"]) {header_data["type"] == 'varchar'}
+                if(!header_data["type"]) {
+                    header_data["type"] = 'varchar'
+                    type = 'varchar'
+                }
 
                 if(sql_lookup_table.translate[header_data["type"]]) {
                     type = sql_lookup_table.translate[header_data["type"]]
