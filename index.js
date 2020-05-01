@@ -1000,7 +1000,14 @@ function sqlize (config, data) {
                     var regex = new RegExp(sqlize[s].regex)
                     var type_req = sqlize[s].type
                     if(type_req === true || type_req == metaData[index][key]["type"] || type_req.includes(metaData[index][key]["type"])) {
-                        value = value.replace(regex, sqlize[s].replace)
+                        if(value) {
+                            try {
+                                value = value.toString().replace(regex, sqlize[s].replace)
+                            }
+                            catch (e) {
+                                console.log('errored on sqlizing - ' + value + ' for sqlize ' + JSON.stringify(sqlize[s]))
+                            }
+                        }
                         data[d][key] = value
                     }
                 }
