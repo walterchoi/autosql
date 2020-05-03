@@ -892,37 +892,36 @@ async function stack_data (config, data) {
         var stacked_data_array_group_string = ''
         var stacked_data_array_part_string = ''
 
-        for (var d = 0; d < data.length; d++) {
-            var values = Object.values(data[d])
-            stacked_data_array_part.push(data[d])
-            stacked_data_array_part_string += values.join(', ')
+        for (var d = 0; d < data.length; d += insert_stack) {
+            var stacked_data_array_part = data.slice(d, d + insert_stack)
+            stacked_data_array_part.map(obj => 
+                stacked_data_array_part_string += Object.values(obj).join(', ')
+            )
 
-            // Only run checks if minimum stack size has been achieved
-            if(d % insert_stack == 0 || d == data.length -1) {
-
-                var group_str_size = getBinarySize(stacked_data_array_group_string)
-                var group_size = stacked_data_group.length
-                var part_str_size = getBinarySize(stacked_data_array_part_string)
-                var part_size = stacked_data_array_part.length
-                var combined_str_size = group_str_size + part_str_size
-                var combined_array_size = group_size + part_size
-
-                // Check if adding this new (minimum stack) would push this group of data over the maximum insert limits
-                if(combined_str_size < max_insert_size && combined_array_size < max_insert) {
-                    // If it does not, keep adding this to this group
-                    stacked_data_group = stacked_data_group.concat(stacked_data_array_part)
-                    stacked_data_array_group_string += stacked_data_array_part_string
-                    if(d == data.length -1) {
-                        stacked_data.push(stacked_data_group)    
-                    }
-                } else {
-                    // If it does, add the current group to the overall array and start a new group
-                    stacked_data.push(stacked_data_group)
-                    stacked_data_group = stacked_data_array_part
+            var group_str_size = getBinarySize(stacked_data_array_group_string)
+            var group_size = stacked_data_group.length
+            var part_str_size = getBinarySize(stacked_data_array_part_string)
+            var part_size = stacked_data_array_part.length
+            var combined_str_size = group_str_size + part_str_size
+            var combined_array_size = group_size + part_size
+            // Check if adding this new (minimum stack) would push this group of data over the maximum insert limits (or if this is the last stack being inserted)
+            if(combined_str_size > max_insert_size || combined_array_size > max_insert || (d + insert_stack) >= data.length) {
+                // If it does not, keep adding this to this group
+                stacked_data.push(stacked_data_group)   
+                stacked_data_group = Array.from(stacked_data_array_part)
+                stacked_data_array_part = []
+                stacked_data_array_group_string = stacked_data_array_part_string
+                stacked_data_array_part_string = '' 
+                if(combined_str_size <= max_insert_size || combined_array_size <= max_insert && (d + insert_stack) >= data.length) {
+                    stacked_data.push(stacked_data_group)   
+                    stacked_data_group = Array.from(stacked_data_array_part)
                     stacked_data_array_part = []
                     stacked_data_array_group_string = stacked_data_array_part_string
-                    stacked_data_array_part_string = ''
+                    stacked_data_array_part_string = '' 
                 }
+            } else {
+                stacked_data_group = stacked_data_group.concat(stacked_data_array_part)
+                stacked_data_array_group_string += stacked_data_array_part_string
             }
         }
         resolve(stacked_data)

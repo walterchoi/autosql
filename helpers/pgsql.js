@@ -83,7 +83,6 @@ var exports = {
                         })
                     })
                     .catch(async err => {
-                        //console.log(sql_query)
                         if(repeat_number) {repeat_number = repeat_number + 1}
                         else {repeat_number = 1}
                         if (repeat_number < max_repeat) {
