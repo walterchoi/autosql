@@ -279,7 +279,7 @@ async function predict_indexes (config, primary_key) {
         if(!primary_key_found) {
             for (var h = 0; h < headers.length; h++) {
                 var header_name = (Object.getOwnPropertyNames(headers[h])[0])
-                if(!headers[h][header_name]['allowNull'] && keys_group.includes(header_name) && 
+                if(!headers[h][header_name]['allowNull'] && keys_group.includes(headers[h][header_name]['type']) && 
                 (headers[h][header_name]['unique'] || headers[h][header_name]['pseudounique'])
                 && headers[h][header_name]['length'] < max_key_length
                 ) {
@@ -402,7 +402,8 @@ async function get_meta_data (config, data) {
         // Reset uniqueCheck array to null for a fresh test of the uniqueness of dataset
         var uniqueCheck = {}
         for (var h = 0; h < headers.length; h++) {
-            uniqueCheck[headers[h]] = (new Set())
+            var header_name = (Object.getOwnPropertyNames(headers[h])[0])
+            uniqueCheck[header_name] = (new Set())
         }
         
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
@@ -412,23 +413,24 @@ async function get_meta_data (config, data) {
         if(sampling && sampling < 1) {
             var sampling_number = Math.round(data.length * sampling)
             // Check if the sampling number is larger than the minimum number for sampling
-            if(sampling_number >= sampling_minimum) {
-                data = shuffle(data)
-                data.slice(0, sampling_number)
+            if(sampling_number < sampling_minimum) {
+                sampling_number = sampling_minimum    
             }
+            data = shuffle(data)
+            data = data.slice(0, sampling_number)
         }
         for (var i = 0; i < data.length; i++) {
             for (var h = 0; h < headers.length; h++) {
                 var header_name = (Object.getOwnPropertyNames(headers[h])[0])
                 var dataPoint = (data[i][header_name])
-                if(dataPoint === null || dataPoint === undefined) {
+                if(dataPoint === null || dataPoint === undefined || dataPoint === '\\N') {
                     var dataPoint = ''
                 } else {
                     if(isObject(dataPoint)) {dataPoint = JSON.stringify(dataPoint)}
                         dataPoint = (dataPoint).toString()
                     }
                 // Add data point to uniqueCheck array for particular header
-                uniqueCheck[headers[h]].add(dataPoint)
+                uniqueCheck[header_name].add(dataPoint)
                 var overallType = headers[h][header_name]['type']
                 // If a data point is null, set this column as nullable 
                 if (dataPoint == '') {
@@ -472,10 +474,10 @@ async function get_meta_data (config, data) {
             if(headers[h][header_name]['type'] == null) {
                 headers[h][header_name]['type'] == 'varchar'
             }
-            if(uniqueCheck[headers[h]].size == data.length && data.length > 0 && data.length >= minimum_unique) {
+            if(uniqueCheck[header_name].size == data.length && data.length > 0 && data.length >= minimum_unique) {
                 headers[h][header_name]['unique'] = true
             }
-            if(uniqueCheck[headers[h]].size >= (data.length * pseudo_unique/100) && data.length > 0 && data.length >= minimum_unique) {
+            if(uniqueCheck[header_name].size >= (data.length * pseudo_unique/100) && data.length > 0 && data.length >= minimum_unique) {
                 headers[h][header_name]['pseudounique'] = true
             }            
         }
@@ -813,8 +815,16 @@ async function insert_data (config, data) {
         if(config.sql_dialect == 'pgsql' && !config.keys) {
             var constraints_sql = sql_helper.find_constraint(config)
             var constraints = await run_sql_query(config, constraints_sql).catch(err => {reject(catch_errors(err))})
-            if(constraints[0].results[0]) {
-                config.keys = constraints[0].results[0].constraint_name
+            config.keys = {}
+            if(constraints[0].results) {
+                for(var c = 0; c < constraints[0].results.length; c++) {
+                    var constraint_name = constraints[0].results[c].constraint_name
+                    var column_name = constraints[0].results[c].column_name
+                    if(!config.keys[constraint_name]) {
+                        config.keys[constraint_name] = []
+                    }
+                    config.keys[constraint_name].push(column_name)
+                }
             }
         }
 
@@ -991,7 +1001,7 @@ function sqlize (config, data) {
             var row = data[d]
             for (key in row) {
                 var value = row[key]
-                if(value === undefined) {
+                if(value === undefined || value === '\\N') {
                     value = null
                     data[d][key] = value
                 }

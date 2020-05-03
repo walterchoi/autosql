@@ -417,8 +417,9 @@ var exports = {
     },
     create_insert_string : function (config, data) {
         return new Promise(resolve => {
-            var sql_dialect_lookup_object = require('../config/sql_dialect.json')
-            var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
+            var groupings = require('./groupings.json')
+            var int_group = groupings.int_group
+            var special_int_group = groupings.special_int_group
 
             var database = config.database
             var table = config.table
@@ -435,7 +436,7 @@ var exports = {
             var replace_sql = ''
 
             if(insert_type == 'REPLACE') {
-                replace_sql = 'ON DUPLICATE KEY UPDATE '
+                replace_sql = '\NON DUPLICATE KEY UPDATE '
                 for (var h = 0; h < headers.length; h++) {
                     replace_sql += "`" + headers[h] + "`=VALUES(`" + headers[h] + "`)"
                     if(h != headers.length - 1) {
@@ -452,19 +453,19 @@ var exports = {
                 var row = data[d]
                 for(var h = 0; h < headers.length; h++) {
                     var value = row[headers[h]]
-                   if(isNaN(value)) {
-                        values_sql += "'" + value + "'"
+                    if(value === null || value == '') {
+                        values_sql += 'null'
                     } else {
-                        if(value === null || value == '') {
-                            values_sql += 'null'
-                        } else {
+                        if(int_group.includes(metaData[h][headers[h]].type) || special_int_group.includes(metaData[h][headers[h]].type)) {
                             values_sql += value
+                        } else {
+                            values_sql += "'" + value + "'"
                         }
                     }
                     if(h != headers.length -1) {
                         values_sql += ", "
                     } else {
-                        values_sql += ") "
+                        values_sql += ") \N"
                         if(d != data.length -1) {
                             values_sql += ", ("
                         }

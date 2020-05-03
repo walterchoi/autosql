@@ -9,31 +9,14 @@
         "character varying": "varchar",
         "datetime": "timestamp",
         "integer": "int",
-        "timestamp": "datetime"
+        "timestamp": "datetime",
+        "timestamp without time zone": "datetime"
     },
     "sqlize": [
         {
             "find": "'",
             "replace": "''",
             "regex": "'",
-            "type": true
-        },
-        {
-            "find": "%",
-            "replace": "\\%",
-            "regex": "/%/gmi",
-            "type": true
-        },
-        {
-            "find": "_",
-            "replace": "\\_",
-            "regex": "/_/gmi",
-            "type": true
-        },
-        {
-            "find": "\\",
-            "replace": "\\\\",
-            "regex": "/\\/gmi",
             "type": true
         },
         {
