@@ -989,6 +989,8 @@ function sqlize (config, data) {
     return new Promise(resolve => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
+        var groupings = require('./helpers/groupings.json')
+        date_group = groupings.date_group
         var sqlize = sql_lookup_table.sqlize
         var metaData = config.metaData
         var headers = []
@@ -1002,6 +1004,10 @@ function sqlize (config, data) {
                 var value = row[key]
                 if(value === undefined || value === '\\N') {
                     value = null
+                    data[d][key] = value
+                }
+                else if(date_group.includes(metaData[index][key]["type"]) && Object.prototype.toString.call(value) === '[object Date]') {
+                    value = value.toISOString()
                     data[d][key] = value
                 }
                 var index = headers.findIndex(column => column == key)
