@@ -1001,7 +1001,9 @@ function sqlize (config, data) {
         for (var d = 0; d < data.length; d++) {
             var row = data[d]
             for (key in row) {
+                var index = headers.findIndex(column => column == key)
                 var value = row[key]
+                
                 if(value === undefined || value === '\\N') {
                     value = null
                     data[d][key] = value
@@ -1010,7 +1012,6 @@ function sqlize (config, data) {
                     value = value.toISOString()
                     data[d][key] = value
                 }
-                var index = headers.findIndex(column => column == key)
                 for (var s = 0; s < sqlize.length; s++) {
                     var regex = new RegExp(sqlize[s].regex)
                     var type_req = sqlize[s].type
