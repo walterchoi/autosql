@@ -548,9 +548,14 @@ async function auto_alter_table (config, new_headers) {
         table_description = await run_sql_query(config, get_table_description_sql).catch(err => catch_errors(err))
         var old_headers = await convert_table_description(config, table_description)
         var table_changes = await compare_two_headers(config, old_headers, new_headers).catch(err => catch_errors(err))
-        table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors(err))
-        altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors(err))
-        resolve(altered_table)
+        if(table_changes.new.length > 0 || table_changes.alter.length > 0) {
+            table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors(err))
+            altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors(err))
+            resolve(altered_table)
+        }
+        else {
+            resolve(null)
+        }
     })
 }
 
