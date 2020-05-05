@@ -848,6 +848,7 @@ async function insert_data (config, data) {
             var insert_statement = await sql_helper.create_insert_string(config, stacked_data[s]).catch(err => {reject(catch_errors(err))})
             insert_statements.push(insert_statement)
         }
+        console.log(insert_statements[0])
 
         var query_result = await run_sql_query(config, insert_statements).catch(err => {reject(catch_errors(err))})
         
@@ -1021,7 +1022,7 @@ function sqlize (config, data) {
                     var regex = new RegExp(sqlize[s].regex, 'gmi')
                     var type_req = sqlize[s].type
                     if(type_req === true || type_req == metaData[index][key]["type"] || type_req.includes(metaData[index][key]["type"])) {
-                        if(value) {
+                        if(value !== undefined) {
                             try {
                                 value = value.toString().replace(regex, sqlize[s].replace)
                             }
