@@ -433,7 +433,7 @@ async function get_meta_data (config, data) {
                 uniqueCheck[header_name].add(dataPoint)
                 var overallType = headers[h][header_name]['type']
                 // If a data point is null, set this column as nullable 
-                if (dataPoint == '') {
+                if (dataPoint === '' || dataPoint === null) {
                     headers[h][header_name]['allowNull'] = true
                 } else {
                     // Else attempt to 
