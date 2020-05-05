@@ -1086,6 +1086,9 @@ async function auto_sql (config, data) {
         if(!config.metaData) {
             config.metaData = await get_meta_data(config, data).catch(err => {reject(catch_errors(err))})
         }
+        console.log('config.metaData')
+        console.log(config.metaData)
+        console.log('config.metaData')
         // First let us make sure that the table exists or the table is compatible with the new data being inserted
         await auto_configure_table(config, data).catch(err => {reject(catch_errors(err))})
         // Now let us insert the data into the table
