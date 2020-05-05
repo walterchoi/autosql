@@ -457,7 +457,7 @@ async function get_meta_data (config, data) {
                     var len = dataPoint.length
                     var curLen = headers[h][header_name]['length']
                     if(headers[h][header_name]['decimal']) {
-                        var len = dataPoint.length + 1
+                        var len = dataPoint.length + 3
                     }
                     if (len > curLen) {
                         headers[h][header_name]['length'] = len
@@ -1018,7 +1018,7 @@ function sqlize (config, data) {
                     data[d][key] = value
                 }
                 for (var s = 0; s < sqlize.length; s++) {
-                    var regex = new RegExp(sqlize[s].regex)
+                    var regex = new RegExp(sqlize[s].regex, 'gmi')
                     var type_req = sqlize[s].type
                     if(type_req === true || type_req == metaData[index][key]["type"] || type_req.includes(metaData[index][key]["type"])) {
                         if(value) {

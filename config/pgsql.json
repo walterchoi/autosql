@@ -22,19 +22,19 @@
         {
             "find": "%",
             "replace": "\\%",
-            "regex": "/%/gmi",
+            "regex": "%",
             "type": true
         },
         {
             "find": "_",
             "replace": "\\_",
-            "regex": "/_/gmi",
+            "regex": "_",
             "type": true
         },
         {
             "find": "\\",
             "replace": "\\\\",
-            "regex": "/\\/gmi",
+            "regex": "\\\\",
             "type": true
         },
         {
@@ -52,13 +52,13 @@
         {
             "find": ",",
             "replace": "",
-            "regex": "/,/gmi",
+            "regex": ",",
             "type": ["binary", "tinyint", "smallint", "int", "bigint", "decimal"]
         },
         {
             "find": ".",
             "replace": "0",
-            "regex": "/^\\.{1}$/gmi",
+            "regex": "^\\.{1}$",
             "type": ["binary", "tinyint", "smallint", "int", "bigint", "decimal"]
         }
     ]
