@@ -39,13 +39,13 @@
         },
         {
             "find": "1",
-            "replace": true,
+            "replace": "true",
             "regex": "^1$",
             "type": "boolean"
         },
         {
             "find": "0",
-            "replace": false,
+            "replace": "false",
             "regex": "^0$",
             "type": "boolean"
         },
