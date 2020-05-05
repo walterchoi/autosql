@@ -1022,7 +1022,7 @@ function sqlize (config, data) {
                     var regex = new RegExp(sqlize[s].regex, 'gmi')
                     var type_req = sqlize[s].type
                     if(type_req === true || type_req == metaData[index][key]["type"] || type_req.includes(metaData[index][key]["type"])) {
-                        if(value !== undefined) {
+                        if(value !== undefined && value !== null) {
                             try {
                                 value = value.toString().replace(regex, sqlize[s].replace)
                             }
