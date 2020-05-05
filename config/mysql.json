@@ -33,6 +33,12 @@
             "type": "tinyint"
         },
         {
+            "find": ".000Z",
+            "replace": "",
+            "regex": "/\\.[0-9]{0,3}Z$/gmi",
+            "type": ["date", "time", "datetime"]
+        },
+        {
             "find": ",",
             "replace": "",
             "regex": "/,/gmi",

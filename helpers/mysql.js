@@ -436,7 +436,7 @@ var exports = {
             var replace_sql = ''
 
             if(insert_type == 'REPLACE') {
-                replace_sql = '\NON DUPLICATE KEY UPDATE '
+                replace_sql = '\nON DUPLICATE KEY UPDATE '
                 for (var h = 0; h < headers.length; h++) {
                     replace_sql += "`" + headers[h] + "`=VALUES(`" + headers[h] + "`)"
                     if(h != headers.length - 1) {
@@ -465,7 +465,7 @@ var exports = {
                     if(h != headers.length -1) {
                         values_sql += ", "
                     } else {
-                        values_sql += ") \N"
+                        values_sql += ") \n"
                         if(d != data.length -1) {
                             values_sql += ", ("
                         }
