@@ -848,7 +848,6 @@ async function insert_data (config, data) {
             var insert_statement = await sql_helper.create_insert_string(config, stacked_data[s]).catch(err => {reject(catch_errors(err))})
             insert_statements.push(insert_statement)
         }
-        console.log(insert_statements[0])
 
         var query_result = await run_sql_query(config, insert_statements).catch(err => {reject(catch_errors(err))})
         
@@ -1087,9 +1086,6 @@ async function auto_sql (config, data) {
         if(!config.metaData) {
             config.metaData = await get_meta_data(config, data).catch(err => {reject(catch_errors(err))})
         }
-        console.log('config.metaData')
-        console.log(config.metaData)
-        console.log('config.metaData')
         // First let us make sure that the table exists or the table is compatible with the new data being inserted
         await auto_configure_table(config, data).catch(err => {reject(catch_errors(err))})
         // Now let us insert the data into the table

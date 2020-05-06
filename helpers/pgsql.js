@@ -529,13 +529,17 @@ var exports = {
                         non_key_headers.splice(h, 1)
                     }
                 }
-                replace_sql += `("` + non_key_headers.join('", "') + `") = (excluded."` + non_key_headers.join('", excluded."') + `")`
+                if(non_key_headers.length > 0) {
+                    replace_sql += `("` + non_key_headers.join('", "') + `") = (excluded."` + non_key_headers.join('", excluded."') + `")`
+                } else {
+                    replace_sql = 'ON CONFLICT ON CONSTRAINT ' + `"` + Object.getOwnPropertyNames(keys)[0] + `" \n` + 'DO NOTHING'
+                }
             }
 
             if(insert_type == 'IGNORE') {
                 var keys = config.keys
                 if(keys) {
-                    replace_sql = 'ON CONFLICT ON CONSTRAINT ' + `"` + keys + `" \n` + 'DO NOTHING'
+                    replace_sql = 'ON CONFLICT ON CONSTRAINT ' + `"` + Object.getOwnPropertyNames(keys)[0] + `" \n` + 'DO NOTHING'
                 } else {
                     replace_sql = ''
                 }
