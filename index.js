@@ -410,7 +410,7 @@ async function get_meta_data (config, data) {
         var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
 
         // Repeat for each data row provided
-        if(sampling && sampling < 1) {
+        if(sampling > 0 && sampling < 1) {
             var sampling_number = Math.round(data.length * sampling)
             // Check if the sampling number is larger than the minimum number for sampling
             if(sampling_number < sampling_minimum) {

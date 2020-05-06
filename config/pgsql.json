@@ -20,24 +20,6 @@
             "type": true
         },
         {
-            "find": "%",
-            "replace": "\\%",
-            "regex": "%",
-            "type": true
-        },
-        {
-            "find": "_",
-            "replace": "\\_",
-            "regex": "_",
-            "type": true
-        },
-        {
-            "find": "\\",
-            "replace": "\\\\",
-            "regex": "\\\\",
-            "type": true
-        },
-        {
             "find": "1",
             "replace": "true",
             "regex": "^1$",
