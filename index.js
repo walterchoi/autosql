@@ -912,7 +912,9 @@ async function stack_data (config, data) {
             // Check if adding this new (minimum stack) would push this group of data over the maximum insert limits (or if this is the last stack being inserted)
             if(combined_str_size > max_insert_size || combined_array_size > max_insert || (d + insert_stack) >= data.length) {
                 // If it does not, keep adding this to this group
-                stacked_data.push(stacked_data_group)   
+                if(stacked_data_group.length > 0) {
+                    stacked_data.push(stacked_data_group)   
+                }  
                 stacked_data_group = Array.from(stacked_data_array_part)
                 stacked_data_array_part = []
                 stacked_data_array_group_string = stacked_data_array_part_string
