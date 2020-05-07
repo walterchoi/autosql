@@ -998,6 +998,16 @@ function sqlize (config, data) {
         var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
         var groupings = require('./helpers/groupings.json')
         date_group = groupings.date_group
+        var defaults = require('./config/defaults.json')
+        var convert_timezone = defaults.convert_timezone
+        if(config.convert_timezone) {convert_timezone = config.convert_timezone}
+        if(convert_timezone) {
+            var locale = defaults.locale
+            if(config.locale) {locale = config.locale}
+            var timezone = defaults.timezone
+            if(config.timezone) {timezone = config.timezone}
+        }
+
         var sqlize = sql_lookup_table.sqlize
         var metaData = config.metaData
         var headers = []

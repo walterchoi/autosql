@@ -15,5 +15,8 @@
     "insert_stack": 100,
     "max_insert_size": 1048576,
     "safe_mode": false,
-    "wait_for_approval": false
+    "wait_for_approval": false,
+    "locale": "en-US",
+    "timezone": "UTC",
+    "convert_timezone": true
 }
