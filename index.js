@@ -1101,11 +1101,12 @@ async function auto_sql (config, data) {
         // First let us make sure that the table exists or the table is compatible with the new data being inserted
         await auto_configure_table(config, data).catch(err => {reject(catch_errors(err))})
         // Now let us insert the data into the table
-        await insert_data(config, data).catch(err => {reject(catch_errors(err))})
+        var inserted = await insert_data(config, data).catch(err => {reject(catch_errors(err))})
         var completion_time = new Date()
         resolve({
             start: start_time,
-            end: completion_time
+            end: completion_time,
+            results: inserted
         })
     })
 }
