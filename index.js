@@ -700,7 +700,7 @@ function changeKeysToUpper(obj) {
 async function convert_table_description (config, table_description) {
     var sql_dialect_lookup_object = require('./config/sql_dialect.json')
     var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
-    var table_desc = table_description[0].results
+    var table_desc = table_description
     table_desc = changeKeysToUpper(table_desc)
     var old_headers = []
     for (var c = 0; c < table_desc.length;  c++) {
@@ -744,7 +744,7 @@ async function auto_configure_table (config, data) {
         // Check if the target schema exists
         var check_database_sql = sql_helper.check_database_exists(config)
         var check_database_results = await run_sql_query(config, check_database_sql).catch(err => {reject(catch_errors(err))})
-        if (check_database_results[0].results[0][config.database] == 0) {
+        if (check_database_results[0][config.database] == 0) {
             create_database_sql = sql_helper.create_database(config)
             create_database = await run_sql_query(config, create_database_sql).catch(err => {reject(catch_errors(err))})
             // As this database is new, always create the tables regardless of current set option
@@ -755,7 +755,7 @@ async function auto_configure_table (config, data) {
         if(!config.create_table) {
             check_tables_sql = sql_helper.check_tables_exists(config)
             check_tables_results = await run_sql_query(config, check_tables_sql).catch(err => catch_errors(err))
-            if(check_tables_results[0].results[0][config.table] == 0) {config.create_table = true}
+            if(check_tables_results[0][config.table] == 0) {config.create_table = true}
         }
         
         // Get provided data's meta data
@@ -821,10 +821,10 @@ async function insert_data (config, data) {
             var constraints_sql = sql_helper.find_constraint(config)
             var constraints = await run_sql_query(config, constraints_sql).catch(err => {reject(catch_errors(err))})
             config.keys = {}
-            if(constraints[0].results) {
-                for(var c = 0; c < constraints[0].results.length; c++) {
-                    var constraint_name = constraints[0].results[c].constraint_name
-                    var column_name = constraints[0].results[c].column_name
+            if(constraints) {
+                for(var c = 0; c < constraints.length; c++) {
+                    var constraint_name = constraints[c].constraint_name
+                    var column_name = constraints[c].column_name
                     if(!config.keys[constraint_name]) {
                         config.keys[constraint_name] = []
                     }
@@ -947,6 +947,7 @@ async function run_sql_query (config, sql_query) {
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
         var query_results = []
+        var query_rows_count = 0
         var query_errors = []
         var safe_mode = config.safe_mode
         // Pass 'DISABLE_SAFE_MODE into the SQL queries array if you wish to turn off safe mode for single queries irregardless of the config
@@ -965,17 +966,33 @@ async function run_sql_query (config, sql_query) {
         if(Array.isArray(sql_query)) {
             for(var sql = 0; sql < sql_query.length; sql++) {
                 var query_result = await sql_helper.run_query(config, sql_query[sql]).catch(err => {query_errors.push(err)})
-                query_results.push(query_result)
+                if(Array.isArray(query_result)) {
+                    query_results = query_results.concat(query_result)
+                } else {
+                    if(typeof query_result == 'number') {
+                        query_rows_count += query_result
+                    }
+                }
             }
         } else {
             var query_result = await sql_helper.run_query(config, sql_query).catch(err => {query_errors.push(err)})
-                query_results.push(query_result)
+            if(Array.isArray(query_result)) {
+                query_results = query_results.concat(query_result)
+            } else {
+                if(typeof query_result == 'number') {
+                    query_rows_count += query_result
+                }
+            }
         }
 
         if(safe_mode && query_errors.length == 0) {
             var commit = sql_helper.commit()
             await sql_helper.run_query(config, commit).catch(err => {reject(catch_errors(err))})
-            resolve(query_results)
+            if(query_results.length > 0) {
+                resolve(query_results)
+            } else {
+                resolve(query_rows_count)
+            }
         }
         else if(safe_mode && query_errors.length != 0) {
             var rollback = sql_helper.rollback()
@@ -983,7 +1000,11 @@ async function run_sql_query (config, sql_query) {
             reject(query_errors)
         }
         if (!safe_mode && query_errors.length == 0) {
-            resolve(query_results)
+            if(query_results.length > 0) {
+                resolve(query_results)
+            } else {
+                resolve(query_rows_count)
+            }
         } else {
             reject(query_errors)
         }

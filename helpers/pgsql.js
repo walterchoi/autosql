@@ -78,9 +78,14 @@ var exports = {
                             console.log(sql_query.substring(0,50) + '... errored ' + repeat_number + ' times but completed successfully')
                         }
                         release()
-                        resolve({
-                            results: results.rows
-                        })
+                        if(results.command == 'INSERT') {
+                            resolve(results.rowCount)
+                        }
+                        else if(results.command == 'SELECT') {
+                            resolve(results.rows)
+                        } else {
+                            resolve(results.rows)
+                        }
                     })
                     .catch(async err => {
                         if(repeat_number) {repeat_number = repeat_number + 1}

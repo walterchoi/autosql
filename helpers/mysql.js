@@ -123,9 +123,11 @@ var exports = {
                             console.log(sql_query.substring(0,50) + '... errored ' + repeat_number + ' times but completed successfully')
                         }
                         conn.release()
-                        resolve({
-                            results: results
-                        })
+                        if(Array.isArray(results)) {
+                            resolve(results)
+                        } else {
+                            resolve(results.affectedRows)
+                        }
                     }
                 })
             }})
