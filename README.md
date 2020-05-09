@@ -33,8 +33,8 @@ If you have any feedback, please contact me via email at w@walterchoi.com
 
 ## Table of contents
 
-- [Supported languages / Dependencies](#Supported languages / Dependencies)
-- [Configuration and defaults](#Configuration and defaults)
+- [Supported languages and Dependencies](#Supported-languages-and-Dependencies)
+- [Configuration and defaults](#Configuration-and-defaults)
 - [Convenience methods](#Convenience-methods)
 
 ---
@@ -93,7 +93,7 @@ CONFIGURATION = {
 
 <details>
 <summary>meta_data - is a list of each column to be inserted and is an array of objects</summary>
-<p>
+
     ```js
     [
         {
@@ -126,23 +126,25 @@ CONFIGURATION = {
         }
     ]
     ```
-</p>
+
 </details>  
 
 <details>
 <summary>primary - is an optional array, listing column names used for the primary key</summary>
-<p>
-    EXAMPLE: 
+
+EXAMPLE: 
+
     ```js
     config.primary = ["column_1", "column_2"]
     ```
 
-    DEFAULTS TO:
+DEFAULTS TO:
+
     ```js
     config.primary = ["ID"]
     ```
 
-</p>
+
 </details>  
 
 <details>
@@ -260,3 +262,5 @@ auto_sql (automatic insertion) relies on each of these used in conjunction howev
 
 
 ---
+
+[back to top](#table-of-contents)
