@@ -40,7 +40,7 @@ If you have any feedback, please contact me via email at w@walterchoi.com
 ---
 
 
-## Supported languages / Dependencies
+## Supported languages and Dependencies
 
 Currently AutoSQL only supports MySQL and pgSQL.
 To support these SQL dialects, this repository has two optional dependencies
