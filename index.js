@@ -348,7 +348,7 @@ async function get_meta_data (config, data) {
         /* Example config object to be provided
         config = {
             minimum_unique: 100,
-            pseudo_unique: 97,
+            pseudo_unique: 0.97,
             primary: ['key_1', 'key_2'],
             auto_indexing: true,
             auto_id: false
@@ -386,7 +386,7 @@ async function get_meta_data (config, data) {
 
         // If no ID field was included and auto_id config field was set to true, then create an auto_incrementing numeric ID column
         if(!headers.includes('ID') && auto_id) {
-            headers.push({
+            headers.push({"ID": {
                 'type': 'int',
                 'length': 8,
                 'allowNull': false,
@@ -396,7 +396,7 @@ async function get_meta_data (config, data) {
                 'primary': true,
                 'auto_increment': true,
                 'default': undefined
-            })
+            }})
         }
         
         // Reset uniqueCheck array to null for a fresh test of the uniqueness of dataset
@@ -477,7 +477,7 @@ async function get_meta_data (config, data) {
             if(uniqueCheck[header_name].size == data.length && data.length > 0 && data.length >= minimum_unique) {
                 headers[h][header_name]['unique'] = true
             }
-            if(uniqueCheck[header_name].size >= (data.length * pseudo_unique/100) && data.length > 0 && data.length >= minimum_unique) {
+            if(uniqueCheck[header_name].size >= (data.length * pseudo_unique) && data.length > 0 && data.length >= minimum_unique) {
                 headers[h][header_name]['pseudounique'] = true
             }            
         }
