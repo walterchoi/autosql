@@ -94,7 +94,7 @@ CONFIGURATION = {
 <details>
 <summary>meta_data - is a list of each column to be inserted and is an array of objects</summary>
 
-    ```js
+```js
     [
         {
             COLUMN_1: {
@@ -125,7 +125,7 @@ CONFIGURATION = {
             }
         }
     ]
-    ```
+```
 
 </details>  
 
@@ -134,15 +134,15 @@ CONFIGURATION = {
 
 EXAMPLE: 
 
-    ```js
+```js
     config.primary = ["column_1", "column_2"]
-    ```
+```
 
 DEFAULTS TO:
 
-    ```js
+```js
     config.primary = ["ID"]
-    ```
+```
 
 
 </details>  
