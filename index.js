@@ -244,7 +244,7 @@ async function initialize_meta_data (headers) {
 // This function goes through provided headers to identify indexes or primary keys
 async function predict_indexes (config, primary_key) {
     return new Promise((resolve, reject) => {
-        var headers = config.headers
+        var headers = config.meta_data
         
         // Max key length prevents long strings from becoming a part of a primary key
         var defaults = require('./config/defaults.json')
@@ -355,7 +355,7 @@ async function get_meta_data (config, data) {
         }
         */ 
 
-        var headers = config.headers
+        var headers = config.meta_data
 
         // Check if headers object/array was provided, and if not create a default header object for use
         if(!headers) {
@@ -466,7 +466,7 @@ async function get_meta_data (config, data) {
             }
         }
 
-        config.headers = headers
+        config.meta_data = headers
 
         // Find unique or pseudounique columns
         for (var h = 0; h < headers.length; h++) {
@@ -482,7 +482,7 @@ async function get_meta_data (config, data) {
             }            
         }
 
-        config.headers = headers
+        config.meta_data = headers
 
         if(auto_indexing) {
             // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
@@ -540,8 +540,8 @@ async function auto_alter_table (config, new_headers) {
     return new Promise (async (resolve, reject) => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
-        if(!new_headers && config.metaData) {
-            new_headers = config.metaData
+        if(!new_headers && config.meta_data) {
+            new_headers = config.meta_data
         }
 
         var get_table_description_sql = sql_helper.get_table_description(config)
@@ -759,11 +759,11 @@ async function auto_configure_table (config, data) {
         }
         
         // Get provided data's meta data
-        if(!config.metaData) {
+        if(!config.meta_data) {
             var new_meta_data = await get_meta_data(config, data).catch(err => {reject(catch_errors(err))})
-            config.metaData = new_meta_data
+            config.meta_data = new_meta_data
         } else {
-            var new_meta_data = config.metaData
+            var new_meta_data = config.meta_data
         }
 
         // Now that the meta data associated with this data has been found, 
@@ -1030,7 +1030,7 @@ function sqlize (config, data) {
         }
 
         var sqlize = sql_lookup_table.sqlize
-        var metaData = config.metaData
+        var metaData = config.meta_data
         var headers = []
         metaData.map(header => 
             headers.push(Object.getOwnPropertyNames(header)[0])
@@ -1116,8 +1116,8 @@ async function auto_sql (config, data) {
 
         // From here begins the actual data insertion process
         // First let us get the provided data's meta data
-        if(!config.metaData) {
-            config.metaData = await get_meta_data(config, data).catch(err => {reject(catch_errors(err))})
+        if(!config.meta_data) {
+            config.meta_data = await get_meta_data(config, data).catch(err => {reject(catch_errors(err))})
         }
         // First let us make sure that the table exists or the table is compatible with the new data being inserted
         await auto_configure_table(config, data).catch(err => {reject(catch_errors(err))})
