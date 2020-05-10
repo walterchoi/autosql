@@ -719,8 +719,8 @@ async function convert_table_description (config, table_description) {
         } else if (nullable == 'YES') {
             nullable = true
         }
-        if(sql_lookup_table.translate[data_type]) {
-            data_type = sql_lookup_table.translate[data_type]
+        if(sql_lookup_table.translate.server_to_local[header_data["type"]]) {
+            type = sql_lookup_table.translate.server_to_local[header_data["type"]]
         }
         var header_obj = {
             [column_name]: {

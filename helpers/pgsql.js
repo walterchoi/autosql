@@ -234,8 +234,8 @@ var exports = {
                     type = 'varchar'
                 }
                 
-                if(sql_lookup_table.translate[header_data["type"]]) {
-                    type = sql_lookup_table.translate[header_data["type"]]
+                if(sql_lookup_table.translate.local_to_server[header_data["type"]]) {
+                    type = sql_lookup_table.translate.local_to_server[header_data["type"]]
                 }
     
                 if(create_table_sql_part) {
@@ -382,8 +382,8 @@ var exports = {
                     var def = header_data["default"]
                     var comment = header_data["comment"]
                 
-                    if(sql_lookup_table.translate[header_data["type"]]) {
-                        type = sql_lookup_table.translate[header_data["type"]]
+                    if(sql_lookup_table.translate.local_to_server[header_data["type"]]) {
+                        type = sql_lookup_table.translate.local_to_server[header_data["type"]]
                     }
     
                     if(sql_query_part) {
@@ -460,8 +460,8 @@ var exports = {
                     var decimal = header_data["decimal"]
                     var allowNull = header_data["allowNull"]
 
-                    if(sql_lookup_table.translate[header_data["type"]]) {
-                        type = sql_lookup_table.translate[header_data["type"]]
+                    if(sql_lookup_table.translate.local_to_server[header_data["type"]]) {
+                        type = sql_lookup_table.translate.local_to_server[header_data["type"]]
                     }
                     
                     if(sql_query_part) {

@@ -92,8 +92,7 @@ CONFIGURATION = {
 ```
 
 <details>
-<summary>**meta_data** - is a list of each column to be inserted and is an array of objects</summary>
-<p>
+<summary>meta_data - is a list of each column to be inserted and is an array of objects</summary>
 
 ```js
     [
@@ -128,12 +127,11 @@ CONFIGURATION = {
     ]
 ```
 
-</p>
 </details>  
 
 <details>
-<summary>**primary** - is an optional array, listing column names used for the primary key</summary>
-<p>
+<summary>primary - is an optional array, listing column names used for the primary key</summary>
+
 EXAMPLE: 
 
 ```js
@@ -145,52 +143,53 @@ DEFAULTS TO:
 ```js
     config.primary = ["ID"]
 ```
-</p>
+
+
 </details>  
 
 <details>
 <summary>The remaining optional settings change small aspects of how this repository affects the data insertion</summary>
-<p>
- - **minimum_unique**: changes the minimum number of rows needed to identify a column as unique
+
+ - minimum_unique: changes the minimum number of rows needed to identify a column as unique
     -- defaults to 50
- - **pseudo_unique**: changes the percentage of rows that are unique to be considered to be pseudo_unique
+ - pseudo_unique: changes the percentage of rows that are unique to be considered to be pseudo_unique
     -- defaults to 0.95 (95% | two standard deviations)
 
- - **sampling**: option to only check/sample a percentage of all data provided. Provided a float between 0 and 1, this will then select a number of random rows to use in finding data types/lengths/uniqueness etc
+ - sampling: option to only check/sample a percentage of all data provided. Provided a float between 0 and 1, this will then select a number of random rows to use in finding data types/lengths/uniqueness etc
     -- defaults to 0 (or off/sample everything)
         --- if you are inserting 1000 rows and sampling is set to 0.5, 500 random rows will be selected and used for checks
- - **sampling_minimum**: minimum number of data required for sampling to be enabled
+ - sampling_minimum: minimum number of data required for sampling to be enabled
     -- defaults to 100 
         --- if provided less than X rows or if sampling is set to a % where the selected number of sampled rows would be less than this row count, disables sampling
     
- - **max_key_length**: maximum key length - used for preventing unique long-text fields from being included in an automatically predicted primary key
+ - max_key_length: maximum key length - used for preventing unique long-text fields from being included in an automatically predicted primary key
     -- defaults to 255
- - **auto_indexing**: toggles the prediction and creation of indexes
+ - auto_indexing: toggles the prediction and creation of indexes
     -- defaults to true
- - **auto_id**: toggles the creation of an auto_incremental ID column - if an ID column is also provided, will not have any action
+ - auto_id: toggles the creation of an auto_incremental ID column - if an ID column is also provided, will not have any action
     -- defaults to false
 
- - **insert_type**: changes action of insert on duplicate key error
+ - insert_type: changes action of insert on duplicate key error
     -- defaults to "REPLACE"
         --- available options: 
             ---- "REPLACE" - replace/update all non-primary-key columns
             ---- "IGNORE" - ignore and do not replace/update
     
- - **collation**: collation of the databases/tables to use on creation
+ - collation: collation of the databases/tables to use on creation
     -- defaults to "utf8mb4_unicode_ci"
 
- - **max_insert**: maximum number of rows to insert per query
+ - max_insert: maximum number of rows to insert per query
     -- defaults to 5000
- - **max_insert_size**: maximum amount of data (bytes) to attempt to insert per query
+ - max_insert_size: maximum amount of data (bytes) to attempt to insert per query
     -- defaults to 1048576 (default max-allowed-packet for MySQL servers)
- - **insert_stack**: minimum number of rows to stack up per query
+ - insert_stack: minimum number of rows to stack up per query
     -- defaults to 100
         --- e.g. if provided 6000 rows of data and at row 4444 the data being sent would exceed max_insert_size, the data will be split into two stacks (4400 and 1600) to be inserted as separate queries
 
- - **safe_mode**: toggles the usage of transactions, rollback on any single error and commit only on no errors
+ - safe_mode: toggles the usage of transactions, rollback on any single error and commit only on no errors
     -- defaults to true
 
- - **wait_for_approval**: 
+ - wait_for_approval: 
     -- defaults to false
     locale: en-US,
     timezone: UTC,
@@ -200,17 +199,17 @@ DEFAULTS TO:
 
 <details>
 <summary>These configuration options (included within the defaults.json file) are not yet used and are included for planned future features</summary>
-<p>
- - **wait_for_approval**: before any change to table structure - output changes and wait for approval
+
+ - wait_for_approval: before any change to table structure - output changes and wait for approval
     -- defaults to false
 
- - **convert_timezone**: convert all datetime values (with timezone) to a specific timezone using Date.prototype.toLocaleString()
+ - convert_timezone: convert all datetime values (with timezone) to a specific timezone using Date.prototype.toLocaleString()
     -- defaults to true
- - **convert_all_timezone**: convert all datetime values (even if no timezone is provided - assuming UTC) to a specific timezone using Date.prototype.toLocaleString()
+ - convert_all_timezone: convert all datetime values (even if no timezone is provided - assuming UTC) to a specific timezone using Date.prototype.toLocaleString()
     -- defaults to false
- - **locale**: sets the output format used for Date.prototype.toLocaleString()
+ - locale: sets the output format used for Date.prototype.toLocaleString()
     -- defaults to "en-US"
- - **timezone**: sets the output timezone used for Date.prototype.toLocaleString()
+ - timezone: sets the output timezone used for Date.prototype.toLocaleString()
     -- defaults to "UTC"
 </p>
 </details>  

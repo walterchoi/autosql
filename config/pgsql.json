@@ -4,13 +4,17 @@
     "no_length": ["date", "time", "datetime", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "int", "bigint", "boolean"],
     "decimals": ["exponent", "double", "decimal"],
     "translate": {
-        "tinyint": "smallint",
-        "exponent": "double",
-        "character varying": "varchar",
-        "integer": "int",
-        "timestamp": "datetime",
-        "datetime": "timestamp",
-        "timestamp without time zone": "datetime"
+        "server_to_local": {
+            "timestamp without time zone": "datetime",
+            "integer": "int",
+            "timestamp": "datetime",
+            "character varying": "varchar"
+        },
+        "local_to_server": {
+            "tinyint": "smallint",
+            "exponent": "double",
+            "datetime": "timestamp"
+        }
     },
     "sqlize": [
         {

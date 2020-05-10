@@ -4,8 +4,12 @@
     "no_length": ["date", "time", "datetime", "json", "text", "mediumtext", "longtext", "exponent", "double"],
     "decimals": ["exponent", "double", "decimal"],
     "translate": {
-        "boolean": "tinyint",
-        "exponent": "double"
+        "server_to_local": {
+        },
+        "local_to_server": {
+            "boolean": "tinyint",
+            "exponent": "double"
+        }
     },
     "sqlize": [
         {
