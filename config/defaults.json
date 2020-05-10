@@ -14,9 +14,10 @@
     "max_insert_size": 1048576,
     "safe_mode": true,
 
-    "delete_columns": false,
-    "wait_for_approval": false,
     "locale": "en-US",
     "timezone": "UTC",
-    "convert_timezone": true
+    "convert_timezone": true,
+
+    "delete_columns": false,
+    "wait_for_approval": false
 }
