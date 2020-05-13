@@ -17,7 +17,9 @@ var exports = {
                 password: key.password,
                 port: key.port
             }
-            if(key.schema) {
+            if(key.database) {
+                pg_config.schema = key.database
+            } else if(key.schema) {
                 pg_config.schema = key.schema
             }
             if(key.ssh_stream) {
