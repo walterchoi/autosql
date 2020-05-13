@@ -779,6 +779,7 @@ async function auto_configure_table (config, data) {
 
 async function validate_database (config) {
     return new Promise (async (resolve, reject) => {
+        config = await check_config(config).catch(err => {reject(catch_errors(err))})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
@@ -791,6 +792,7 @@ async function validate_database (config) {
 
 async function validate_query (config, query) {
     return new Promise (async (resolve, reject) => {
+        config = await check_config(config).catch(err => {reject(catch_errors(err))})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
@@ -942,7 +944,7 @@ function getBinarySize (str) {
 // Function to run SQL queries - and run single or arrays of queries with/without transactions
 async function run_sql_query (config, sql_query) {
     return new Promise (async (resolve, reject) => {
-
+        config = await check_config(config).catch(err => {reject(catch_errors(err))})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
@@ -1074,51 +1076,11 @@ function sqlize (config, data) {
 async function auto_sql (config, data) {
     return new Promise (async (resolve, reject) => {
         var start_time = new Date()
-        if(!config) {
-            reject({
-                err: 'no configuration was set on automatic mode',
-                step: 'auto_sql',
-                description: 'invalid configuration object provided to auto_sql automated step',
-                resolution: 'please provide configuration object, additional details can be found in the documentation'
-            })
-        }
-    
-        if(!config.create_table) {
-            config.create_table = null
-        }
-
-        if(!config.sql_dialect || !config.database || !config.table) {
-            reject({
-                err: 'required configuration options not set on automatic mode',
-                step: 'auto_sql',
-                description: 'invalid configuration object provided to auto_sql automated step',
-                resolution: `please provide supported value for ${!config.sql_dialect ? 'sql_dialect' : ''} ${!config.database ? 'database (target database)' : ''}
-                ${!config.table ? 'table (target table)' : ''} in configuration object, additional details can be found in the documentation`
-            })
-        }
-                
-        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
-        if(!sql_dialect_lookup_object[config.sql_dialect]) {
-            reject({
-                err: 'no supported sql dialect was set on automatic mode',
-                step: 'auto_sql',
-                description: 'invalid configuration object provided to auto_sql automated step',
-                resolution: 'please provide supported sql_dialect value in configuration object, additional details can be found in the documentation'
-            })
-        }
         
+        config = await check_config(config).catch(err => {reject(catch_errors(err))})
+        
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
-
-        if(config.ssh_config) {
-            config.ssh_stream = await set_ssh(config.ssh_config).catch(err => {
-                reject(catch_errors(err))
-            })
-        }
-
-        // Establish a connection to the database (if no )
-        if(!config.connection) {
-            config.connection = await sql_helper.establish_connection(config).catch(err => {reject(catch_errors(err))})
-        }
 
         // From here begins the actual data insertion process
         // First let us get the provided data's meta data
@@ -1138,9 +1100,67 @@ async function auto_sql (config, data) {
     })
 }
 
+async function check_config (config) {
+    return new Promise((resolve, reject) => {
+    if(!config) {
+        reject({
+            err: 'no configuration was set on automatic mode',
+            step: 'auto_sql',
+            description: 'invalid configuration object provided to auto_sql automated step',
+            resolution: 'please provide configuration object, additional details can be found in the documentation'
+        })
+    }
+
+    if(!config.create_table) {
+        config.create_table = null
+    }
+
+    if(!config.sql_dialect || !config.database || !config.table) {
+        reject({
+            err: 'required configuration options not set on automatic mode',
+            step: 'auto_sql',
+            description: 'invalid configuration object provided to auto_sql automated step',
+            resolution: `please provide supported value for ${!config.sql_dialect ? 'sql_dialect' : ''} ${!config.database ? 'database (target database)' : ''}
+            ${!config.table ? 'table (target table)' : ''} in configuration object, additional details can be found in the documentation`
+        })
+    }
+            
+    var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+    if(!sql_dialect_lookup_object[config.sql_dialect]) {
+        reject({
+            err: 'no supported sql dialect was set on automatic mode',
+            step: 'auto_sql',
+            description: 'invalid configuration object provided to auto_sql automated step',
+            resolution: 'please provide supported sql_dialect value in configuration object, additional details can be found in the documentation'
+        })
+    }
+    
+    var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+
+    if(config.ssh_config) {
+        config.ssh_stream = await set_ssh(config.ssh_config).catch(err => {
+            reject(catch_errors(err))
+        })
+    }
+
+    // Establish a connection to the database (if no )
+    if(!config.connection) {
+        config.connection = await sql_helper.establish_connection(config).catch(err => {reject(catch_errors(err))})
+    }
+
+    resolve(config)
+    })
+}
+
 set_ssh = async function (ssh_keys) {
     return new Promise((resolve, reject) => {
-        var Client = require('ssh2').Client;
+        try {
+            var Client = require('ssh2').Client;
+           }
+           catch (e) {
+            console.log('SSH tunnel config specified but ssh2 repository has not been installed. Please install ssh2 via "npm install ssh2"')
+            reject(e)
+           }
         var ssh = new Client();
         if(ssh_keys.private_key_path && !ssh_keys.private_key) {
             ssh_keys.private_key = await readfile(ssh_keys.private_key_path)
@@ -1175,7 +1195,13 @@ catch_errors = async function (err) {
 
 var readfile = async function (path) {
     return new Promise(resolve => {
-        var fs = require('fs');
+        try {
+            var fs = require('fs');
+           }
+           catch (e) {
+            console.log('SSH tunnel config specified, key path provided but fs repository has not been installed. Please install fs via "npm install fs" OR provide the parsed ssh_key instead of the path')
+            reject(e)
+           }
         fs.readFile(path, 'utf8', function(err, res){
             resolve(res)
         })
