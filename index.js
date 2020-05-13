@@ -1153,7 +1153,7 @@ async function check_config (config) {
 }
 
 set_ssh = async function (ssh_keys) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         try {
             var Client = require('ssh2').Client;
            }
