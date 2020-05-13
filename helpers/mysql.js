@@ -11,29 +11,23 @@ var exports = {
                     ${!key.password ? 'password' : ''} in configuration object, additional details can be found in the documentation`
                 })
             }
-            if(key.schema) {
-                pool = mysql.createPool({
-                    host: key.host,
-                    user: key.username,
-                    password: key.password,
-                    port: key.port,
-                    database: key.schema,
-                    waitForConnections: true,
-                    connectionLimit: 20,
-                    queueLimit: 0
-                })
-            } else {
-                pool = mysql.createPool({
-                    host: key.host,
-                    user: key.username,
-                    password: key.password,
-                    port: key.port,
-                    waitForConnections: true,
-                    connectionLimit: 20,
-                    queueLimit: 0
-                })
+            var mysql_config = {
+                host: key.host,
+                user: key.username,
+                password: key.password,
+                port: key.port,
+                waitForConnections: true,
+                connectionLimit: 20,
+                queueLimit: 0
             }
-                resolve(pool)
+            if(key.schema) {
+                mysql_config.database = key.schema
+            }
+            if(key.ssh_stream) {
+                mysql_config.stream = key.ssh_stream
+            }
+            pool = mysql.createPool(mysql_config)
+            resolve(pool)
         })
     },
     test_connection : async function (key) {

@@ -11,22 +11,19 @@ var exports = {
                 })
             }
             var { Pool, Client } = require('pg')
-            if(key.schema) {
-                var pool = new Pool({
-                    host: key.host,
-                    user: key.username,
-                    password: key.password,
-                    port: key.port,
-                    database: key.schema
-                })
-            } else {
-                var pool = new Pool({
-                    host: key.host,
-                    user: key.username,
-                    password: key.password,
-                    port: key.port
-                })
+            var pg_config = {
+                host: key.host,
+                user: key.username,
+                password: key.password,
+                port: key.port
             }
+            if(key.schema) {
+                pg_config.schema = key.schema
+            }
+            if(key.ssh_stream) {
+                pg_config.stream = key.ssh_stream
+            }
+            var pool = new Pool(pg_config)
             
             pool.on('error', (err, client) => {
                 reject({
@@ -35,7 +32,6 @@ var exports = {
                     description: 'Unexpected error on idle client: ' + err,
                     resolution: `please check your connection to the pgsql client`
                     })
-                process.exit(-1)
               })
             resolve(pool)
         })

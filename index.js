@@ -1109,6 +1109,12 @@ async function auto_sql (config, data) {
         
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
+        if(config.ssh_config) {
+            config.ssh_stream = await set_ssh(config.ssh_config).catch(err => {
+                reject(catch_errors(err))
+            })
+        }
+
         // Establish a connection to the database (if no )
         if(!config.connection) {
             config.connection = await sql_helper.establish_connection(config).catch(err => {reject(catch_errors(err))})
@@ -1132,9 +1138,48 @@ async function auto_sql (config, data) {
     })
 }
 
+set_ssh = async function (ssh_keys) {
+    return new Promise((resolve, reject) => {
+        var Client = require('ssh2').Client;
+        var ssh = new Client();
+        if(ssh_keys.private_key_path && !ssh_keys.private_key) {
+            ssh_keys.private_key = await readfile(ssh_keys.private_key_path)
+        }
+        var ssh_config = {
+            "username": ssh_keys.username,
+            "host": ssh_keys.host,
+            "port": ssh_keys.port,
+            "private_key": ssh_keys.private_key
+        }
+        ssh.on('ready', function() {
+            ssh.forwardOut(
+                ssh_keys.source_address,
+                ssh_keys.source_port,
+                ssh_keys.destination_address,
+                ssh_keys.destination_port,
+                function (err, stream) {
+                if (err) {
+                    reject(err);
+                } 
+                    resolve(stream)
+                }
+            );
+        }).connect(ssh_config);
+    })
+}
+
 catch_errors = async function (err) {
     console.log(err)
     return(err)
+}
+
+var readfile = async function (path) {
+    return new Promise(resolve => {
+        var fs = require('fs');
+        fs.readFile(path, 'utf8', function(err, res){
+            resolve(res)
+        })
+    })
 }
 
 module.exports = {
@@ -1151,5 +1196,6 @@ module.exports = {
     insert_data,
     validate_database,
     validate_query,
-    run_sql_query
+    run_sql_query,
+    set_ssh
 }
