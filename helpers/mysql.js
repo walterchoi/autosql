@@ -20,7 +20,9 @@ var exports = {
                 connectionLimit: 20,
                 queueLimit: 0
             }
-            if(key.schema) {
+            if(key.database) {
+                mysql_config.database = key.database
+            } else if(key.schema) {
                 mysql_config.database = key.schema
             }
             if(key.ssh_stream) {
