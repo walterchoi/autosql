@@ -779,7 +779,7 @@ async function auto_configure_table (config, data) {
 
 async function validate_database (config) {
     return new Promise (async (resolve, reject) => {
-        config = await check_config(config).catch(err => {reject(catch_errors(err))})
+        config = await check_config(config, false).catch(err => {reject(catch_errors(err))})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
@@ -792,7 +792,7 @@ async function validate_database (config) {
 
 async function validate_query (config, query) {
     return new Promise (async (resolve, reject) => {
-        config = await check_config(config).catch(err => {reject(catch_errors(err))})
+        config = await check_config(config, false).catch(err => {reject(catch_errors(err))})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
@@ -944,7 +944,7 @@ function getBinarySize (str) {
 // Function to run SQL queries - and run single or arrays of queries with/without transactions
 async function run_sql_query (config, sql_query) {
     return new Promise (async (resolve, reject) => {
-        config = await check_config(config).catch(err => {reject(catch_errors(err))})
+        config = await check_config(config, false).catch(err => {reject(catch_errors(err))})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
@@ -1077,7 +1077,7 @@ async function auto_sql (config, data) {
     return new Promise (async (resolve, reject) => {
         var start_time = new Date()
         
-        config = await check_config(config).catch(err => {reject(catch_errors(err))})
+        config = await check_config(config, true).catch(err => {reject(catch_errors(err))})
         
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
@@ -1100,7 +1100,7 @@ async function auto_sql (config, data) {
     })
 }
 
-async function check_config (config) {
+async function check_config (config, auto) {
     return new Promise(async (resolve, reject) => {
     if(!config) {
         reject({
@@ -1115,7 +1115,7 @@ async function check_config (config) {
         config.create_table = null
     }
 
-    if(!config.sql_dialect || !config.database || !config.table) {
+    if(!config.sql_dialect || (!config.database && auto) || (!config.table && auto)) {
         reject({
             err: 'required configuration options not set on automatic mode',
             step: 'auto_sql',
