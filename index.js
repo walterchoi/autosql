@@ -1101,7 +1101,7 @@ async function auto_sql (config, data) {
 }
 
 async function check_config (config) {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
     if(!config) {
         reject({
             err: 'no configuration was set on automatic mode',
