@@ -634,7 +634,7 @@ var exports = {
     find_constraint : function (config) {
         var sql_query = `SELECT COLUMN_NAME, CONSTRAINT_NAME FROM 
         information_schema.constraint_column_usage
-        WHERE table_schema = '${config.database}' AND TABLE_NAME = '${config.table}'`
+        WHERE table_schema = '${config.schema}' AND TABLE_NAME = '${config.table}'`
         return sql_query
     },
     start_transaction : function () {
