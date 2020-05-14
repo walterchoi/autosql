@@ -447,7 +447,7 @@ async function get_meta_data (config, data) {
                                 }
                             headers[h][header_name]['type'] = new_type
                         }
-                    }
+                    }}
                     if(sql_lookup_table.decimals.includes(headers[h][header_name]['type'])) {
                         if(Math.floor(dataPoint) == dataPoint) {var decimal_len = 0}
                         else {var decimal_len = dataPoint.toString().split(".")[1].length + 1}
