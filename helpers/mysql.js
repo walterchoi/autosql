@@ -99,10 +99,16 @@ var exports = {
                         if(repeat_number) {repeat_number = repeat_number + 1}
                         else {repeat_number = 1}
                         if (repeat_number < max_repeat) {
-                            var nested_query = await exports.run_query(config, sql_query, repeat_number)
-                            if(!nested_query.err) {resolve ({err: nested_query.err, 
-                                results: nested_query.results
-                            })}
+                            var nested_err = null
+                            var nested_query = await exports.run_query(config, sql_query, repeat_number).catch(err => {
+                                if(repeat_number == max_repeat - 1) {{
+                                    nested_err = err
+                                    reject(err)
+                                }}
+                            })
+                            if(!nested_err) {
+                                resolve (nested_query)
+                            }
                         } else {
                             conn.release()
                             console.log(sql_query.substring(0,50) + '... errored ' + repeat_number + ' times')
