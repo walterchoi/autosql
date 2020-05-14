@@ -569,10 +569,15 @@ var exports = {
                         resolution: `please set one primary or unique constraint to table: ${table} and provide this within the config in either 'key' values`
                     })
                 }
+                if(Array.isArray(keys[Object.getOwnPropertyNames(keys)[0]])) {
+                    var key_columns = keys[Object.getOwnPropertyNames(keys)[0]]
+                } else {
+                    var key_columns = [keys[Object.getOwnPropertyNames(keys)[0]]]
+                }
                 replace_sql = 'ON CONFLICT ON CONSTRAINT ' + `"` + Object.getOwnPropertyNames(keys)[0] + `" \n` + 'DO UPDATE SET '
                 var non_key_headers = Array.from(headers)
                 for (var h = 0; h < non_key_headers.length; h++) {
-                    if(keys[Object.getOwnPropertyNames(keys)[0]].includes(non_key_headers[h])) {
+                    if(key_columns.includes(non_key_headers[h])) {
                         non_key_headers.splice(h, 1)
                     }
                 }
