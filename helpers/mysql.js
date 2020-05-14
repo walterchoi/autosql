@@ -22,8 +22,15 @@ var exports = {
             }
             if(key.database) {
                 mysql_config.database = key.database
-            } else if(key.schema) {
-                mysql_config.database = key.schema
+                if(!key.schema) {
+                    mysql_config.shema = key.database
+                }
+            }
+            if(key.schema) {
+                mysql_config.schema = key.schema
+                if(!key.database) {
+                    mysql_config.database = key.schema
+                }
             }
             if(key.ssh_stream) {
                 mysql_config.stream = key.ssh_stream
