@@ -947,7 +947,6 @@ async function run_sql_query (config, sql_query) {
         config = await check_config(config, false).catch(err => {reject(catch_errors(err))})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
-        console.log(sql_query.substring(0, 100))
         var query_results = []
         var query_rows_count = 0
         var query_errors = []
