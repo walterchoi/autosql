@@ -137,7 +137,12 @@ var exports = {
         })
     },
     check_database_exists : function (config) {
-        var database = config.database
+        if(config.schema) {
+            var database = config.schema
+        }
+        else if (config.database) {
+            var database = config.database
+        }
         var sql_query_part = ""
         // Handle multiple databases being provided as an array
         if(Array.isArray(database)) {
@@ -157,12 +162,22 @@ var exports = {
         return (sql_query)
     },
     create_database : function (config) {
-        var database = config.database;
+        if(config.schema) {
+            var database = config.schema
+        }
+        else if (config.database) {
+            var database = config.database
+        }
         var sql_query = "CREATE DATABASE `" + database + "`;"
         return(sql_query)
     },
     check_tables_exists : function (config) {
-        var database = config.database;
+        if(config.schema) {
+            var database = config.schema
+        }
+        else if (config.database) {
+            var database = config.database
+        }
         var table = config.table;
 
         var sql_query_part = ""
@@ -188,7 +203,12 @@ var exports = {
             var sql_dialect_lookup_object = require('../config/sql_dialect.json')
             var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
     
-            var database = config.database;
+            if(config.schema) {
+                var database = config.schema
+            }
+            else if (config.database) {
+                var database = config.database
+            }
             var table = config.table;
             var collation = config.collation;
 
@@ -292,7 +312,12 @@ var exports = {
         })
     },
     get_table_description : function (config) {
-        var database = config.database;
+        if(config.schema) {
+            var database = config.schema
+        }
+        else if (config.database) {
+            var database = config.database
+        }
         var table = config.table;
 
         var sql_query = "SELECT COLUMN_NAME, DATA_TYPE, " +
@@ -310,7 +335,12 @@ var exports = {
             var sql_dialect_lookup_object = require('../config/sql_dialect.json')
             var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
     
-            var database = config.database;
+            if(config.schema) {
+                var database = config.schema
+            }
+            else if (config.database) {
+                var database = config.database
+            }
             var table = config.table;
             var sql_query = "ALTER TABLE `" + database + "`.`" + table + "` \n"
             var sql_query_part = null
@@ -426,7 +456,12 @@ var exports = {
             var int_group = groupings.int_group
             var special_int_group = groupings.special_int_group
 
-            var database = config.database
+            if(config.schema) {
+                var database = config.schema
+            }
+            else if (config.database) {
+                var database = config.database
+            }
             var table = config.table
             var insert_type = config.insert_type
             var metaData = config.meta_data
