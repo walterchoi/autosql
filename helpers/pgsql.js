@@ -11,6 +11,7 @@ var exports = {
                 })
             }
             var { Pool, Client } = require('pg')
+            console.log(key)
             var pg_config = {
                 host: key.host,
                 user: key.username,
@@ -597,7 +598,7 @@ var exports = {
         return sql_query
     },
     start_transaction : function () {
-        return('BEGIN;')
+        return('START TRANSACTION;')
     },
     commit : function () {
         return('COMMIT;')
