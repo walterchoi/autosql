@@ -11,7 +11,6 @@ var exports = {
                 })
             }
             var { Pool, Client } = require('pg')
-            console.log(key)
             var pg_config = {
                 host: key.host,
                 user: key.username,
@@ -34,7 +33,7 @@ var exports = {
                 pg_config.stream = key.ssh_stream
             }
             var pool = new Pool(pg_config)
-            
+            console.log(pg_config)
             pool.on('error', (err, client) => {
                 reject({
                     err: 'pgsql connection was invalid',
