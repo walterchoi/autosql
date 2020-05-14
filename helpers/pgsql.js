@@ -33,7 +33,6 @@ var exports = {
                 pg_config.stream = key.ssh_stream
             }
             var pool = new Pool(pg_config)
-            console.log(pg_config)
             pool.on('error', (err, client) => {
                 reject({
                     err: 'pgsql connection was invalid',
@@ -56,6 +55,7 @@ var exports = {
             }
             // Automatically retry each query up to 25 times before erroring out
             if(!max_repeat) {max_repeat = 25}
+            console.log(sql_query.substring(0, 100))
             //console.log(sql_query)
             pool.connect(async (err, client, release) => {
                 if(err) {
