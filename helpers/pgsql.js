@@ -569,6 +569,7 @@ var exports = {
                         resolution: `please set one primary or unique constraint to table: ${table} and provide this within the config in either 'key' values`
                     })
                 }
+                console.log(keys)
                 if(Array.isArray(keys[Object.getOwnPropertyNames(keys)[0]])) {
                     var key_columns = keys[Object.getOwnPropertyNames(keys)[0]]
                 } else {
