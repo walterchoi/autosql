@@ -55,7 +55,6 @@ var exports = {
             }
             // Automatically retry each query up to 25 times before erroring out
             if(!max_repeat) {max_repeat = 25}
-            console.log(sql_query.substring(0, 100))
             //console.log(sql_query)
             pool.connect(async (err, client, release) => {
                 if(err) {
@@ -569,7 +568,6 @@ var exports = {
                         resolution: `please set one primary or unique constraint to table: ${table} and provide this within the config in either 'key' values`
                     })
                 }
-                console.log(keys)
                 if(Array.isArray(keys[Object.getOwnPropertyNames(keys)[0]])) {
                     var key_columns = keys[Object.getOwnPropertyNames(keys)[0]]
                 } else {
