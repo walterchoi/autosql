@@ -439,13 +439,14 @@ async function get_meta_data (config, data) {
                     // Else attempt to 
                     var currentType = await predict_type(dataPoint).catch(err => {reject(catch_errors(err))})
                     if(currentType != overallType) {
-                        if((header_name == 'starting' || header_name == 'expirydate') && overallType == 'datetime')  {
-                            console.log('dataPoint')
-                            console.log(data[i])
-                            console.log('dataPoint')
-                        }
                         var new_type = await collate_types(currentType, overallType).catch(err => {reject(catch_errors(err))})
-                        headers[h][header_name]['type'] = new_type
+                        if(new_type != headers[h][header_name]['type']) {
+                            if(!sql_lookup_table.no_length.includes(new_type) && sql_lookup_table.no_length.includes(headers[h][header_name]['type'])) {
+                                if(headers[h][header_name]['length'] < dataPoint.length + 5) {
+                                    headers[h][header_name]['length'] = dataPoint.length + 5
+                                }
+                            headers[h][header_name]['type'] = new_type
+                        }
                     }
                     if(sql_lookup_table.decimals.includes(headers[h][header_name]['type'])) {
                         if(Math.floor(dataPoint) == dataPoint) {var decimal_len = 0}
@@ -827,9 +828,6 @@ async function insert_data (config, data) {
         if(config.sql_dialect == 'pgsql' && !config.keys) {
             var constraints_sql = sql_helper.find_constraint(config)
             var constraints = await run_sql_query(config, constraints_sql).catch(err => {reject(catch_errors(err))})
-            console.log('constraints')
-            console.log(constraints)
-            console.log('constraints')
             config.keys = {}
             if(constraints) {
                 for(var c = 0; c < constraints.length; c++) {
