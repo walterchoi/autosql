@@ -439,6 +439,11 @@ async function get_meta_data (config, data) {
                     // Else attempt to 
                     var currentType = await predict_type(dataPoint).catch(err => {reject(catch_errors(err))})
                     if(currentType != overallType) {
+                        if((header_name == 'starting' || header_name == 'expirydate') && overallType == 'datetime')  {
+                            console.log('dataPoint')
+                            console.log(dataPoint)
+                            console.log('dataPoint')
+                        }
                         var new_type = await collate_types(currentType, overallType).catch(err => {reject(catch_errors(err))})
                         headers[h][header_name]['type'] = new_type
                     }
