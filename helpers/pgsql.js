@@ -597,7 +597,7 @@ var exports = {
         return sql_query
     },
     start_transaction : function () {
-        return('START TRANSACTION;')
+        return('BEGIN;')
     },
     commit : function () {
         return('COMMIT;')
