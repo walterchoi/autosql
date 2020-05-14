@@ -49,6 +49,7 @@ var exports = {
         return new Promise(async (resolve, reject) => {
             console.log('before establish_connection')
             console.log(config.connection)
+            console.log(typeof config.connection)
             console.log(sql_query.substring(0, 100))
             console.log('before establish_connection')
             var pool = config.connection
