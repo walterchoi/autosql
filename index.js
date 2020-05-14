@@ -822,6 +822,9 @@ async function insert_data (config, data) {
         if(config.sql_dialect == 'pgsql' && !config.keys) {
             var constraints_sql = sql_helper.find_constraint(config)
             var constraints = await run_sql_query(config, constraints_sql).catch(err => {reject(catch_errors(err))})
+            console.log('constraints')
+            console.log(constraints)
+            console.log('constraints')
             config.keys = {}
             if(constraints) {
                 for(var c = 0; c < constraints.length; c++) {
