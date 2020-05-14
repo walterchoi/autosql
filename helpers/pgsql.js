@@ -47,13 +47,8 @@ var exports = {
     },
     run_query : async function (config, sql_query, repeat_number, max_repeat) {
         return new Promise(async (resolve, reject) => {
-            console.log('before establish_connection')
-            console.log(config.connection.connect)
-            console.log(typeof config.connection.connect)
-            console.log(sql_query.substring(0, 100))
-            console.log('before establish_connection')
             var pool = config.connection
-            if(!pool) {
+            if(!pool || typeof config.connection.connect != 'function') {
                 pool = await this.establish_connection(config).catch(err => {
                     console.log(err)
                     reject(err)
