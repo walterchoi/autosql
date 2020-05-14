@@ -1168,8 +1168,13 @@ set_ssh = async function (ssh_keys) {
         var ssh_config = {
             "username": ssh_keys.username,
             "host": ssh_keys.host,
-            "port": ssh_keys.port,
-            "privateKey": ssh_keys.private_key
+            "port": ssh_keys.port
+        }
+        if(ssh_keys.password) {
+            ssh_config.password = ssh_keys.password
+        }
+        if(ssh_keys.private_key) {
+            ssh_config.privateKey = ssh_keys.private_key
         }
         ssh.on('ready', function() {
             ssh.forwardOut(

@@ -46,7 +46,9 @@ Currently AutoSQL only supports MySQL and pgSQL.
 To support these SQL dialects, this repository has two optional dependencies
 - mysql2 (https://www.npmjs.com/package/mysql2)
 - pg (https://www.npmjs.com/package/pg)
-
+And to support the use of SSH tunnels, this repository has two optional dependencies
+- ssh2 (https://www.npmjs.com/package/ssh2)
+- fs (https://www.npmjs.com/package/fs)
 
 ---
 
@@ -71,6 +73,7 @@ CONFIGURATION = {
     // OPTIONAL SECTION
     "meta_data": [OPTIONAL ARRAY -- if none is provided, one will be created automatically],
     "primary": [OPTIONAL ARRAY],
+    "ssh_config": [OPTIONAL OBJECT],
 
     // OPTIONAL SETTINGS
     "max_key_length": [OPTIONAL NUMBER],
@@ -144,6 +147,31 @@ DEFAULTS TO:
     config.primary = ["ID"]
 ```
 
+
+</details>  
+
+<details>
+<summary>ssh_config - is an optional object, used for connecting with the SSH tunnel that should be used as a stream with the SQL server connection</summary>
+
+EXAMPLE: 
+
+```js
+    config.ssh_config = {
+      username: 'Username',
+      host: 'hostname/IP',
+      port: port,
+      password: 'Password (OPTIONAL)',
+      private_key: 'Private Key as String (OPTIONAL)',
+      private_key_path: 'Private Key file path as String (OPTIONAL)',
+      source_address: 'hostname/IP',
+      source_port: port,
+      destination_address: 'hostname/IP',
+      destination_port: port
+    }
+```
+
+Uses optional dependency 'ssh2' to create the stream.
+If the private key has been provided as a file, uses optional dependency 'fs' to read this file.
 
 </details>  
 
