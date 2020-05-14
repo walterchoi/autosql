@@ -20,7 +20,7 @@ var exports = {
             if(key.database) {
                 pg_config.database = key.database
                 if(!key.schema) {
-                    pg_config.shema = key.database
+                    pg_config.schema = key.database
                 }
             }
             if(key.schema) {

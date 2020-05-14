@@ -23,7 +23,7 @@ var exports = {
             if(key.database) {
                 mysql_config.database = key.database
                 if(!key.schema) {
-                    mysql_config.shema = key.database
+                    mysql_config.schema = key.database
                 }
             }
             if(key.schema) {
