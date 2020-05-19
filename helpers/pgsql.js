@@ -32,8 +32,8 @@ var exports = {
             if(key.ssh_stream) {
                 pg_config.stream = key.ssh_stream
             }
-            var pool = new Pool(pg_config)
-            pool.on('error', (err, client) => {
+            var connection = new Pool(pg_config)
+            connection.on('error', (err, client) => {
                 reject({
                     err: 'pgsql connection was invalid',
                     step: 'establish_connection (pgsql variant)',
@@ -41,7 +41,7 @@ var exports = {
                     resolution: `please check your connection to the pgsql client`
                     })
               })
-            resolve(pool)
+            resolve(connection)
         })
     },
     run_query : async function (config, sql_query, repeat_number, max_repeat) {
@@ -65,7 +65,6 @@ var exports = {
                         var nested_query = await exports.run_query(config, sql_query, repeat_number).catch(err => {
                             if(repeat_number == max_repeat - 1) {{
                                 nested_err = err
-                                console.log(sql_query)
                                 reject(err)
                             }}
                         })

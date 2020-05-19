@@ -36,8 +36,8 @@ var exports = {
         return new Promise(async (resolve, reject) => {
             var _err = null
             var pool = await this.establish_connection(key).catch(err => {
-                if(err) {reject(err)}
                 _err = err
+                if(err) {reject(err)}
             })
             var sql_query = "SELECT 1 AS SOLUTION;"
             var config = {

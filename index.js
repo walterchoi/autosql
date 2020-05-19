@@ -56,6 +56,9 @@ async function predict_type (data) {
                 })
             }
         }
+        if(!currentType) {
+            currentType == 'varchar'
+        }
         resolve(currentType)
     })
 }
@@ -360,6 +363,7 @@ async function get_meta_data (config, data) {
         // Check if headers object/array was provided, and if not create a default header object for use
         if(!headers) {
             headers = await get_headers(data)
+            console.log(headers)
             headers = await initialize_meta_data(headers)
         } else {
             var meta_data_columns = ['type','length','allowNull','unique','pseudounique','index']
@@ -473,6 +477,7 @@ async function get_meta_data (config, data) {
         }
 
         config.meta_data = headers
+        console.log(headers)
 
         // Find unique or pseudounique columns
         for (var h = 0; h < headers.length; h++) {
@@ -783,8 +788,9 @@ async function auto_configure_table (config, data) {
     })
 }
 
-async function validate_database (config) {
+async function validate_database (provided_config) {
     return new Promise (async (resolve, reject) => {
+        var config = JSON.parse(JSON.stringify(provided_config))
         config = await check_config(config, false).catch(err => {reject(catch_errors(err))})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
@@ -796,8 +802,9 @@ async function validate_database (config) {
     })
 }
 
-async function validate_query (config, query) {
+async function validate_query (provided_config, query) {
     return new Promise (async (resolve, reject) => {
+        var config = JSON.parse(JSON.stringify(provided_config))
         config = await check_config(config, false).catch(err => {reject(catch_errors(err))})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
@@ -1078,9 +1085,10 @@ function sqlize (config, data) {
     })
 }
 
-async function auto_sql (config, data) {
+async function auto_sql (provided_config, data) {
     return new Promise (async (resolve, reject) => {
         var start_time = new Date()
+        var config = JSON.parse(JSON.stringify(provided_config))
         
         config = await check_config(config, true).catch(err => {reject(catch_errors(err))})
         
@@ -1105,8 +1113,9 @@ async function auto_sql (config, data) {
     })
 }
 
-async function check_config (config, auto) {
+async function check_config (provided_config, auto) {
     return new Promise(async (resolve, reject) => {
+        var config = JSON.parse(JSON.stringify(provided_config))
     if(!config) {
         reject({
             err: 'no configuration was set on automatic mode',
