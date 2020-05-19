@@ -363,7 +363,6 @@ async function get_meta_data (config, data) {
         // Check if headers object/array was provided, and if not create a default header object for use
         if(!headers) {
             headers = await get_headers(data)
-            console.log(headers)
             headers = await initialize_meta_data(headers)
         } else {
             var meta_data_columns = ['type','length','allowNull','unique','pseudounique','index']
@@ -442,15 +441,15 @@ async function get_meta_data (config, data) {
                 } else {
                     // Else attempt to 
                     var currentType = await predict_type(dataPoint).catch(err => {reject(catch_errors(err))})
+                    if(!currentType) {console.log(dataPoint)}
                     if(currentType != overallType) {
                         var new_type = await collate_types(currentType, overallType).catch(err => {reject(catch_errors(err))})
                         if(new_type != headers[h][header_name]['type']) {
                             if(!sql_lookup_table.no_length.includes(new_type) && sql_lookup_table.no_length.includes(headers[h][header_name]['type'])) {
                                 if(headers[h][header_name]['length'] < dataPoint.length + 5) {
                                     headers[h][header_name]['length'] = dataPoint.length + 5
-                                }
+                                }}
                             headers[h][header_name]['type'] = new_type
-                        }
                     }}
                     if(sql_lookup_table.decimals.includes(headers[h][header_name]['type'])) {
                         if(Math.floor(dataPoint) == dataPoint) {var decimal_len = 0}
@@ -477,7 +476,6 @@ async function get_meta_data (config, data) {
         }
 
         config.meta_data = headers
-        console.log(headers)
 
         // Find unique or pseudounique columns
         for (var h = 0; h < headers.length; h++) {
