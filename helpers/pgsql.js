@@ -15,7 +15,10 @@ var exports = {
                 host: key.host,
                 user: key.username,
                 password: key.password,
-                port: key.port
+                port: key.port,
+                idleTimeoutMillis: 30000,
+                connectionTimeoutMillis: 2000,
+                max: 25
             }
             if(key.database) {
                 pg_config.database = key.database

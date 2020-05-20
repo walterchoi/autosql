@@ -441,7 +441,6 @@ async function get_meta_data (config, data) {
                 } else {
                     // Else attempt to 
                     var currentType = await predict_type(dataPoint).catch(err => {reject(catch_errors(err))})
-                    if(!currentType) {console.log(dataPoint)}
                     if(currentType != overallType) {
                         var new_type = await collate_types(currentType, overallType).catch(err => {reject(catch_errors(err))})
                         if(new_type != headers[h][header_name]['type']) {
