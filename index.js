@@ -562,7 +562,7 @@ async function auto_alter_table (config, new_headers) {
             var header_name = (Object.getOwnPropertyNames(config.meta_data[nh])[0])
             for (var oh = 0; oh < old_headers.length; oh++) {
                 var oldheader_name = (Object.getOwnPropertyNames(old_headers[oh])[0])
-                if(old_header_name === header_name) {
+                if(oldheader_name === header_name) {
                     if(config.meta_data[nh][header_name].type != old_headers[oh][oldheader_name].type) {
                         var new_type = await collate_types(config.meta_data[nh][header_name].type, old_headers[oh][oldheader_name].type).catch(err => {reject(catch_errors(err))})
                         if(new_type !== config.meta_data[nh][header_name].type) {
