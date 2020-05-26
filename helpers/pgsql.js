@@ -110,7 +110,8 @@ var exports = {
                         var nested_query = await exports.run_query(config, sql_query, repeat_number).catch(err => {
                             if(repeat_number == max_repeat - 1) {{
                                 nested_err = err
-                                console.log(sql_query.substring(0, 2000))
+                                console.log(sql_query.substring(0, 1000))
+                                console.log(sql_query.substring(sql_query.length - 1000, 1000))
                                 reject(err)
                             }}
                         })
