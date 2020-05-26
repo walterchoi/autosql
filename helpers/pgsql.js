@@ -585,6 +585,9 @@ var exports = {
                         resolution: `please set one primary or unique constraint to table: ${table} and provide this within the config in either 'key' values`
                     })
                 }
+                if(Object.getOwnPropertyNames(keys)[0] === undefined) {
+                    replace_sql = ''
+                } else {
                 if(Array.isArray(keys[Object.getOwnPropertyNames(keys)[0]])) {
                     var key_columns = keys[Object.getOwnPropertyNames(keys)[0]]
                 } else {
@@ -601,7 +604,7 @@ var exports = {
                     replace_sql += `("` + non_key_headers.join('", "') + `") = (excluded."` + non_key_headers.join('", excluded."') + `")`
                 } else {
                     replace_sql = 'ON CONFLICT ON CONSTRAINT ' + `"` + Object.getOwnPropertyNames(keys)[0] + `" \n` + 'DO NOTHING'
-                }
+                }}
             }
 
             if(insert_type == 'IGNORE') {
