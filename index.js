@@ -556,6 +556,23 @@ async function auto_alter_table (config, new_headers) {
         table_description = await run_sql_query(config, get_table_description_sql).catch(err => catch_errors(err))
         var old_headers = await convert_table_description(config, table_description)
         var table_changes = await compare_two_headers(config, old_headers, new_headers).catch(err => catch_errors(err))
+        
+        // Update config.meta_data to reflect the altered table
+        for(var nh = 0; nh < config.meta_data.length; nh++) {
+            var header_name = (Object.getOwnPropertyNames(config.meta_data[nh])[0])
+            for (var oh = 0; oh < old_headers.length; oh++) {
+                var oldheader_name = (Object.getOwnPropertyNames(old_headers[oh])[0])
+                if(old_header_name === header_name) {
+                    if(config.meta_data[nh][header_name].type != old_headers[oh][oldheader_name].type) {
+                        var new_type = await collate_types(config.meta_data[nh][header_name].type, old_headers[oh][oldheader_name].type).catch(err => {reject(catch_errors(err))})
+                        if(new_type !== config.meta_data[nh][header_name].type) {
+                            config.meta_data[nh][header_name].type = new_type
+                        }
+                    }
+                }
+            }
+        }
+
         if(table_changes.new.length > 0 || table_changes.alter.length > 0) {
             table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors(err))
             altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors(err))

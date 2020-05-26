@@ -8,7 +8,7 @@
     "fs": "0.0.1-security"
   },
   "description": "An auto-parser of JSON into SQL.",
-  "main": "index.js",
+  "main": "index",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
