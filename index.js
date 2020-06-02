@@ -617,6 +617,11 @@ async function compare_two_headers (config, old_headers, new_headers) {
             )
         }
 
+        console.log('old_headers_list')
+        console.log(old_headers_list)
+        console.log('new_headers_list')
+        console.log(new_headers_list)
+
         for(var oh = 0; oh < old_headers_list.length; oh++) {
             var column_name = old_headers_list[oh]
             var old_header_obj = old_headers[oh][column_name]
