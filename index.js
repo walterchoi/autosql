@@ -647,6 +647,8 @@ async function compare_two_headers (config, old_headers, new_headers) {
                 if(new_header_obj.type != old_header_obj.type) {
                     collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {reject(catch_errors(err))})
                     if(collated_type != old_header_obj.type) {
+                        console.log('type ' + column_name)
+                        console.log('old: ' + old_header_obj.type + ', new: ' + new_header_obj.type + ', collated: ' + collate_type)
                         changes.type = collated_type
                         changes["length"] = old_header_obj["length"]
                         changes.decimal = old_header_obj.decimal
@@ -656,17 +658,23 @@ async function compare_two_headers (config, old_headers, new_headers) {
 
                 if(!sql_lookup_table.no_length.includes(collated_type)) {
                     if(new_header_obj["length"] > old_header_obj["length"]) {
+                        console.log('length ' + column_name)
+                        console.log('old: ' + old_header_obj["length"] + ', new: ' + new_header_obj["length"])
                         changes["length"] = new_header_obj["length"]
                         changes.changed = true
                     }
 
                     if(new_header_obj.decimal > old_header_obj.decimal) {
+                        console.log('decimal ' + column_name)
+                        console.log('old: ' + old_header_obj["decimal"] + ', new: ' + new_header_obj["decimal"])
                         changes.decimal = new_header_obj.decimal
                         changes.changed = true
                     }
                 }
 
                 if(new_header_obj.allowNull && !old_header_obj.allowNull) {
+                    console.log('null ' + column_name)
+                    console.log('old: ' + old_header_obj.allowNull + ', new: ' + new_header_obj.allowNull)
                     changes.allowNull = new_header_obj.allowNull
                     changes.changed = true
                 }
