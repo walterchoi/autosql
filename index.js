@@ -555,6 +555,10 @@ async function auto_alter_table (config, new_headers) {
         var get_table_description_sql = sql_helper.get_table_description(config)
         table_description = await run_sql_query(config, get_table_description_sql).catch(err => catch_errors(err))
         var old_headers = await convert_table_description(config, table_description)
+        console.log('old_headers')
+        console.log(old_headers)
+        console.log('new_headers')
+        console.log(new_headers)
         var table_changes = await compare_two_headers(config, old_headers, new_headers).catch(err => catch_errors(err))
         
         // Update config.meta_data to reflect the altered table
