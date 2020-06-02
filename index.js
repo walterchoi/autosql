@@ -440,9 +440,9 @@ async function get_meta_data (config, data) {
                     headers[h][header_name]['allowNull'] = true
                 } else {
                     // Else attempt to 
-                    var currentType = await predict_type(dataPoint).catch(err => {reject(catch_errors(err))})
+                    var currentType = await predict_type(dataPoint).catch(err => {reject(err)})
                     if(currentType != overallType) {
-                        var new_type = await collate_types(currentType, overallType).catch(err => {reject(catch_errors(err))})
+                        var new_type = await collate_types(currentType, overallType).catch(err => {reject(err)})
                         if(new_type != headers[h][header_name]['type']) {
                             if(!sql_lookup_table.no_length.includes(new_type) && sql_lookup_table.no_length.includes(headers[h][header_name]['type'])) {
                                 if(headers[h][header_name]['length'] < dataPoint.length + 5) {
@@ -494,7 +494,7 @@ async function get_meta_data (config, data) {
 
         if(auto_indexing) {
             // Now that for each data row, a type, length and nullability has been determined, collate this into what this means for a database set.
-            headers = await predict_indexes(config, primary).catch(err => {reject(catch_errors(err))})
+            headers = await predict_indexes(config, primary).catch(err => {reject(err)})
         }
 
         resolve(headers)
@@ -532,8 +532,8 @@ async function auto_create_table (config, meta_data) {
             }
 
         if(config.collation) {collation = config.collation}
-        create_table_sql = await sql_helper.create_table(config, meta_data).catch(err => {reject(catch_errors(err))})
-        create_table = await run_sql_query(config, create_table_sql).catch(err => {reject(catch_errors(err))})
+        create_table_sql = await sql_helper.create_table(config, meta_data).catch(err => {reject(err)})
+        create_table = await run_sql_query(config, create_table_sql).catch(err => {reject(err)})
         resolve(create_table.results)
     })
 }
@@ -555,13 +555,7 @@ async function auto_alter_table (config, new_headers) {
         var get_table_description_sql = sql_helper.get_table_description(config)
         table_description = await run_sql_query(config, get_table_description_sql).catch(err => catch_errors(err))
         var old_headers = await convert_table_description(config, table_description)
-        console.log('old_headers')
-        console.log(old_headers)
-        console.log('new_headers')
-        console.log(new_headers)
         var table_changes = await compare_two_headers(config, old_headers, new_headers).catch(err => catch_errors(err))
-        console.log('table_changes')
-        console.log(table_changes)
         // Update config.meta_data to reflect the altered table
         for(var nh = 0; nh < config.meta_data.length; nh++) {
             var header_name = (Object.getOwnPropertyNames(config.meta_data[nh])[0])
@@ -569,7 +563,7 @@ async function auto_alter_table (config, new_headers) {
                 var oldheader_name = (Object.getOwnPropertyNames(old_headers[oh])[0])
                 if(oldheader_name === header_name) {
                     if(config.meta_data[nh][header_name].type != old_headers[oh][oldheader_name].type) {
-                        var new_type = await collate_types(config.meta_data[nh][header_name].type, old_headers[oh][oldheader_name].type).catch(err => {reject(catch_errors(err))})
+                        var new_type = await collate_types(config.meta_data[nh][header_name].type, old_headers[oh][oldheader_name].type).catch(err => {reject(err)})
                         if(new_type !== config.meta_data[nh][header_name].type) {
                             config.meta_data[nh][header_name].type = new_type
                         }
@@ -617,11 +611,6 @@ async function compare_two_headers (config, old_headers, new_headers) {
             )
         }
 
-        console.log('old_headers_list')
-        console.log(old_headers_list)
-        console.log('new_headers_list')
-        console.log(new_headers_list)
-
         for(var oh = 0; oh < old_headers_list.length; oh++) {
             var column_name = old_headers_list[oh]
             var old_header_obj = old_headers[oh][column_name]
@@ -634,8 +623,8 @@ async function compare_two_headers (config, old_headers, new_headers) {
                 // If this column does not exist in the new dataset, this column must be NULLABLE to allow this new dataset to be entered
                 if(!old_header_obj.allowNull) {
                     old_headers[oh][column_name].allowNull = true
+                    alter_columns.push(old_headers[oh])
                 }
-                alter_columns.push(old_headers[oh])
             }
         }
 
@@ -651,10 +640,8 @@ async function compare_two_headers (config, old_headers, new_headers) {
                 var collated_type = old_header_obj.type
                 // If the types do not match, find the new collated type
                 if(new_header_obj.type != old_header_obj.type) {
-                    collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {reject(catch_errors(err))})
+                    collated_type = await collate_types(new_header_obj.type, old_header_obj.type).catch(err => {reject(err)})
                     if(collated_type != old_header_obj.type) {
-                        console.log('type ' + column_name)
-                        console.log('old: ' + old_header_obj.type + ', new: ' + new_header_obj.type + ', collated: ' + collated_type)
                         changes.type = collated_type
                         changes["length"] = old_header_obj["length"]
                         changes.decimal = old_header_obj.decimal
@@ -664,23 +651,17 @@ async function compare_two_headers (config, old_headers, new_headers) {
 
                 if(!sql_lookup_table.no_length.includes(collated_type)) {
                     if(new_header_obj["length"] > old_header_obj["length"]) {
-                        console.log('length ' + column_name)
-                        console.log('old: ' + old_header_obj["length"] + ', new: ' + new_header_obj["length"])
                         changes["length"] = new_header_obj["length"]
                         changes.changed = true
                     }
 
                     if(new_header_obj.decimal > old_header_obj.decimal) {
-                        console.log('decimal ' + column_name)
-                        console.log('old: ' + old_header_obj["decimal"] + ', new: ' + new_header_obj["decimal"])
                         changes.decimal = new_header_obj.decimal
                         changes.changed = true
                     }
                 }
 
                 if(new_header_obj.allowNull && !old_header_obj.allowNull) {
-                    console.log('null ' + column_name)
-                    console.log('old: ' + old_header_obj.allowNull + ', new: ' + new_header_obj.allowNull)
                     changes.allowNull = new_header_obj.allowNull
                     changes.changed = true
                 }
@@ -786,10 +767,10 @@ async function auto_configure_table (config, data) {
 
         // Check if the target schema exists
         var check_database_sql = sql_helper.check_database_exists(config)
-        var check_database_results = await run_sql_query(config, check_database_sql).catch(err => {reject(catch_errors(err))})
+        var check_database_results = await run_sql_query(config, check_database_sql).catch(err => {reject(err)})
         if (check_database_results[0][config.database] == 0) {
             create_database_sql = sql_helper.create_database(config)
-            create_database = await run_sql_query(config, create_database_sql).catch(err => {reject(catch_errors(err))})
+            create_database = await run_sql_query(config, create_database_sql).catch(err => {reject(err)})
             // As this database is new, always create the tables regardless of current set option
             config.create_table = true
         }
@@ -803,7 +784,7 @@ async function auto_configure_table (config, data) {
         
         // Get provided data's meta data
         if(!config.meta_data) {
-            var new_meta_data = await get_meta_data(config, data).catch(err => {reject(catch_errors(err))})
+            var new_meta_data = await get_meta_data(config, data).catch(err => {reject(err)})
             config.meta_data = new_meta_data
         } else {
             var new_meta_data = config.meta_data
@@ -811,10 +792,10 @@ async function auto_configure_table (config, data) {
 
         // Now that the meta data associated with this data has been found, 
         if(config.create_table) {
-            var auto_create_table_results = await auto_create_table(config, new_meta_data).catch(err => {reject(catch_errors(err))})
+            var auto_create_table_results = await auto_create_table(config, new_meta_data).catch(err => {reject(err)})
             resolve(auto_create_table_results)
         } else {
-            await auto_alter_table(config, new_meta_data).catch(err => {reject(catch_errors(err))})
+            await auto_alter_table(config, new_meta_data).catch(err => {reject(err)})
             resolve(auto_create_table_results)
         }
     })
@@ -823,7 +804,7 @@ async function auto_configure_table (config, data) {
 async function validate_database (provided_config) {
     return new Promise (async (resolve, reject) => {
         var config = JSON.parse(JSON.stringify(provided_config))
-        config = await check_config(config, false).catch(err => {reject(catch_errors(err))})
+        config = await check_config(config, false).catch(err => {reject(err)})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
@@ -837,7 +818,7 @@ async function validate_database (provided_config) {
 async function validate_query (provided_config, query) {
     return new Promise (async (resolve, reject) => {
         var config = JSON.parse(JSON.stringify(provided_config))
-        config = await check_config(config, false).catch(err => {reject(catch_errors(err))})
+        config = await check_config(config, false).catch(err => {reject(err)})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
@@ -866,7 +847,7 @@ async function insert_data (config, data) {
         // If this is a REPLACE type insert, check for Primary Keys -- only needed for pgsql
         if(config.sql_dialect == 'pgsql' && !config.keys) {
             var constraints_sql = sql_helper.find_constraint(config)
-            var constraints = await run_sql_query(config, constraints_sql).catch(err => {reject(catch_errors(err))})
+            var constraints = await run_sql_query(config, constraints_sql).catch(err => {reject(err)})
             config.keys = {}
             if(constraints) {
                 for(var c = 0; c < constraints.length; c++) {
@@ -892,11 +873,11 @@ async function insert_data (config, data) {
         var insert_statements = []
         
         for(var s = 0; s < stacked_data.length; s++) {
-            var insert_statement = await sql_helper.create_insert_string(config, stacked_data[s]).catch(err => {reject(catch_errors(err))})
+            var insert_statement = await sql_helper.create_insert_string(config, stacked_data[s]).catch(err => {reject(err)})
             insert_statements.push(insert_statement)
         }
 
-        var query_result = await run_sql_query(config, insert_statements).catch(err => {reject(catch_errors(err))})
+        var query_result = await run_sql_query(config, insert_statements).catch(err => {reject(err)})
         
         resolve(query_result)
     })
@@ -989,7 +970,7 @@ function getBinarySize (str) {
 // Function to run SQL queries - and run single or arrays of queries with/without transactions
 async function run_sql_query (config, sql_query) {
     return new Promise (async (resolve, reject) => {
-        config = await check_config(config, false).catch(err => {reject(catch_errors(err))})
+        config = await check_config(config, false).catch(err => {reject(err)})
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
         var query_results = []
@@ -1006,7 +987,7 @@ async function run_sql_query (config, sql_query) {
 
         if(safe_mode) {
             var start = sql_helper.start_transaction()
-            await sql_helper.run_query(config, start).catch(err => {reject(catch_errors(err))})
+            await sql_helper.run_query(config, start).catch(err => {reject(err)})
         }
     
         if(Array.isArray(sql_query)) {
@@ -1033,7 +1014,7 @@ async function run_sql_query (config, sql_query) {
 
         if(safe_mode && query_errors.length == 0) {
             var commit = sql_helper.commit()
-            await sql_helper.run_query(config, commit).catch(err => {reject(catch_errors(err))})
+            await sql_helper.run_query(config, commit).catch(err => {reject(err)})
             if(query_results.length > 0) {
                 resolve(query_results)
             } else {
@@ -1042,7 +1023,7 @@ async function run_sql_query (config, sql_query) {
         }
         else if(safe_mode && query_errors.length != 0) {
             var rollback = sql_helper.rollback()
-            await sql_helper.run_query(config, rollback).catch(err => {reject(catch_errors(err))})
+            await sql_helper.run_query(config, rollback).catch(err => {reject(err)})
             reject(query_errors)
         }
         if (!safe_mode && query_errors.length == 0) {
@@ -1122,7 +1103,7 @@ async function auto_sql (provided_config, data) {
         var start_time = new Date()
         var config = JSON.parse(JSON.stringify(provided_config))
         
-        config = await check_config(config, true).catch(err => {reject(catch_errors(err))})
+        config = await check_config(config, true).catch(err => {reject(err)})
         
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
@@ -1130,12 +1111,12 @@ async function auto_sql (provided_config, data) {
         // From here begins the actual data insertion process
         // First let us get the provided data's meta data
         if(!config.meta_data) {
-            config.meta_data = await get_meta_data(config, data).catch(err => {reject(catch_errors(err))})
+            config.meta_data = await get_meta_data(config, data).catch(err => {reject(err)})
         }
         // First let us make sure that the table exists or the table is compatible with the new data being inserted
-        await auto_configure_table(config, data).catch(err => {reject(catch_errors(err))})
+        await auto_configure_table(config, data).catch(err => {reject(err)})
         // Now let us insert the data into the table
-        var inserted = await insert_data(config, data).catch(err => {reject(catch_errors(err))})
+        var inserted = await insert_data(config, data).catch(err => {reject(err)})
         var completion_time = new Date()
         resolve({
             start: start_time,
@@ -1184,13 +1165,13 @@ async function check_config (provided_config, auto) {
 
     if(provided_config.ssh_config) {
         provided_config.ssh_stream = await set_ssh(provided_config.ssh_config).catch(err => {
-            reject(catch_errors(err))
+            reject(err)
         })
     }
 
     // Establish a connection to the database (if not already existing)
     if(!provided_config.connection) {
-        provided_config.connection = await sql_helper.establish_connection(provided_config).catch(err => {reject(catch_errors(err))})
+        provided_config.connection = await sql_helper.establish_connection(provided_config).catch(err => {reject(err)})
     }
 
     resolve(provided_config)
