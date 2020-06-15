@@ -977,15 +977,26 @@ async function run_sql_query (config, sql_query) {
         var query_rows_count = 0
         var query_errors = []
         var safe_mode = config.safe_mode
+        var insert_check = false
         // Pass 'DISABLE_SAFE_MODE into the SQL queries array if you wish to turn off safe mode for single queries irregardless of the config
         if(Array.isArray(sql_query)) {
             if(sql_query.includes('DISABLE_SAFE_MODE')) {
                 sql_query.splice(sql_query.findIndex('DISABLE_SAFE_MODE'),1)
                 safe_mode = false
             }
+            if(safe_mode) {
+                for (var s = 0; s < sql_query.length && !insert_check; s++) {
+                    _insert_check = await check_if_insert(sql_query[s])
+                    if(_insert_check) {
+                        insert_check = _insert_check
+                    }
+                }
+            }
+        } else {
+            insert_check = await check_if_insert(sql_query)
         }
 
-        if(safe_mode) {
+        if(safe_mode && insert_check) {
             var start = sql_helper.start_transaction()
             await sql_helper.run_query(config, start).catch(err => {reject(err)})
         }
@@ -1012,7 +1023,7 @@ async function run_sql_query (config, sql_query) {
             }
         }
 
-        if(safe_mode && query_errors.length == 0) {
+        if(safe_mode && insert_check && query_errors.length == 0) {
             var commit = sql_helper.commit()
             await sql_helper.run_query(config, commit).catch(err => {reject(err)})
             if(query_results.length > 0) {
@@ -1021,7 +1032,7 @@ async function run_sql_query (config, sql_query) {
                 resolve(query_rows_count)
             }
         }
-        else if(safe_mode && query_errors.length != 0) {
+        else if(safe_mode && insert_check && query_errors.length != 0) {
             var rollback = sql_helper.rollback()
             await sql_helper.run_query(config, rollback).catch(err => {reject(err)})
             reject(query_errors)
@@ -1236,6 +1247,26 @@ var readfile = async function (path) {
         fs.readFile(path, 'utf8', function(err, res){
             resolve(res)
         })
+    })
+}
+
+var check_if_insert = async function (source_sql) {
+    return new Promise(resolve => {
+        if(source_sql) {
+        var source_sql_statements = source_sql.split(';');
+        var check = true
+        for (var e = 0; e < source_sql_statements.length; e++) {
+            source_sql_statements[e] = source_sql_statements[e].trim()
+            if(source_sql_statements[e] != null && source_sql_statements[e] != undefined && source_sql_statements[e] != "") {
+            if(!source_sql_statements[e].toLowerCase().startsWith('insert')) {
+                check = false
+            }
+        }
+        }
+        resolve(check)
+    } else {
+        resolve(true)
+    }
     })
 }
 
