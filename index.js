@@ -1023,7 +1023,10 @@ async function run_sql_query (config, sql_query) {
                 console.log(query_results)
                 console.log('query_result')
                 console.log(query_result)
-                query_results = query_results.concat(query_result)
+                var temp_query_results = query_results.concat(query_result)
+                console.log('temp_query_results')
+                console.log(temp_query_results)
+                query_results = temp_query_results
             } else {
                 if(typeof query_result == 'number') {
                     console.log('query_rows_count += query_result')
