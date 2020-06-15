@@ -445,9 +445,9 @@ var exports = {
                     }
     
                     if(sql_query_part) {
-                        sql_query_part = `,\n ADD "` + column_name + `" ` + type 
+                        sql_query_part = `,\n ADD COLUMN IF NOT EXISTS "` + column_name + `" ` + type 
                     } else {
-                        sql_query_part = `ADD "` + column_name + `" ` + type 
+                        sql_query_part = `ADD COLUMN IF NOT EXISTS "` + column_name + `" ` + type 
                     }
     
                     if(sql_lookup_table.decimals.includes(type)) {
@@ -465,11 +465,11 @@ var exports = {
     
                     // If unique is true then make this an unique contraint column
                     if(unique === true) {
-                        index_create_sql += `CREATE UNIQUE INDEX "${table + '_' + column_name}" ON "${database}"."${table}" ("${column_name}");\n`
+                        index_create_sql += `CREATE UNIQUE INDEX IF NOT EXISTS "${table + '_' + column_name}" ON "${database}"."${table}" ("${column_name}");\n`
                     } else
                     // If index is true then make column into an indexed column (separate query done later)
                     if(index === true) {
-                        index_create_sql += `CREATE INDEX "${table + '_' + column_name}" ON "${database}"."${table}" ("${column_name}");\n`
+                        index_create_sql += `CREATE INDEX IF NOT EXISTS "${table + '_' + column_name}" ON "${database}"."${table}" ("${column_name}");\n`
                     }
     
                     // If auto_increment is true then make column into an auto_incremental column (separate query done later)
