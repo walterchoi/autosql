@@ -49,11 +49,6 @@ var exports = {
     },
     run_query : async function (config, sql_query, repeat_number, max_repeat) {
         return new Promise(async (resolve, reject) => {
-            if(sql_query.length > 1000) {
-                console.log(sql_query.substring(0,50))
-            } else {
-                console.log(sql_query)
-            }
             var pool = config.connection
             if(!pool || typeof config.connection.connect != 'function') {
                 pool = await this.establish_connection(config).catch(err => {
