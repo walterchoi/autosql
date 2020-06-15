@@ -767,13 +767,7 @@ async function auto_configure_table (config, data) {
 
         // Check if the target schema exists
         var check_database_sql = sql_helper.check_database_exists(config)
-        var check_database_results = await run_sql_query(config, check_database_sql).catch(err => {
-            console.log('err')
-            console.log(err)
-            console.log('err')
-            reject(err)
-        })
-        console.log(check_database_results)
+        var check_database_results = await run_sql_query(config, check_database_sql)
         if (check_database_results[0][config.database] == 0) {
             create_database_sql = sql_helper.create_database(config)
             create_database = await run_sql_query(config, create_database_sql).catch(err => {reject(err)})
@@ -1020,6 +1014,9 @@ async function run_sql_query (config, sql_query) {
             }
         } else {
             var query_result = await sql_helper.run_query(config, sql_query).catch(err => {query_errors.push(err)})
+            console.log('query_result')
+            console.log(query_result)
+            console.log('query_result')
             if(Array.isArray(query_result)) {
                 query_results = query_results.concat(query_result)
             } else {
