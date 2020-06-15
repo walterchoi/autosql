@@ -767,7 +767,12 @@ async function auto_configure_table (config, data) {
 
         // Check if the target schema exists
         var check_database_sql = sql_helper.check_database_exists(config)
-        var check_database_results = await run_sql_query(config, check_database_sql).catch(err => {reject(err)})
+        var check_database_results = await run_sql_query(config, check_database_sql).catch(err => {
+            console.log('err')
+            console.log(err)
+            console.log('err')
+            reject(err)
+        })
         console.log(check_database_results)
         if (check_database_results[0][config.database] == 0) {
             create_database_sql = sql_helper.create_database(config)
