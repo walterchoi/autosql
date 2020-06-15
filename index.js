@@ -1019,6 +1019,10 @@ async function run_sql_query (config, sql_query) {
             console.log('query_result')
             if(Array.isArray(query_result)) {
                 console.log('query_results = query_results.concat(query_result)')
+                console.log('query_results')
+                console.log(query_results)
+                console.log('query_result')
+                console.log(query_result)
                 query_results = query_results.concat(query_result)
             } else {
                 if(typeof query_result == 'number') {
