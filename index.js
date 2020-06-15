@@ -1015,37 +1015,29 @@ async function run_sql_query (config, sql_query) {
         } else {
             var query_result = await sql_helper.run_query(config, sql_query).catch(err => {query_errors.push(err)})
             if(Array.isArray(query_result)) {
-                var temp_query_results = query_results.concat(query_result)
-                query_results = temp_query_results
+                query_results = query_results.concat(query_result)
             } else {
                 if(typeof query_result == 'number') {
-                    console.log('query_rows_count += query_result')
                     query_rows_count += query_result
                 }
             }
         }
 
         if(safe_mode && insert_check && query_errors.length == 0) {
-            console.log('var commit = sql_helper.commit()')
             var commit = sql_helper.commit()
-            console.log('await sql_helper.run_query(config, commit).catch(err => {reject(err)})')
             await sql_helper.run_query(config, commit).catch(err => {reject(err)})
             if(query_results.length > 0) {
-                console.log('resolve(query_results)')
                 resolve(query_results)
             } else {
-                console.log('resolve(query_rows_count)')
                 resolve(query_rows_count)
             }
         }
         else if(safe_mode && insert_check && query_errors.length != 0) {
-            console.log('var rollback = sql_helper.rollback()')
             var rollback = sql_helper.rollback()
-            console.log('await sql_helper.run_query(config, rollback).catch(err => {reject(err)})')
             await sql_helper.run_query(config, rollback).catch(err => {reject(err)})
             reject(query_errors)
         }
-        if (!safe_mode && query_errors.length == 0) {
+        if ((!safe_mode || !insert_check) && query_errors.length == 0) {
             if(query_results.length > 0) {
                 resolve(query_results)
             } else {
