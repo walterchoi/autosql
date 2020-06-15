@@ -1035,6 +1035,7 @@ async function run_sql_query (config, sql_query) {
         else if(safe_mode && insert_check && query_errors.length != 0) {
             var rollback = sql_helper.rollback()
             await sql_helper.run_query(config, rollback).catch(err => {reject(err)})
+            console.log(query_errors)
             reject(query_errors)
         }
         if ((!safe_mode || !insert_check) && query_errors.length == 0) {
