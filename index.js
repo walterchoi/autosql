@@ -1014,18 +1014,8 @@ async function run_sql_query (config, sql_query) {
             }
         } else {
             var query_result = await sql_helper.run_query(config, sql_query).catch(err => {query_errors.push(err)})
-            console.log('query_result')
-            console.log(query_result)
-            console.log('query_result')
             if(Array.isArray(query_result)) {
-                console.log('query_results = query_results.concat(query_result)')
-                console.log('query_results')
-                console.log(query_results)
-                console.log('query_result')
-                console.log(query_result)
                 var temp_query_results = query_results.concat(query_result)
-                console.log('temp_query_results')
-                console.log(temp_query_results)
                 query_results = temp_query_results
             } else {
                 if(typeof query_result == 'number') {
@@ -1049,7 +1039,9 @@ async function run_sql_query (config, sql_query) {
             }
         }
         else if(safe_mode && insert_check && query_errors.length != 0) {
+            console.log('var rollback = sql_helper.rollback()')
             var rollback = sql_helper.rollback()
+            console.log('await sql_helper.run_query(config, rollback).catch(err => {reject(err)})')
             await sql_helper.run_query(config, rollback).catch(err => {reject(err)})
             reject(query_errors)
         }
