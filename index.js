@@ -1018,20 +1018,26 @@ async function run_sql_query (config, sql_query) {
             console.log(query_result)
             console.log('query_result')
             if(Array.isArray(query_result)) {
+                console.log('query_results = query_results.concat(query_result)')
                 query_results = query_results.concat(query_result)
             } else {
                 if(typeof query_result == 'number') {
+                    console.log('query_rows_count += query_result')
                     query_rows_count += query_result
                 }
             }
         }
 
         if(safe_mode && insert_check && query_errors.length == 0) {
+            console.log('var commit = sql_helper.commit()')
             var commit = sql_helper.commit()
+            console.log('await sql_helper.run_query(config, commit).catch(err => {reject(err)})')
             await sql_helper.run_query(config, commit).catch(err => {reject(err)})
             if(query_results.length > 0) {
+                console.log('resolve(query_results)')
                 resolve(query_results)
             } else {
+                console.log('resolve(query_rows_count)')
                 resolve(query_rows_count)
             }
         }
