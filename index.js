@@ -1003,7 +1003,7 @@ async function run_sql_query (config, sql_query) {
     
         if(Array.isArray(sql_query)) {
             for(var sql = 0; sql < sql_query.length && query_errors.length == 0; sql++) {
-                var query_result = await sql_helper.run_query(config, sql_query[sql]).catch(err => {query_errors.push(err)})
+                var query_result = await sql_helper.run_query(config, sql_query[sql], 0, 1).catch(err => {query_errors.push(err)})
                 if(Array.isArray(query_result)) {
                     query_results = query_results.concat(query_result)
                 } else {
