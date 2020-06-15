@@ -538,7 +538,11 @@ var exports = {
                     
                     // If allowNull is true/false add (NOT) NULL to SQL part
                     if(allowNull !== undefined) {
-                        sql_query_part += ` ${!allowNull ? 'NOT' : 'DROP NOT'} NULL`
+                        if(allowNull == true) {
+                        sql_query_part += `,\n ALTER COLUMN "` + column_name + `" DROP NOT NULL`
+                        } else {
+                            sql_query_part += ` NOT NULL`
+                        }
                     }
                     sql_query += sql_query_part
                 }
