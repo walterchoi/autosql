@@ -523,18 +523,19 @@ async function auto_create_table (config, meta_data) {
         // If no config or meta data has been provided, return an error
         if(!config || !meta_data) {
             // Error when no config or meta_data is provided
-                reject({
-                    err: `no ${config ? 'config' : ''} ${meta_data ? 'meta_data' : ''}  object(s) provided`,
-                    step: 'create_table',
-                    description: 'invalid configuration or meta_data was provided to create_table step',
-                    resolution: 'please provide configuration object, additional details can be found in the documentation'
-                })
-            }
+            reject({
+                err: `no ${config ? 'config' : ''} ${meta_data ? 'meta_data' : ''}  object(s) provided`,
+                step: 'create_table',
+                description: 'invalid configuration or meta_data was provided to create_table step',
+                resolution: 'please provide configuration object, additional details can be found in the documentation'
+            })
+        }
 
         if(config.collation) {collation = config.collation}
         create_table_sql = await sql_helper.create_table(config, meta_data).catch(err => {reject(err)})
+        console.log(create_table_sql)
         create_table = await run_sql_query(config, create_table_sql).catch(err => {reject(err)})
-        resolve(create_table.results)
+        resolve(create_table)
     })
 }
 
