@@ -594,12 +594,6 @@ async function compare_two_headers (config, old_headers, new_headers) {
         // Currently the ALTER statements only support NEW columns, ALTER lengths, ALTER types and to ALLOW NULL
         // This compare headers function also only supports these
 
-        console.log('old_headers')
-        console.log(old_headers)
-        console.log('old_headers')
-        console.log('new_headers')
-        console.log(new_headers)
-        console.log('new_headers')
         // Check for NEW
         var new_columns = []
         var alter_columns = []
@@ -701,12 +695,6 @@ async function compare_two_headers (config, old_headers, new_headers) {
                 new_columns.push(new_headers[nh])
             }
         }
-        console.log('new_columns')
-        console.log(new_columns)
-        console.log('new_columns')
-        console.log('alter_columns')
-        console.log(alter_columns)
-        console.log('alter_columns')
         resolve({
             new: new_columns,
             alter: alter_columns
