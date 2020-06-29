@@ -1207,7 +1207,8 @@ set_ssh = async function (ssh_keys) {
         var ssh_config = {
             "username": ssh_keys.username,
             "host": ssh_keys.host,
-            "port": ssh_keys.port
+            "port": ssh_keys.port,
+            "readyTimeout": 200000
         }
         if(ssh_keys.password) {
             ssh_config.password = ssh_keys.password
@@ -1215,6 +1216,9 @@ set_ssh = async function (ssh_keys) {
         if(ssh_keys.private_key) {
             ssh_config.privateKey = ssh_keys.private_key
         }
+        ssh.on('error', (err) => {
+            console.log(err)
+        })
         ssh.on('ready', function() {
             ssh.forwardOut(
                 ssh_keys.source_address,
@@ -1223,6 +1227,7 @@ set_ssh = async function (ssh_keys) {
                 ssh_keys.destination_port,
                 function (err, stream) {
                 if (err) {
+                    console.log(err)
                     reject(err);
                 } 
                     resolve(stream)
