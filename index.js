@@ -1207,41 +1207,31 @@ set_ssh = async function (ssh_keys) {
         var ssh_config = {
             "username": ssh_keys.username,
             "host": ssh_keys.host,
-            "port": ssh_keys.port,
-            "readyTimeout": 60000
+            "port": ssh_keys.port
         }
         if(ssh_keys.password) {
             ssh_config.password = ssh_keys.password
         }
-        var required_key_format = 'ssh'
-        if(ssh_keys.key_format && ssh_keys.key_format != required_key_format && ssh_keys.private_key) {
-            try {
-                var sshpk = require('sshpk');
-                var old_format_private_key = ssh_keys.private_key
-                var new_format_private_key = (sshpk.parseKey(old_format_private_key, ssh_keys.key_format).toString(required_key_format))
-                ssh_keys.primary_key = new_format_private_key
+        if(ssh_keys.debug) {
+            var debug_function = function (message) {
+                if(message.search('Outgoing') > 0 || message.search('Client') > 0) {
+                    console.log(message)
+                }
             }
-            catch (e) {
-                console.log('SSH private key provided was not OpenSSH format and repository "sshpk" was not installed.')
-                console.log('Please run command "npm install sshpk" in the terminal and try again')
-                reject(e)
-            }
+            ssh_config.debug = debug_function
         }
         if(ssh_keys.private_key) {
             ssh_config.privateKey = ssh_keys.private_key
         }
-        if(ssh_keys.debug) { ssh_config.debug = console.log }
         if(ssh_keys.timeout) { ssh_config.readyTimeout = ssh_keys.timeout }
-        ssh.on('error', (err) => {
-            console.log(err)
-        })
+        else { ssh_config.readyTimeout = 10000 }
         ssh.on('ready', function() {
             ssh.forwardOut(
                 ssh_keys.source_address,
                 ssh_keys.source_port,
                 ssh_keys.destination_address,
                 ssh_keys.destination_port,
-                function (err, stream) {
+                async function (err, stream) {
                 if (err) {
                     console.log(err)
                     reject(err);
