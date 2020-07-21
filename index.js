@@ -1196,7 +1196,7 @@ async function check_config (provided_config, auto) {
     })
 }
 
-set_ssh = async function (ssh_keys) {
+async function set_ssh (ssh_keys) {
     return new Promise(async (resolve, reject) => {
         try {
             var Client = require('ssh2').Client;
@@ -1248,12 +1248,12 @@ set_ssh = async function (ssh_keys) {
     })
 }
 
-catch_errors = async function (err) {
+async function catch_errors (err) {
     console.log(err)
     return(err)
 }
 
-var readfile = async function (path) {
+async function readfile (path) {
     return new Promise(resolve => {
         try {
             var fs = require('fs');
@@ -1268,7 +1268,7 @@ var readfile = async function (path) {
     })
 }
 
-var check_if_insert = async function (source_sql) {
+async function check_if_insert (source_sql) {
     return new Promise(resolve => {
         if(source_sql) {
         var source_sql_statements = source_sql.split(';');
@@ -1288,6 +1288,11 @@ var check_if_insert = async function (source_sql) {
     })
 }
 
+async function export_sql_helper (provided_config) {
+    var sql_helper = require(sql_dialect_lookup_object[provided_config.sql_dialect].helper).exports
+    return sql_helper
+}
+
 module.exports = {
     predict_type,
     collate_types,
@@ -1303,5 +1308,6 @@ module.exports = {
     validate_database,
     validate_query,
     run_sql_query,
-    set_ssh
+    set_ssh,
+    export_sql_helper
 }
