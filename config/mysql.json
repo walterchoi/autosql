@@ -43,6 +43,18 @@
             "type": ["datetime"]
         },
         {
+            "find": "T",
+            "replace": " ",
+            "regex": "T",
+            "type": ["datetime"]
+        },
+        {
+            "find": "Z",
+            "replace": "",
+            "regex": "Z$",
+            "type": ["datetime"]
+        },
+        {
             "find": ",",
             "replace": "",
             "regex": ",",

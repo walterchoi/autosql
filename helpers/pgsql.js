@@ -633,7 +633,7 @@ var exports = {
                 var row = data[d]
                 for(var h = 0; h < headers.length; h++) {
                     var value = row[headers[h]]
-                    if(value === null || value == '') {
+                    if(value === null || value == '' || value == 'null') {
                         values_sql += 'null'
                     } else {
                         if(int_group.includes(metaData[h][headers[h]].type) || special_int_group.includes(metaData[h][headers[h]].type)) {
