@@ -3,6 +3,9 @@ async function predict_type (data) {
     return new Promise((resolve, reject) => {
         var reg = require('./helpers/regex.js')
         var currentType = null
+        if(typeof data != 'string') {
+            data = String(data)
+        }
         if (data.search(reg.boolean) >= 0) {
             currentType = 'boolean'
         } else if (data.search(reg.binary) >= 0) {
@@ -1133,7 +1136,7 @@ function sqlize_value (config, value) {
         }
 
         var sqlize = sql_lookup_table.sqlize
-        var type = predict_type(value)
+        var type = await predict_type(value)
     
         if(value === undefined || value === '\\N' || value === null || value === 'null') {
             value = null
