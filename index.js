@@ -1135,7 +1135,7 @@ function sqlize_value (config, value) {
         var sqlize = sql_lookup_table.sqlize
         var type = predict_type(value)
     
-        if(value === undefined || value === '\\N' || value === null) {
+        if(value === undefined || value === '\\N' || value === null || value === 'null') {
             value = null
         }
         else if(Object.prototype.toString.call(value) === '[object Date]' || (date_group.includes(type) && date_group.includes(predict_type(value)))) {
