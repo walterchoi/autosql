@@ -1082,7 +1082,7 @@ function sqlize (config, data) {
                 var index = headers.findIndex(column => column == key)
                 var value = row[key]
                 
-                if(value === undefined || value === '\\N' || value === null) {
+                if(value === undefined || value === '\\N' || value === null || value === 'null') {
                     value = null
                     data[d][key] = value
                 }
