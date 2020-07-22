@@ -1057,7 +1057,7 @@ async function run_sql_query (config, sql_query) {
 // Function to handle special characters such as ' or \ and replace with '' or \\
 // And to handle columns that do not exist in certain rows, and add NULL to them
 function sqlize (config, data) {
-    return new Promise(resolve => {
+    return new Promise(async resolve => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
         var groupings = require('./helpers/groupings.json')
@@ -1120,7 +1120,7 @@ function sqlize (config, data) {
 }
 
 function sqlize_value (config, value) {
-    return new Promise(resolve => {
+    return new Promise(async resolve => {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
         var groupings = require('./helpers/groupings.json')
