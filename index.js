@@ -1082,7 +1082,7 @@ function sqlize (config, data) {
                 var index = headers.findIndex(column => column == key)
                 var value = row[key]
                 
-                if(value === undefined || value === '\\N') {
+                if(value === undefined || value === '\\N' || value === null) {
                     value = null
                     data[d][key] = value
                 }
@@ -1113,6 +1113,54 @@ function sqlize (config, data) {
             }
         }
         resolve(data)
+    })
+}
+
+function sqlize_value (config, value) {
+    return new Promise(resolve => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_lookup_table = require(sql_dialect_lookup_object[config.sql_dialect].helper_json)
+        var groupings = require('./helpers/groupings.json')
+        date_group = groupings.date_group
+        var defaults = require('./config/defaults.json')
+        var convert_timezone = defaults.convert_timezone
+        if(config.convert_timezone) {convert_timezone = config.convert_timezone}
+        if(convert_timezone) {
+            var locale = defaults.locale
+            if(config.locale) {locale = config.locale}
+            var timezone = defaults.timezone
+            if(config.timezone) {timezone = config.timezone}
+        }
+
+        var sqlize = sql_lookup_table.sqlize
+        var type = predict_type(value)
+    
+        if(value === undefined || value === '\\N' || value === null) {
+            value = null
+        }
+        else if(Object.prototype.toString.call(value) === '[object Date]' || (date_group.includes(type) && date_group.includes(predict_type(value)))) {
+            if(Object.prototype.toString.call(value) !== '[object Date]') {
+                value = new Date(value)
+            }
+            value = value.toISOString()
+        } else if (typeof value === 'object') {
+            value = JSON.stringify(value)
+        }
+        for (var s = 0; s < sqlize.length; s++) {
+            var regex = new RegExp(sqlize[s].regex, 'gmi')
+            var type_req = sqlize[s].type
+            if(type_req === true || type_req == type || type_req.includes(type)) {
+                if(value !== undefined && value !== null) {
+                    try {
+                        value = value.toString().replace(regex, sqlize[s].replace)
+                    }
+                    catch (e) {
+                        console.log('errored on sqlizing - ' + value + ' for sqlize ' + JSON.stringify(sqlize[s]))
+                    }
+                }
+            }
+        }
+        resolve(value)
     })
 }
 
@@ -1310,5 +1358,7 @@ module.exports = {
     validate_query,
     run_sql_query,
     set_ssh,
-    export_sql_helper
+    export_sql_helper,
+    sqlize,
+    sqlize_value
 }
