@@ -1090,9 +1090,7 @@ function sqlize (config, data) {
                     data[d][key] = value
                 }
                 else if(Object.prototype.toString.call(value) === '[object Date]' || (date_group.includes(metaData[index][key]["type"]) && date_group.includes(predict_type(value)))) {
-                    if(Object.prototype.toString.call(value) !== '[object Date]') {
-                        value = new Date(value)
-                    }
+                    value = new Date(value)
                     value = value.toISOString()
                     data[d][key] = value
                 } else if (typeof value === 'object') {
