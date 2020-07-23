@@ -1090,8 +1090,12 @@ function sqlize (config, data) {
                     data[d][key] = value
                 }
                 else if(Object.prototype.toString.call(value) === '[object Date]' || (date_group.includes(metaData[index][key]["type"]) && date_group.includes(predict_type(value)))) {
-                    value = new Date(value)
-                    value = value.toISOString()
+                    if(value.toString() === 'Invalid Date') {
+                        value = null
+                    } else {
+                        value = new Date(value)
+                        value = value.toISOString()
+                    }
                     data[d][key] = value
                 } else if (typeof value === 'object') {
                     value = JSON.stringify(value)
@@ -1174,12 +1178,6 @@ async function auto_sql (provided_config, data) {
         
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
-
-        for (var d = 0; d < data.length; d++) {
-            if(data[d].id == 12941 || data[d].id == '12941') {
-                console.log(data[d])
-            }
-        }
 
         // From here begins the actual data insertion process
         // First let us get the provided data's meta data
