@@ -429,7 +429,7 @@ async function get_meta_data (config, data) {
             for (var h = 0; h < headers.length; h++) {
                 var header_name = (Object.getOwnPropertyNames(headers[h])[0])
                 var dataPoint = (data[i][header_name])
-                if(dataPoint === null || dataPoint === undefined || dataPoint === '\\N') {
+                if(dataPoint === null || dataPoint === undefined || dataPoint === '\\N' || dataPoint === 'null') {
                     var dataPoint = ''
                 } else {
                     if(isObject(dataPoint)) {dataPoint = JSON.stringify(dataPoint)}
@@ -439,7 +439,7 @@ async function get_meta_data (config, data) {
                 uniqueCheck[header_name].add(dataPoint)
                 var overallType = headers[h][header_name]['type']
                 // If a data point is null, set this column as nullable 
-                if (dataPoint === '' || dataPoint === null) {
+                if (dataPoint === '' || dataPoint === null || dataPoint === undefined || dataPoint === '\\N' || dataPoint === 'null') {
                     headers[h][header_name]['allowNull'] = true
                 } else {
                     // Else attempt to 
