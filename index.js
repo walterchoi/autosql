@@ -6,10 +6,6 @@ async function predict_type (data) {
         if(typeof data != 'string') {
             data = String(data)
         }
-        var chk = false
-        if(data === 'Invalid Date') {
-            chk = true
-        }
         if (data.search(reg.boolean) >= 0) {
             currentType = 'boolean'
         } else if (data.search(reg.binary) >= 0) {
@@ -66,9 +62,8 @@ async function predict_type (data) {
         if(!currentType) {
             currentType == 'varchar'
         }
-        if(chk == true) {
-            console.log(data)
-            console.log(currentType)
+        if((currentType == 'datetime' || currentType == 'date' || currentType == 'time') && data.toString() === 'Invalid Date') {
+            currentType = null
         }
         resolve(currentType)
     })
