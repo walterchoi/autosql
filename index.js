@@ -6,6 +6,10 @@ async function predict_type (data) {
         if(typeof data != 'string') {
             data = String(data)
         }
+        var chk = false
+        if(data === 'Invalid Date') {
+            chk = true
+        }
         if (data.search(reg.boolean) >= 0) {
             currentType = 'boolean'
         } else if (data.search(reg.binary) >= 0) {
@@ -61,6 +65,10 @@ async function predict_type (data) {
         }
         if(!currentType) {
             currentType == 'varchar'
+        }
+        if(chk == true) {
+            console.log(data)
+            console.log(currentType)
         }
         resolve(currentType)
     })
@@ -444,7 +452,10 @@ async function get_meta_data (config, data) {
                 } else {
                     // Else attempt to 
                     var currentType = await predict_type(dataPoint).catch(err => {reject(err)})
-                    if(currentType != overallType) {
+                    if(currentType === null) {
+                        headers[h][header_name]['allowNull'] = true
+                    }
+                    if(currentType != overallType && currentType !== null) {
                         var new_type = await collate_types(currentType, overallType).catch(err => {reject(err)})
                         if(new_type != headers[h][header_name]['type']) {
                             if(!sql_lookup_table.no_length.includes(new_type) && sql_lookup_table.no_length.includes(headers[h][header_name]['type'])) {
