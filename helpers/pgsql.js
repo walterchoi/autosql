@@ -378,14 +378,19 @@ var exports = {
             resolve (create_table_sql) 
         })
     },
-    get_table_description : function (config) {
-        if(config.schema) {
+    get_table_description : function (config, _schema, _table) {
+        if(_schema && _table) {
+            var database = _schema
+            var table = _table
+        } else {
+            if(config.schema) {
                 var database = config.schema
             }
             else if (config.database) {
                 var database = config.database
             };
-        var table = config.table;
+            var table = config.table;
+        }
 
         var sql_query = `SELECT
         DISTINCT ON (c.COLUMN_NAME) COLUMN_NAME, c.DATA_TYPE,

@@ -310,14 +310,19 @@ var exports = {
             resolve (create_table_sql) 
         })
     },
-    get_table_description : function (config) {
-        if(config.schema) {
-            var database = config.schema
+    get_table_description : function (config, _schema, _table) {
+        if(_schema && _table) {
+            var database = _schema
+            var table = _table
+        } else {
+            if(config.schema) {
+                var database = config.schema
+            }
+            else if (config.database) {
+                var database = config.database
+            };
+            var table = config.table;
         }
-        else if (config.database) {
-            var database = config.database
-        }
-        var table = config.table;
 
         var sql_query = "SELECT COLUMN_NAME, DATA_TYPE, " +
         "CASE WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NOT NULL THEN CONCAT(NUMERIC_PRECISION,',',NUMERIC_SCALE) " +
