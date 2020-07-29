@@ -542,7 +542,6 @@ async function auto_create_table (config, meta_data) {
 
         if(config.collation) {collation = config.collation}
         create_table_sql = await sql_helper.create_table(config, meta_data).catch(err => {reject(err)})
-        console.log(create_table_sql)
         create_table = await run_sql_query(config, create_table_sql).catch(err => {reject(err)})
         resolve(create_table)
     })
