@@ -330,7 +330,7 @@ var exports = {
     
                 // If comment is provided then add comment to the table schema
                 if(comment !== undefined) {
-                    create_table_sql_part += " COMMENT '" + comment + "'"
+                    index_create_sql += `COMMENT ON COLUMN ${table}.${column_name} is '${comment}';`
                 }
     
                 // If default value is provided then add a default value to the column
