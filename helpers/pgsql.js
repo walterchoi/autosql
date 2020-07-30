@@ -330,12 +330,12 @@ var exports = {
     
                 // If comment is provided then add comment to the table schema
                 if(comment !== undefined) {
-                    index_create_sql += `COMMENT ON COLUMN ${table}.${column_name} is '${comment}';`
+                    index_create_sql += ` COMMENT ON COLUMN ${table}.${column_name} is '${comment}'; `
                 }
     
                 // If default value is provided then add a default value to the column
                 if(def !== undefined) {
-                    create_table_sql_part += " SET DEFAULT " + def + ""
+                    create_table_sql_part += " DEFAULT " + def + ""
                 }
     
                 // If column is part of the primary key, then add column to the primary constraint index
