@@ -1077,7 +1077,7 @@ function sqlize (config, data) {
             if(config.timezone) {timezone = config.timezone}
         }
 
-        var sqlize = sql_lookup_table.sqlize
+        var _sqlize = sql_lookup_table.sqlize
         var metaData = config.meta_data
         var headers = []
         metaData.map(header => 
@@ -1105,16 +1105,16 @@ function sqlize (config, data) {
                 } else if (typeof value === 'object') {
                     value = JSON.stringify(value)
                 }
-                for (var s = 0; s < sqlize.length; s++) {
-                    var regex = new RegExp(sqlize[s].regex, 'gmi')
-                    var type_req = sqlize[s].type
+                for (var s = 0; s < _sqlize.length; s++) {
+                    var regex = new RegExp(_sqlize[s].regex, 'gmi')
+                    var type_req = _sqlize[s].type
                     if(type_req === true || type_req == metaData[index][key]["type"] || type_req.includes(metaData[index][key]["type"])) {
                         if(value !== undefined && value !== null) {
                             try {
-                                value = value.toString().replace(regex, sqlize[s].replace)
+                                value = value.toString().replace(regex, _sqlize[s].replace)
                             }
                             catch (e) {
-                                console.log('errored on sqlizing - ' + value + ' for sqlize ' + JSON.stringify(sqlize[s]))
+                                console.log('errored on sqlizing - ' + value + ' for sqlize ' + JSON.stringify(_sqlize[s]))
                             }
                         }
                         data[d][key] = value
@@ -1177,7 +1177,12 @@ function sqlize_value (config, value) {
 async function auto_sql (provided_config, data) {
     return new Promise (async (resolve, reject) => {
         var start_time = new Date()
-        var config = JSON.parse(JSON.stringify(provided_config))
+        try {
+            var config = JSON.parse(JSON.stringify(provided_config))
+        } catch (err) {
+            console.log(provided_config)
+            var config = provided_config
+        }
         
         config = await check_config(config, true).catch(err => {reject(err)})
         
@@ -1239,7 +1244,7 @@ async function check_config (provided_config, auto) {
     
     var sql_helper = require(sql_dialect_lookup_object[provided_config.sql_dialect].helper).exports
 
-    if(provided_config.ssh_config) {
+    if(provided_config.ssh_config && !provided_config.ssh_stream) {
         provided_config.ssh_stream = await set_ssh(provided_config.ssh_config).catch(err => {
             reject(err)
         })
