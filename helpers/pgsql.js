@@ -17,7 +17,8 @@ var exports = {
                 password: key.password,
                 port: key.port,
                 idleTimeoutMillis: 30000,
-                connectionTimeoutMillis: 2000,
+                connectionTimeoutMillis: 20000,
+                keepAlive: true,
                 max: 25
             }
             if(key.database) {
@@ -52,7 +53,7 @@ var exports = {
             var pool = config.connection
             if(!pool || typeof config.connection.connect != 'function') {
                 pool = await this.establish_connection(config).catch(err => {
-                    console.log(err)
+                    console.log(err) 
                     reject(err)
                 })
             }
@@ -75,7 +76,7 @@ var exports = {
                         resolve (nested_query)
                     }
                     } else {
-                        release()
+                        pool.end()
                         console.log(sql_query.substring(0,50) + '... errored ' + repeat_number + ' times')
                         reject({
                             err: err,
@@ -91,7 +92,7 @@ var exports = {
                         if(repeat_number > 0) {
                             console.log(sql_query.substring(0,50) + '... errored ' + repeat_number + ' times but completed successfully')
                         }
-                        release()
+                        client.end()
                         if(results.command == 'INSERT') {
                             resolve(results.rowCount)
                         }
@@ -105,7 +106,7 @@ var exports = {
                         if(repeat_number) {repeat_number = repeat_number + 1}
                         else {repeat_number = 1}
                         if (repeat_number < max_repeat) {
-                        release()
+                        client.end()
                         var nested_err = null
                         var nested_query = await exports.run_query(config, sql_query, repeat_number).catch(err => {
                             if(repeat_number == max_repeat - 1) {{
@@ -282,8 +283,8 @@ var exports = {
                     type = 'varchar'
                 }
                 
-                if(sql_lookup_table.translate.local_to_server[header_data["type"]]) {
-                    type = sql_lookup_table.translate.local_to_server[header_data["type"]]
+                if(sql_lookup_table.translate.local_to_server[type.toLowerCase()]) {
+                    type = sql_lookup_table.translate.local_to_server[type.toLowerCase()]
                 }
     
                 if(create_table_sql_part) {

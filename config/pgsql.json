@@ -8,11 +8,13 @@
             "timestamp without time zone": "datetime",
             "integer": "int",
             "timestamp": "datetime",
-            "character varying": "varchar"
+            "character varying": "varchar",
+            "numeric": "double"
         },
         "local_to_server": {
             "tinyint": "smallint",
-            "exponent": "double",
+            "exponent": "numeric",
+            "double": "numeric",
             "datetime": "timestamp"
         }
     },

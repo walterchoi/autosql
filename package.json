@@ -1,6 +1,6 @@
 {
   "name": "autosql",
-  "version": "0.6.11",
+  "version": "0.6.12",
   "optionalDependencies": {
     "mysql2": "^2.1.0",
     "pg": "^8.0.2",

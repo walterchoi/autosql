@@ -238,8 +238,8 @@ var exports = {
                     type = 'varchar'
                 }
 
-                if(sql_lookup_table.translate.local_to_server[header_data["type"]]) {
-                    type = sql_lookup_table.translate.local_to_server[header_data["type"]]
+                if(sql_lookup_table.translate.local_to_server[type.toLowerCase()]) {
+                    type = sql_lookup_table.translate.local_to_server[type.toLowerCase()]
                 }
     
                 if(create_table_sql_part) {

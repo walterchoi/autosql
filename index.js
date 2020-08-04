@@ -581,10 +581,14 @@ async function auto_alter_table (config, new_headers) {
             }
         }
 
-        if(table_changes.new.length > 0 || table_changes.alter.length > 0) {
-            table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors(err))
-            altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors(err))
-            resolve(altered_table)
+        if(table_changes) {
+            if(table_changes.new.length > 0 || table_changes.alter.length > 0) {
+                table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors(err))
+                altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors(err))
+                resolve(altered_table)
+            } else {
+                resolve(null)
+            }
         }
         else {
             resolve(null)
@@ -659,7 +663,7 @@ async function compare_two_headers (config, old_headers, new_headers) {
                 }
 
                 if(!sql_lookup_table.no_length.includes(collated_type)) {
-                    if(new_header_obj["length"] > old_header_obj["length"]) {
+                    if(new_header_obj["length"] > old_header_obj["length"] && old_header_obj["length"] !== null) {
                         changes["length"] = new_header_obj["length"]
                         changes.changed = true
                     }
@@ -1078,6 +1082,9 @@ function sqlize (config, data) {
         }
 
         var _sqlize = sql_lookup_table.sqlize
+        if(!config.meta_data) {
+            config.meta_data = await get_meta_data(config, data).catch(err => {reject(err)})
+        }
         var metaData = config.meta_data
         var headers = []
         metaData.map(header => 
@@ -1293,6 +1300,7 @@ async function set_ssh (ssh_keys) {
         }
         if(ssh_keys.timeout) { ssh_config.readyTimeout = ssh_keys.timeout }
         else { ssh_config.readyTimeout = 10000 }
+        console.log(ssh_config)
         ssh.on('ready', function() {
             ssh.forwardOut(
                 ssh_keys.source_address,
@@ -1300,10 +1308,11 @@ async function set_ssh (ssh_keys) {
                 ssh_keys.destination_address,
                 ssh_keys.destination_port,
                 async function (err, stream) {
-                if (err) {
-                    console.log(err)
-                    reject(err);
-                } 
+                    if (err) throw err;
+                    stream.on('close', function() {
+                      console.log('Stream :: close');
+                      ssh.end();
+                    })
                     resolve(stream)
                 }
             );
