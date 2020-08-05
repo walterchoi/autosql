@@ -1,6 +1,6 @@
 {
     "int_group": ["boolean", "binary", "tinyint", "smallint", "int", "numeric", "bigint"],
-    "special_int_group": ["decimal", "exponent"],
+    "special_int_group": ["decimal", "double", "exponent"],
     "text_group": ["varchar", "text", "mediumtext", "longtext"],
     "special_text_group": ["json"],
     "date_group": ["date", "time", "datetime"],
