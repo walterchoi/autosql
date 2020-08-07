@@ -80,6 +80,7 @@ var exports = {
                         console.log(sql_query.substring(0,50) + '... errored ' + repeat_number + ' times')
                         console.log('ERRORED sql_query')
                         console.log(sql_query)
+                        console.log(err)
                         console.log('ERRORED sql_query')
                         reject({
                             err: err,
@@ -119,10 +120,12 @@ var exports = {
                                     console.log('ERRORED sql_query')
                                     console.log(sql_query.substring(0, 1000))
                                     console.log(sql_query.substring(-200))
+                                    console.log(err)
                                     console.log('ERRORED sql_query')
                                 } else {
                                     console.log('ERRORED sql_query')
                                     console.log(sql_query)
+                                    console.log(err)
                                     console.log('ERRORED sql_query')
                                 }
                                 reject(err)
