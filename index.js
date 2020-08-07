@@ -1187,7 +1187,6 @@ async function auto_sql (provided_config, data) {
         try {
             var config = JSON.parse(JSON.stringify(provided_config))
         } catch (err) {
-            console.log(provided_config)
             var config = provided_config
         }
         
@@ -1300,7 +1299,6 @@ async function set_ssh (ssh_keys) {
         }
         if(ssh_keys.timeout) { ssh_config.readyTimeout = ssh_keys.timeout }
         else { ssh_config.readyTimeout = 10000 }
-        console.log(ssh_config)
         ssh.on('ready', function() {
             ssh.forwardOut(
                 ssh_keys.source_address,
