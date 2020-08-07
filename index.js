@@ -1251,9 +1251,13 @@ async function check_config (provided_config, auto) {
     var sql_helper = require(sql_dialect_lookup_object[provided_config.sql_dialect].helper).exports
 
     if(provided_config.ssh_config && !provided_config.ssh_stream) {
-        provided_config.ssh_stream = await set_ssh(provided_config.ssh_config).catch(err => {
-            reject(err)
-        })
+        if(provided_config.ssh_config.username){
+            provided_config.ssh_stream = await set_ssh(provided_config.ssh_config).catch(err => {
+                reject(err)
+            })
+        } else {
+            console.log(provided_config)
+        }
     }
 
     // Establish a connection to the database (if not already existing)
@@ -1275,6 +1279,9 @@ async function set_ssh (ssh_keys) {
             reject(e)
            }
         var ssh = new Client();
+        if(!ssh_keys || !ssh_keys.username) {
+            reject('No ssh key or username provided')
+        }
         if(ssh_keys.private_key_path && !ssh_keys.private_key) {
             ssh_keys.private_key = await readfile(ssh_keys.private_key_path)
         }
