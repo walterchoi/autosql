@@ -133,6 +133,10 @@ async function collate_types (currentType, overallType) {
             // One set of data is an exponent type column while the other is an integer type column
             collated_type = 'exponent'
         }
+        if ((currentType == 'double' && overallType_grouping == 'int') || (overallType == 'double' && currentType_grouping == 'int')) {
+            // One set of data is an exponent type column while the other is an integer type column
+            collated_type = 'double'
+        }
         if ((currentType == 'decimal' && overallType_grouping == 'int') || (overallType == 'decimal' && currentType_grouping == 'int')) {
             // One set of data is a decimal type column while the other is an integer type column
             collated_type = 'decimal'

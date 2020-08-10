@@ -78,10 +78,6 @@ var exports = {
                     } else {
                         release()
                         console.log(sql_query.substring(0,50) + '... errored ' + repeat_number + ' times')
-                        console.log('ERRORED sql_query')
-                        console.log(sql_query)
-                        console.log(err)
-                        console.log('ERRORED sql_query')
                         reject({
                             err: err,
                             step: 'run_query (pgsql variant)',

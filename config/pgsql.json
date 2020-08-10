@@ -9,7 +9,8 @@
             "integer": "int",
             "timestamp": "datetime",
             "character varying": "varchar",
-            "numeric": "double"
+            "numeric": "double",
+            "double precision": "double"
         },
         "local_to_server": {
             "tinyint": "smallint",
