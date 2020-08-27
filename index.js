@@ -1188,15 +1188,24 @@ function sqlize_value (config, value) {
 async function auto_sql (provided_config, data) {
     return new Promise (async (resolve, reject) => {
         var start_time = new Date()
+        console.log('provided_config')
+        console.log(provided_config)
+        console.log('provided_config')
         try {
             var config = JSON.parse(JSON.stringify(provided_config))
+            console.log('config')
+            console.log(config)
+            console.log('config')
         } catch (err) {
             var config = provided_config
         }
         
-        config = await check_config(config, true).catch(err => {reject(err)})
-        if(!config) {
-            config = JSON.parse(JSON.stringify(provided_config))
+        checked_config = await check_config(config, true).catch(err => {reject(err)})
+        if(checked_config) {
+            console.log('checked_config')
+            console.log(checked_config)
+            console.log('checked_config')
+            config = checked_config
         }
         
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
