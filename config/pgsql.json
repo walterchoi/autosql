@@ -17,7 +17,7 @@
             "exponent": "numeric",
             "double": "numeric",
             "datetime": "timestamp",
-            "boolean": "numeric"
+            "binary": "numeric"
         }
     },
     "sqlize": [
