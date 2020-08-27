@@ -1197,7 +1197,7 @@ async function auto_sql (provided_config, data) {
         checked_config = await check_config(config, true).catch(err => {
             console.log(config)
             console.log(err)
-            reject(err)})
+        })
         if(checked_config) {
             config = checked_config
         }
