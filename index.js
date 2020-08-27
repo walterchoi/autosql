@@ -1229,9 +1229,9 @@ async function auto_sql (provided_config, data) {
     })
 }
 
-async function check_config (provided_config, auto) {
+async function check_config (check_config, auto) {
     return new Promise(async (resolve, reject) => {
-    if(!provided_config) {
+    if(!check_config) {
         reject({
             err: 'no configuration was set on automatic mode',
             step: 'auto_sql',
@@ -1240,22 +1240,22 @@ async function check_config (provided_config, auto) {
         })
     }
 
-    if(!provided_config.create_table) {
-        provided_config.create_table = null
+    if(!check_config.create_table) {
+        check_config.create_table = null
     }
 
-    if(!provided_config.sql_dialect || (!provided_config.database && auto) || (!provided_config.table && auto)) {
+    if(!check_config.sql_dialect || (!check_config.database && auto) || (!check_config.table && auto)) {
         reject({
             err: 'required configuration options not set on automatic mode',
             step: 'auto_sql',
             description: 'invalid configuration object provided to auto_sql automated step',
-            resolution: `please provide supported value for ${!provided_config.sql_dialect ? 'sql_dialect' : ''} ${!provided_config.database ? 'database (target database)' : ''}
-            ${!provided_config.table ? 'table (target table)' : ''} in configuration object, additional details can be found in the documentation`
+            resolution: `please provide supported value for ${!check_config.sql_dialect ? 'sql_dialect' : ''} ${!check_config.database ? 'database (target database)' : ''}
+            ${!check_config.table ? 'table (target table)' : ''} in configuration object, additional details can be found in the documentation`
         })
     }
             
     var sql_dialect_lookup_object = require('./config/sql_dialect.json')
-    if(!sql_dialect_lookup_object[provided_config.sql_dialect]) {
+    if(!sql_dialect_lookup_object[check_config.sql_dialect]) {
         reject({
             err: 'no supported sql dialect was set on automatic mode',
             step: 'auto_sql',
@@ -1264,24 +1264,24 @@ async function check_config (provided_config, auto) {
         })
     }
     
-    var sql_helper = require(sql_dialect_lookup_object[provided_config.sql_dialect].helper).exports
+    var sql_helper = require(sql_dialect_lookup_object[check_config.sql_dialect].helper).exports
 
-    if(provided_config.ssh_config && !provided_config.ssh_stream) {
-        if(provided_config.ssh_config.username){
-            provided_config.ssh_stream = await set_ssh(provided_config.ssh_config).catch(err => {
+    if(check_config.ssh_config && !check_config.ssh_stream) {
+        if(check_config.ssh_config.username){
+            check_config.ssh_stream = await set_ssh(check_config.ssh_config).catch(err => {
                 reject(err)
             })
         } else {
-            console.log(provided_config)
+            console.log(check_config)
         }
     }
 
     // Establish a connection to the database (if not already existing)
-    if(!provided_config.connection) {
-        provided_config.connection = await sql_helper.establish_connection(provided_config).catch(err => {reject(err)})
+    if(!check_config.connection) {
+        check_config.connection = await sql_helper.establish_connection(check_config).catch(err => {reject(err)})
     }
 
-    resolve(provided_config)
+    resolve(check_config)
     })
 }
 
