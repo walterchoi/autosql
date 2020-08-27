@@ -1188,14 +1188,8 @@ function sqlize_value (config, value) {
 async function auto_sql (provided_config, data) {
     return new Promise (async (resolve, reject) => {
         var start_time = new Date()
-        console.log('provided_config')
-        console.log(provided_config)
-        console.log('provided_config')
         try {
             var config = JSON.parse(JSON.stringify(provided_config))
-            console.log('config')
-            console.log(config)
-            console.log('config')
         } catch (err) {
             var config = provided_config
         }
@@ -1204,9 +1198,6 @@ async function auto_sql (provided_config, data) {
             console.log(err)
             reject(err)})
         if(checked_config) {
-            console.log('checked_config')
-            console.log(checked_config)
-            console.log('checked_config')
             config = checked_config
         }
         
