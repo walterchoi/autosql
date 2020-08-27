@@ -1195,6 +1195,9 @@ async function auto_sql (provided_config, data) {
         }
         
         config = await check_config(config, true).catch(err => {reject(err)})
+        if(!config) {
+            config = JSON.parse(JSON.stringify(provided_config))
+        }
         
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
