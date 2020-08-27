@@ -16,7 +16,8 @@
             "tinyint": "smallint",
             "exponent": "numeric",
             "double": "numeric",
-            "datetime": "timestamp"
+            "datetime": "timestamp",
+            "boolean": "numeric"
         }
     },
     "sqlize": [
