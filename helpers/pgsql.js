@@ -666,7 +666,9 @@ var exports = {
                 sql_query += values_sql
                 values_sql = ''
             }
-            sql_query = sql_query + replace_sql
+            if(config.keys) {
+                sql_query = sql_query + replace_sql
+            }
             resolve(sql_query)
         })
     },
