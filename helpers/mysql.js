@@ -310,6 +310,16 @@ var exports = {
             resolve (create_table_sql) 
         })
     },
+    empty_table : function (config) {
+        if(config.schema) {
+            var database = config.schema
+        }
+        else if (config.database) {
+            var database = config.database
+        };
+        var table = config.table;
+        return `Delete FROM \`${database}\`.\`${table}\`;`
+    },
     get_table_description : function (config, _schema, _table) {
         if(_schema && _table) {
             var database = _schema
