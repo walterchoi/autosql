@@ -314,6 +314,7 @@ var exports = {
     
                 // If index is true then make column into an indexed column (separate query done later)
                 if(index === true) {
+                    index_column_name = (table + '_' + column_name).replace(/ /g, "_")
                     index_create_sql += `CREATE ${unique === true ? 'UNIQUE' : ''} INDEX "${table + '_' + column_name}" ON "${database}"."${table}" ("${column_name}");\n`
                 }
 
