@@ -1238,7 +1238,7 @@ async function check_config (check_config, auto) {
         check_config.create_table = null
     }
 
-    if(!check_config.sql_dialect || ((!check_config.database || !check_config.schema) && auto) || (!check_config.table && auto)) {
+    if(!check_config.sql_dialect || ((!check_config.database && !check_config.schema) && auto) || (!check_config.table && auto)) {
         reject({
             err: 'required configuration options not set on automatic mode',
             step: 'auto_sql',
