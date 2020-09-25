@@ -1,11 +1,12 @@
 {
     "require_length": [],
     "optional_length": ["varchar"],
-    "no_length": ["date", "time", "datetime", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "int", "bigint", "boolean"],
+    "no_length": ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "int", "bigint", "boolean"],
     "decimals": ["exponent", "double", "decimal"],
     "translate": {
         "server_to_local": {
             "timestamp without time zone": "datetime",
+            "timestamp with time zone": "datetimetz",
             "integer": "int",
             "timestamp": "datetime",
             "character varying": "varchar",
@@ -16,7 +17,8 @@
             "tinyint": "smallint",
             "exponent": "numeric",
             "double": "numeric",
-            "datetime": "timestamp",
+            "datetime": "timestamp without time zone",
+            "datetimetz": "timestamp with time zone",
             "binary": "numeric",
             "mediumtext": "text", 
             "longtext": "text"

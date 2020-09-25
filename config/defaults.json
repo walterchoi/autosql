@@ -16,7 +16,7 @@
 
     "locale": "en-US",
     "timezone": "UTC",
-    "convert_timezone": true,
+    "convert_timezone": false,
 
     "delete_columns": false,
     "wait_for_approval": false

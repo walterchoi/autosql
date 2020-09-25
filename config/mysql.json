@@ -1,7 +1,7 @@
 {
     "require_length": ["varchar", "binary", "decimal"],
     "optional_length": ["boolean", "tinyint", "smallint", "int", "bigint"],
-    "no_length": ["date", "time", "datetime", "json", "text", "mediumtext", "longtext", "exponent", "double"],
+    "no_length": ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double"],
     "decimals": ["exponent", "double", "decimal"],
     "translate": {
         "server_to_local": {

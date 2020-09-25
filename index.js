@@ -16,6 +16,8 @@ async function predict_type (data) {
             currentType = 'decimal'
         } else if (data.search(reg.exponential) >= 0) {
             currentType = 'exponential'
+        } else if (data.search(reg.datetimetz) >= 0) {
+            currentType = 'datetimetz'
         } else if (data.search(reg.datetime) >= 0) {
             currentType = 'datetime'
         } else if (data.search(reg.date) >= 0) {
@@ -152,6 +154,10 @@ async function collate_types (currentType, overallType) {
                 }
             }
         } else if (overallType_grouping == 'special_text' || overallType_grouping == 'date' || currentType_grouping == 'special_text' || currentType_grouping == 'date') {
+            collated_type = 'varchar'
+        }
+        
+        if(!collated_type) {
             collated_type = 'varchar'
         }
     }
