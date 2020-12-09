@@ -2,7 +2,7 @@
     "primary": ["ID"],
     "minimum_unique": 50,
     "pseudo_unique": 0.95,
-    "sampling": 0,
+    "sampling": 0.2,
     "sampling_minimum": 100,
     "max_key_length": 255,
     "auto_indexing": true,
