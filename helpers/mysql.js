@@ -286,6 +286,10 @@ var exports = {
                 if(def !== undefined) {
                     create_table_sql_part += " DEFAULT " + def + ""
                 }
+
+                if(type == 'json') {
+                    create_table_sql_part += ` CHECK (JSON_VALID(${column_name}))`
+                }
     
                 // If column is part of the primary key, then add column to the primary constraint index
                 if(primary === true) {
