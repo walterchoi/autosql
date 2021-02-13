@@ -5,10 +5,12 @@
     "decimals": ["exponent", "double", "decimal"],
     "translate": {
         "server_to_local": {
+            "timestamp": "datetimetz"
         },
         "local_to_server": {
             "boolean": "tinyint",
-            "exponent": "double"
+            "exponent": "double",
+            "datetimetz": "timestamp"
         }
     },
     "sqlize": [
@@ -40,19 +42,19 @@
             "find": ".000Z",
             "replace": "",
             "regex": "\\.[0-9]{0,3}Z$",
-            "type": ["datetime"]
+            "type": ["datetime", "datetimetz"]
         },
         {
             "find": "T",
             "replace": " ",
             "regex": "T",
-            "type": ["datetime"]
+            "type": ["datetime", "datetimetz"]
         },
         {
             "find": "Z",
             "replace": "",
             "regex": "Z$",
-            "type": ["datetime"]
+            "type": ["datetime", "datetimetz"]
         },
         {
             "find": ",",

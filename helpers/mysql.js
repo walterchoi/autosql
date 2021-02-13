@@ -288,6 +288,9 @@ var exports = {
                 }
 
                 if(type == 'json') {
+                    if(index) {
+                        create_table_sql_part += ' , '
+                    }
                     create_table_sql_part += ` CHECK (JSON_VALID(${column_name}))`
                 }
     
