@@ -430,6 +430,7 @@ var exports = {
                     if(def !== undefined) {
                         sql_query_part += " DEFAULT " + def + ""
                     }
+
                     sql_query += sql_query_part
                 }
             }
@@ -515,7 +516,7 @@ var exports = {
                 var row = data[d]
                 for(var h = 0; h < headers.length; h++) {
                     var value = row[headers[h]]
-                    if(value === null || value == '' || value == 'null') {
+                    if(value === undefined || value === 'undefined' || value === null || value == '' || value == 'null') {
                         values_sql += 'null'
                     } else {
                         if(int_group.includes(metaData[h][headers[h]].type) || special_int_group.includes(metaData[h][headers[h]].type)) {

@@ -251,7 +251,8 @@ var exports = {
         return new Promise((resolve, reject) => {
             var sql_dialect_lookup_object = require('../config/sql_dialect.json')
             var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
-    
+
+            var wait_sql = 'SELECT pg_sleep(1);' 
             if(config.schema) {
                 var database = config.schema
             }
@@ -316,7 +317,7 @@ var exports = {
                 // If index is true then make column into an indexed column (separate query done later)
                 if(index === true) {
                     index_column_name = (table + '_' + column_name).replace(/\ /g, "_")
-                    index_create_sql += `CREATE ${unique === true ? 'UNIQUE' : ''} INDEX "${table + '_' + column_name}" ON "${database}"."${table}" ("${column_name}");\n`
+                    index_create_sql += `CREATE ${unique === true ? 'UNIQUE' : ''} INDEX IF NOT EXISTS "${table + '_' + column_name}" ON "${database}"."${table}" ("${column_name}");\n`
                 }
 
                 // If auto_increment is true then make column into an auto_incremental column (separate query done later)
@@ -379,9 +380,10 @@ var exports = {
             }
             if(index_create_sql.length > 1) {
                 if(create_table_sql.isArray) {
+                    create_table_sql = create_table_sql.push(wait_sql) 
                     create_table_sql = create_table_sql.push(index_create_sql)
                 } else {
-                    create_table_sql = [create_table_sql, index_create_sql]
+                    create_table_sql = [create_table_sql, wait_sql, index_create_sql]
                 }
             }
             resolve (create_table_sql) 
@@ -661,7 +663,7 @@ var exports = {
                 var row = data[d]
                 for(var h = 0; h < headers.length; h++) {
                     var value = row[headers[h]]
-                    if(value === null || value == '' || value == 'null') {
+                    if(value === null || value == '' || value == 'null' || value === undefined) {
                         values_sql += 'null'
                     } else {
                         if(int_group.includes(metaData[h][headers[h]].type) || special_int_group.includes(metaData[h][headers[h]].type)) {

@@ -279,10 +279,10 @@ async function predict_indexes (config, primary_key) {
             var header_name = (Object.getOwnPropertyNames(headers[h])[0])
             // Dates or Datetimes or Timestamps should be considered to be an index
             date_group = groupings.date_group
-            if(date_group.includes(headers[h][header_name]['type'])) {
+            if(date_group.includes(headers[h][header_name]['type']) && headers[h][header_name].length < max_key_length) {
                 headers[h][header_name]['index'] = true
             }
-            if(headers[h][header_name]['pseudounique'] || headers[h][header_name]['unique']) {
+            if((headers[h][header_name]['pseudounique'] || headers[h][header_name]['unique']) && headers[h][header_name].length < max_key_length) {
                 headers[h][header_name]['index'] = true
             }
             // If a primary key column(s) have been specified, this will take priority,
@@ -335,6 +335,8 @@ async function get_meta_data (config, data) {
         // Sampling minimum prevents sampling from occurring if the data set provided is too low -- defaults to minimum of 100 data points AFTER sampling
         var sampling = defaults.sampling
         var sampling_minimum = defaults.sampling_minimum
+        var groupings = require('./helpers/groupings.json')
+        date_group = groupings.date_group
 
         // Let user override this default via config object
         if(config) {
@@ -472,7 +474,6 @@ async function get_meta_data (config, data) {
                     if(sql_lookup_table.decimals.includes(headers[h][header_name]['type'])) {
                         if(Math.floor(dataPoint) == dataPoint) {var decimal_len = 0}
                         else {var decimal_len = dataPoint.toString().split(".")[1].length + 1}
-                        
                         if(headers[h][header_name]['decimal']) {
                             if(decimal_len > headers[h][header_name]['decimal']) {
                                 headers[h][header_name]['decimal'] = decimal_len  
@@ -502,11 +503,15 @@ async function get_meta_data (config, data) {
                 headers[h][header_name]['type'] == 'varchar'
             }
             if(uniqueCheck[header_name].size == data.length && data.length > 0 && data.length >= minimum_unique) {
-                headers[h][header_name]['unique'] = true
+                if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
+                    headers[h][header_name]['unique'] = true
+                }
             }
             if(uniqueCheck[header_name].size >= (data.length * pseudo_unique) && data.length > 0 && data.length >= minimum_unique) {
+                if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
                 headers[h][header_name]['pseudounique'] = true
-            }            
+                }
+            }     
         }
 
         config.meta_data = headers
@@ -590,7 +595,6 @@ async function auto_alter_table (config, new_headers) {
                 }
             }
         }
-
         if(table_changes) {
             if(table_changes.new.length > 0 || table_changes.alter.length > 0) {
                 table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors(err))
@@ -673,14 +677,32 @@ async function compare_two_headers (config, old_headers, new_headers) {
                 }
 
                 if(!sql_lookup_table.no_length.includes(collated_type)) {
-                    if(new_header_obj["length"] > old_header_obj["length"] && old_header_obj["length"] !== null) {
+
+                    if(old_header_obj["length"] === 0) {
                         changes["length"] = new_header_obj["length"]
                         changes.changed = true
                     }
 
-                    if(new_header_obj.decimal > old_header_obj.decimal) {
-                        changes.decimal = new_header_obj.decimal
-                        changes.changed = true
+                    if(new_header_obj.decimal > 0 || old_header_obj.decimal > 0) {
+                        var dec_diff = 0
+                        if(new_header_obj.decimal > old_header_obj.decimal) {
+                            dec_diff = parseInt(new_header_obj.decimal) - parseInt(old_header_obj.decimal)
+                            changes.decimal = parseInt(new_header_obj.decimal)
+                            changes.changed = true
+                        }
+
+                        if(new_header_obj["length"] > old_header_obj["length"]) {
+                            changes["length"] = parseInt(new_header_obj["length"]) + dec_diff
+                            changes.changed = true
+                        } else {
+                            changes["length"] = parseInt(old_header_obj["length"]) + dec_diff
+                        }
+                        
+                    } else {
+                        if(parseInt(new_header_obj["length"]) > parseInt(old_header_obj["length"]) && old_header_obj["length"] !== null) {
+                            changes["length"] = parseInt(new_header_obj["length"])
+                            changes.changed = true
+                        }
                     }
                 }
 
@@ -696,7 +718,7 @@ async function compare_two_headers (config, old_headers, new_headers) {
                     }
                     // if the value is changed but no length or decimal length changes are found, but are required for ALTER statements
                     if(sql_lookup_table.decimals.includes(changes.type) && changes.decimal === undefined) {
-                        changes.decimal = old_header_obj["decimal"]
+                        changes.decimal = parseInt(old_header_obj["decimal"])
                     }
                     if(changes["length"] === undefined) {
                         changes["length"] = old_header_obj["length"]
@@ -757,8 +779,8 @@ async function convert_table_description (config, table_description) {
         var nullable = table_desc[c].IS_NULLABLE
         if(old_length) {
             if(old_length.includes(',')) {
-                var decimal = old_length.toString().split(",")[1].length
-                old_length = old_length.toString().split(",")[0].length
+                var decimal = old_length.toString().split(",")[1]
+                old_length = old_length.toString().split(",")[0]
             }
         }
         if(nullable == 'NO') {
@@ -816,6 +838,7 @@ async function auto_configure_table (config, data) {
         // Now that the meta data associated with this data has been found, 
         if(config.create_table) {
             var auto_create_table_results = await auto_create_table(config, new_meta_data).catch(err => {reject(err)})
+            await auto_alter_table(config, new_meta_data).catch(err => {reject(err)})
             resolve(auto_create_table_results)
         } else {
             await auto_alter_table(config, new_meta_data).catch(err => {reject(err)})
@@ -1060,7 +1083,6 @@ async function run_sql_query (config, sql_query) {
         else if(safe_mode && insert_check && query_errors.length != 0) {
             var rollback = sql_helper.rollback()
             await sql_helper.run_query(config, rollback).catch(err => {reject(err)})
-            console.log(query_errors)
             reject(query_errors)
         }
         if ((!safe_mode || !insert_check) && query_errors.length == 0) {
@@ -1108,15 +1130,29 @@ function sqlize (config, data) {
             for (key in row) {
                 var index = headers.findIndex(column => column == key)
                 var value = row[key]
-                
+                try {
+                    if(date_group.includes(metaData[index][key]["type"])) {
+
+                    }
+                } catch (e) {
+                    console.log(metaData)
+                    console.log(index)
+                }
                 if(value === undefined || value === '\\N' || value === null || value === 'null') {
                     value = null
                     data[d][key] = value
                 }
-                else if(Object.prototype.toString.call(value) === '[object Date]' || (date_group.includes(metaData[index][key]["type"]) && date_group.includes(predict_type(value)))) {
+                else if(Object.prototype.toString.call(value) === '[object Date]' || (date_group.includes(metaData[index][key]["type"]) && date_group.includes(await predict_type(value)))) {
                     if(value.toString() === 'Invalid Date') {
                         value = null
                     } else {
+                        if(Object.prototype.toString.call(value) === '[object String]') {
+                            if(value.startsWith("/Date(")) {
+                                value = value.replace('/Date(', '')
+                                value = value.replace('+0000)/', '')
+                                value = parseInt(value)
+                            }
+                        }
                         value = new Date(value)
                         value = value.toISOString()
                     }
@@ -1344,7 +1380,6 @@ async function set_ssh (ssh_keys) {
 }
 
 async function catch_errors (err) {
-    console.log(err)
     return(err)
 }
 
@@ -1386,7 +1421,7 @@ async function check_if_insert (source_sql) {
 async function export_sql_helper (provided_config) {
     var sql_dialect_lookup_object = require('./config/sql_dialect.json')
     var sql_helper = require(sql_dialect_lookup_object[provided_config.sql_dialect].helper).exports
-    return sql_helper
+    return sql_helper.exports
 }
 
 module.exports = {
@@ -1407,5 +1442,6 @@ module.exports = {
     set_ssh,
     export_sql_helper,
     sqlize,
-    sqlize_value
+    sqlize_value,
+    isObject
 }
