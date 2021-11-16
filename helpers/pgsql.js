@@ -477,8 +477,13 @@ var exports = {
                     }
     
                     if(sql_lookup_table.decimals.includes(type)) {
-                        if(!decimal) {decimal = 0}
-                        sql_query_part += " (" + length + "," + decimal + ")"
+                        if(!length && !decimal) {
+                            length = 10
+                            decimal = 3
+                        }
+                        if(!decimal) {decimal = 1}
+                        if(!length) {length = 10}
+                        sql_query_part += ` (${length},${decimal})`
                     }
                     else if(sql_lookup_table.require_length.includes(type) || (sql_lookup_table.optional_length.includes(type) && length)) {
                         sql_query_part += " (" + length + ")"
@@ -555,8 +560,13 @@ var exports = {
                     }
         
                     if(sql_lookup_table.decimals.includes(type)) {
-                        if(!decimal) {decimal = 0}
-                        sql_query_part += " (" + length + "," + decimal + ")"
+                        if(!length && !decimal) {
+                            length = 10
+                            decimal = 3
+                        }
+                        if(!decimal) {decimal = 1}
+                        if(!length) {length = 10}
+                        sql_query_part += ` (${length},${decimal}) USING "${column_name}"::INT`
                     }
                     else if(sql_lookup_table.require_length.includes(type) || (sql_lookup_table.optional_length.includes(type) && length)) {
                         sql_query_part += " (" + length + ")"

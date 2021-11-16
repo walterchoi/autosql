@@ -481,11 +481,16 @@ async function get_meta_data (config, data) {
                         } else {
                             headers[h][header_name]['decimal'] = decimal_len
                         }
+                        if(headers[h][header_name]['decimal'] > defaults.decimal_max_length) {
+                            headers[h][header_name]['decimal'] = defaults.decimal_max_length
+                        }
+                        var len = dataPoint.toString().split(".")[0].length
+                    } else {
+                        var len = dataPoint.length
                     }
-                    var len = dataPoint.length
                     var curLen = headers[h][header_name]['length']
                     if(headers[h][header_name]['decimal']) {
-                        var len = dataPoint.length + 3
+                        len = dataPoint.toString().split(".")[0].length + headers[h][header_name]['decimal'] + 3
                     }
                     if (len > curLen) {
                         headers[h][header_name]['length'] = len
@@ -1049,9 +1054,9 @@ async function run_sql_query (config, sql_query) {
     
         if(Array.isArray(sql_query)) {
             for(var sql = 0; sql < sql_query.length && query_errors.length == 0; sql++) {
-                console.log(`Starting query ${sql} of ${sql_query.length}`)
+                //console.log(`Starting query ${sql+1} of ${sql_query.length}`)
                 var query_result = await sql_helper.run_query(config, sql_query[sql], 0, 1).catch(err => {query_errors.push(err)})
-                console.log(`Completed query ${sql} of ${sql_query.length}`)
+                //console.log(`Completed query ${sql+1} of ${sql_query.length}`)
                 if(Array.isArray(query_result)) {
                     query_results = query_results.concat(query_result)
                 } else {
@@ -1130,14 +1135,7 @@ function sqlize (config, data) {
             for (key in row) {
                 var index = headers.findIndex(column => column == key)
                 var value = row[key]
-                try {
-                    if(date_group.includes(metaData[index][key]["type"])) {
-
-                    }
-                } catch (e) {
-                    console.log(metaData)
-                    console.log(index)
-                }
+            try {   
                 if(value === undefined || value === '\\N' || value === null || value === 'null') {
                     value = null
                     data[d][key] = value
@@ -1160,6 +1158,10 @@ function sqlize (config, data) {
                 } else if (typeof value === 'object') {
                     value = JSON.stringify(value)
                 }
+            } catch (e) {
+                console.log(metaData)
+                console.log(index)
+            }
                 for (var s = 0; s < _sqlize.length; s++) {
                     var regex = new RegExp(_sqlize[s].regex, 'gmi')
                     var type_req = _sqlize[s].type
@@ -1203,11 +1205,20 @@ function sqlize_value (config, value) {
         if(value === undefined || value === '\\N' || value === null || value === 'null') {
             value = null
         }
-        else if(Object.prototype.toString.call(value) === '[object Date]' || (date_group.includes(type) && date_group.includes(predict_type(value)))) {
-            if(Object.prototype.toString.call(value) !== '[object Date]') {
+        else if(Object.prototype.toString.call(value) === '[object Date]' || date_group.includes(await predict_type(value))) {
+            if(value.toString() === 'Invalid Date') {
+                value = null
+            } else {
+                if(Object.prototype.toString.call(value) === '[object String]') {
+                    if(value.startsWith("/Date(")) {
+                        value = value.replace('/Date(', '')
+                        value = value.replace('+0000)/', '')
+                        value = parseInt(value)
+                    }
+                }
                 value = new Date(value)
+                value = value.toISOString()
             }
-            value = value.toISOString()
         } else if (typeof value === 'object') {
             value = JSON.stringify(value)
         }

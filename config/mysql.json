@@ -42,19 +42,19 @@
             "find": ".000Z",
             "replace": "",
             "regex": "\\.[0-9]{0,3}Z$|[\\+|\\-][0-9]{2}\\:[0-9]{2}$",
-            "type": ["datetime", "datetimetz"]
+            "type": ["date", "datetime", "datetimetz"]
         },
         {
             "find": "T",
             "replace": " ",
             "regex": "T",
-            "type": ["datetime", "datetimetz"]
+            "type": ["date", "datetime", "datetimetz"]
         },
         {
             "find": "Z",
             "replace": "",
             "regex": "Z$",
-            "type": ["datetime", "datetimetz"]
+            "type": ["date", "datetime", "datetimetz"]
         },
         {
             "find": ",",
