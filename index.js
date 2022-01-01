@@ -1432,7 +1432,7 @@ async function check_if_insert (source_sql) {
 async function export_sql_helper (provided_config) {
     var sql_dialect_lookup_object = require('./config/sql_dialect.json')
     var sql_helper = require(sql_dialect_lookup_object[provided_config.sql_dialect].helper).exports
-    return sql_helper.exports
+    return sql_helper
 }
 
 module.exports = {
