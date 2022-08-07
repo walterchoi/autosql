@@ -413,7 +413,7 @@ var exports = {
     
                     // If index is true then make column into an indexed column
                     if(index === true) {
-                        sql_query_part += ", INDEX (`" + column_name + "`) "
+                        sql_query_part += ", ADD INDEX (`" + column_name + "`) "
                     }
     
                     // If auto_increment is true then make column into an auto_incremental column
