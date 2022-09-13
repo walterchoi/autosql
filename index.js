@@ -504,9 +504,9 @@ async function get_meta_data (config, data) {
         // Find unique or pseudounique columns
         for (var h = 0; h < headers.length; h++) {
             var header_name = (Object.getOwnPropertyNames(headers[h])[0])
-            if(headers[h][header_name]['type'] == null) {
+            /*if(headers[h][header_name]['type'] == null) {
                 headers[h][header_name]['type'] = 'varchar'
-            }
+            }*/
             if(uniqueCheck[header_name].size == data.length && data.length > 0 && data.length >= minimum_unique) {
                 if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
                     headers[h][header_name]['unique'] = true
@@ -517,9 +517,9 @@ async function get_meta_data (config, data) {
                 headers[h][header_name]['pseudounique'] = true
                 }
             }     
-            if(headers[h][header_name]['type'] == 'varchar' && headers[h][header_name]['length'] == 0) {
+            /*if(headers[h][header_name]['type'] == 'varchar' && headers[h][header_name]['length'] == 0) {
                 headers[h][header_name]['length'] = 1
-            }
+            }*/
         }
 
         config.meta_data = headers
@@ -563,8 +563,29 @@ async function auto_create_table (config, meta_data) {
             })
         }
 
+        var headers = meta_data
+        for (var h = 0; h < headers.length; h++) {
+            var header_name = (Object.getOwnPropertyNames(headers[h])[0])
+            if(headers[h][header_name]['type'] == null) {
+                headers[h][header_name]['type'] = 'varchar'
+            }
+            if(uniqueCheck[header_name].size == data.length && data.length > 0 && data.length >= minimum_unique) {
+                if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
+                    headers[h][header_name]['unique'] = true
+                }
+            }
+            if(uniqueCheck[header_name].size >= (data.length * pseudo_unique) && data.length > 0 && data.length >= minimum_unique) {
+                if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
+                headers[h][header_name]['pseudounique'] = true
+                }
+            }     
+            if(headers[h][header_name]['type'] == 'varchar' && headers[h][header_name]['length'] == 0) {
+                headers[h][header_name]['length'] = 1
+            }
+        }
+
         if(config.collation) {collation = config.collation}
-        create_table_sql = await sql_helper.create_table(config, meta_data).catch(err => {reject(err)})
+        create_table_sql = await sql_helper.create_table(config, headers).catch(err => {reject(err)})
         create_table = await run_sql_query(config, create_table_sql).catch(err => {reject(err)})
         resolve(create_table)
     })
@@ -605,6 +626,29 @@ async function auto_alter_table (config, new_headers) {
         }
         if(table_changes) {
             if(table_changes.new.length > 0 || table_changes.alter.length > 0) {
+                if(table_changes.new.length > 0) {
+                    var headers = table_changes.new
+                    for (var h = 0; h < headers.length; h++) {
+                        var header_name = (Object.getOwnPropertyNames(headers[h])[0])
+                        if(headers[h][header_name]['type'] == null) {
+                            headers[h][header_name]['type'] = 'varchar'
+                        }
+                        if(uniqueCheck[header_name].size == data.length && data.length > 0 && data.length >= minimum_unique) {
+                            if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
+                                headers[h][header_name]['unique'] = true
+                            }
+                        }
+                        if(uniqueCheck[header_name].size >= (data.length * pseudo_unique) && data.length > 0 && data.length >= minimum_unique) {
+                            if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
+                            headers[h][header_name]['pseudounique'] = true
+                            }
+                        }     
+                        if(headers[h][header_name]['type'] == 'varchar' && headers[h][header_name]['length'] == 0) {
+                            headers[h][header_name]['length'] = 1
+                        }
+                    }
+                    table_changes.new = headers
+                }
                 table_alter_sql = await sql_helper.alter_table(config, table_changes).catch(err => catch_errors(err))
                 altered_table = await run_sql_query(config, table_alter_sql).catch(err => catch_errors(err))
                 resolve(altered_table)
