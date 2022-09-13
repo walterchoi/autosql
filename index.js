@@ -569,16 +569,6 @@ async function auto_create_table (config, meta_data) {
             if(headers[h][header_name]['type'] == null) {
                 headers[h][header_name]['type'] = 'varchar'
             }
-            if(uniqueCheck[header_name].size == data.length && data.length > 0 && data.length >= minimum_unique) {
-                if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
-                    headers[h][header_name]['unique'] = true
-                }
-            }
-            if(uniqueCheck[header_name].size >= (data.length * pseudo_unique) && data.length > 0 && data.length >= minimum_unique) {
-                if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
-                headers[h][header_name]['pseudounique'] = true
-                }
-            }     
             if(headers[h][header_name]['type'] == 'varchar' && headers[h][header_name]['length'] == 0) {
                 headers[h][header_name]['length'] = 1
             }
@@ -633,16 +623,6 @@ async function auto_alter_table (config, new_headers) {
                         if(headers[h][header_name]['type'] == null) {
                             headers[h][header_name]['type'] = 'varchar'
                         }
-                        if(uniqueCheck[header_name].size == data.length && data.length > 0 && data.length >= minimum_unique) {
-                            if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
-                                headers[h][header_name]['unique'] = true
-                            }
-                        }
-                        if(uniqueCheck[header_name].size >= (data.length * pseudo_unique) && data.length > 0 && data.length >= minimum_unique) {
-                            if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
-                            headers[h][header_name]['pseudounique'] = true
-                            }
-                        }     
                         if(headers[h][header_name]['type'] == 'varchar' && headers[h][header_name]['length'] == 0) {
                             headers[h][header_name]['length'] = 1
                         }
