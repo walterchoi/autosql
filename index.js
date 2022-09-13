@@ -505,7 +505,7 @@ async function get_meta_data (config, data) {
         for (var h = 0; h < headers.length; h++) {
             var header_name = (Object.getOwnPropertyNames(headers[h])[0])
             if(headers[h][header_name]['type'] == null) {
-                headers[h][header_name]['type'] == 'varchar'
+                headers[h][header_name]['type'] = 'varchar'
             }
             if(uniqueCheck[header_name].size == data.length && data.length > 0 && data.length >= minimum_unique) {
                 if(headers[h][header_name]['type'] != 'json' && !date_group.includes(headers[h][header_name]['type'])) {
@@ -517,6 +517,9 @@ async function get_meta_data (config, data) {
                 headers[h][header_name]['pseudounique'] = true
                 }
             }     
+            if(headers[h][header_name]['type'] == 'varchar' && headers[h][header_name]['length'] == 0) {
+                headers[h][header_name]['length'] = 1
+            }
         }
 
         config.meta_data = headers
