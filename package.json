@@ -1,6 +1,6 @@
 {
   "name": "autosql",
-  "version": "0.6.16",
+  "version": "0.7.0",
   "optionalDependencies": {
     "fs": "0.0.1-security",
     "mysql2": "^2.3.3",
