@@ -317,6 +317,9 @@ async function get_meta_data (config, data) {
         // Variable for minimum number of datapoints required for unique-ness -- default 50        
         var minimum_unique = defaults.minimum_unique
 
+        // Variable ffor maximum length of a unique value column -- default 64
+        var maximum_unique_length = defaults.maximum_unique_length
+
         // Variable for % of values that need to be unique to be considered a pseudo-unique value -- default 95% (or 2 standard deviations)
         var pseudo_unique = defaults.pseudo_unique
 
@@ -350,6 +353,7 @@ async function get_meta_data (config, data) {
                 })
             }
             if(config.minimum_unique) {minimum_unique = config.minimum_unique}
+            if(config.maximum_unique_length) {maximum_unique_length = config.maximum_unique_length}
             if(config.pseudo_unique) {pseudo_unique = config.pseudo_unique}
             if(config.primary) {primary = config.primary}
             if(config.auto_id) {auto_id = config.auto_id}
@@ -517,9 +521,9 @@ async function get_meta_data (config, data) {
                 headers[h][header_name]['pseudounique'] = true
                 }
             }     
-            /*if(headers[h][header_name]['type'] == 'varchar' && headers[h][header_name]['length'] == 0) {
-                headers[h][header_name]['length'] = 1
-            }*/
+            if(headers[h][header_name]['unique'] && headers[h][header_name]['length'] > maximum_unique_length) {
+                headers[h][header_name]['unique'] = false
+            }
         }
 
         config.meta_data = headers
@@ -1167,7 +1171,7 @@ function sqlize (config, data) {
                     value = null
                     data[d][key] = value
                 }
-                else if(Object.prototype.toString.call(value) === '[object Date]' || (date_group.includes(metaData[index][key]["type"]) && date_group.includes(await predict_type(value)))) {
+                else if(Object.prototype.toString.call(value) === '[object Date]' || (date_group.includes(metaData[index][key]["type"]) && date_group.includes(await predict_type(value)) && await predict_type(value) !== 'time')) {
                     if(value.toString() === 'Invalid Date') {
                         value = null
                     } else {
@@ -1232,7 +1236,7 @@ function sqlize_value (config, value) {
         if(value === undefined || value === '\\N' || value === null || value === 'null') {
             value = null
         }
-        else if(Object.prototype.toString.call(value) === '[object Date]' || date_group.includes(await predict_type(value))) {
+        else if(Object.prototype.toString.call(value) === '[object Date]' || date_group.includes(await predict_type(value)) && await predict_type(value) !== 'time') {
             if(value.toString() === 'Invalid Date') {
                 value = null
             } else {

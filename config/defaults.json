@@ -1,6 +1,7 @@
 {
     "primary": ["ID"],
     "minimum_unique": 50,
+    "maximum_unique_length": 64,
     "pseudo_unique": 0.95,
     "sampling": 0,
     "sampling_minimum": 100,
