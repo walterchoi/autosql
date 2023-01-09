@@ -317,8 +317,11 @@ async function get_meta_data (config, data) {
         // Variable for minimum number of datapoints required for unique-ness -- default 50        
         var minimum_unique = defaults.minimum_unique
 
-        // Variable ffor maximum length of a unique value column -- default 64
+        // Variable for maximum length of a unique value column -- default 64
         var maximum_unique_length = defaults.maximum_unique_length
+
+        // Variable for maximum length before column turns into VARCHAR/TEXT/MEDIUMTEXT/LONGTEXT - default 256
+        var max_non_text_length = defaults.max_non_text_length
 
         // Variable for % of values that need to be unique to be considered a pseudo-unique value -- default 95% (or 2 standard deviations)
         var pseudo_unique = defaults.pseudo_unique
@@ -354,6 +357,7 @@ async function get_meta_data (config, data) {
             }
             if(config.minimum_unique) {minimum_unique = config.minimum_unique}
             if(config.maximum_unique_length) {maximum_unique_length = config.maximum_unique_length}
+            if(config.max_non_text_length) {max_non_text_length = config.max_non_text_length}
             if(config.pseudo_unique) {pseudo_unique = config.pseudo_unique}
             if(config.primary) {primary = config.primary}
             if(config.auto_id) {auto_id = config.auto_id}
@@ -505,7 +509,7 @@ async function get_meta_data (config, data) {
 
         config.meta_data = headers
 
-        // Find unique or pseudounique columns
+        // Find unique or pseudounique columns and check for non-text columns that are too long
         for (var h = 0; h < headers.length; h++) {
             var header_name = (Object.getOwnPropertyNames(headers[h])[0])
             /*if(headers[h][header_name]['type'] == null) {
@@ -523,6 +527,25 @@ async function get_meta_data (config, data) {
             }     
             if(headers[h][header_name]['unique'] && headers[h][header_name]['length'] > maximum_unique_length) {
                 headers[h][header_name]['unique'] = false
+            }
+
+            if(headers[h][header_name]['length'] > max_non_text_length) {
+                if(headers[h][header_name]['type'] !== 'varchar' && headers[h][header_name]['type'] !== 'json'
+                && headers[h][header_name]['type'] !== 'text' && headers[h][header_name]['type'] !== 'mediumtext'
+                && headers[h][header_name]['type'] !== 'longtext'
+                ) {
+                    if(headers[h][header_name]['length'] >= max_non_text_length && headers[h][header_name]['length'] < 6553) {
+                        headers[h][header_name]['type'] = 'varchar'
+                    } else if(headers[h][header_name]['length'] >= 6553 && headers[h][header_name]['length'] < 65535) {
+                        headers[h][header_name]['type'] = 'text'
+                    } else if(headers[h][header_name]['length'] >= 65535 && headers[h][header_name]['length'] < 16777215) {
+                        headers[h][header_name]['type'] = 'mediumtext'
+                    } else if(headers[h][header_name]['length'] >= 16777215 && headers[h][header_name]['length'] < 4294967295) {
+                        headers[h][header_name]['type'] = 'longtext'
+                    } else if(headers[h][header_name]['length'] >= 4294967295) {
+                        headers[h][header_name]['type'] = 'longtext'
+                    }
+                }
             }
         }
 
