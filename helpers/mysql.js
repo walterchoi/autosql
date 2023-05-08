@@ -96,6 +96,7 @@ var exports = {
                 } else {
                 conn.query(sql_query, async function (err, results) {
                     if (err) {
+                        await writefile('./failed_query.txt', sql_query)
                         if(repeat_number) {repeat_number = repeat_number + 1}
                         else {repeat_number = 1}
                         if (repeat_number < max_repeat) {
@@ -136,8 +137,11 @@ var exports = {
             }})
         })
     },
-    check_database_exists : function (config) {
-        if(config.schema) {
+    check_database_exists : function (config, schema_name) {
+        if(schema_name) {
+            var database = schema_name
+        }
+        else if(config.schema) {
             var database = config.schema
         }
         else if (config.database) {
@@ -161,8 +165,11 @@ var exports = {
         var sql_query = "SELECT " + sql_query_part + "FROM DUAL;"
         return (sql_query)
     },
-    create_database : function (config) {
-        if(config.schema) {
+    create_database : function (config, schema_name) {
+        if(schema_name) {
+            var database = schema_name
+        }
+        else if(config.schema) {
             var database = config.schema
         }
         else if (config.database) {
@@ -353,7 +360,7 @@ var exports = {
         return(sql_query)
     },
     alter_table : function (config, changed_headers) {
-        return new Promise((resolve, reject) => {
+        return new Promise(async (resolve, reject) => {
             var sql_dialect_lookup_object = require('../config/sql_dialect.json')
             var sql_lookup_table = require('.' + sql_dialect_lookup_object[config.sql_dialect].helper_json)
     
@@ -470,6 +477,7 @@ var exports = {
                     sql_query += sql_query_part
                 }
             }
+            await writefile('./alter_query_last.txt', sql_query)
             resolve(sql_query)
         })  
     },
@@ -551,6 +559,15 @@ var exports = {
         return('ROLLBACK;')
     }
 }
+
+var writefile = async function (path, file, encoding) {
+    var fs = require('fs')
+    if(!encoding) {encoding = 'utf8'}
+    fs.writeFile(path, file,  encoding, function (err) {
+        if(err) {console.log(err)}
+        return(err)
+    })
+  }
 
             module.exports = {
                 exports

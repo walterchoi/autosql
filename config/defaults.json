@@ -15,6 +15,15 @@
     "insert_stack": 100,
     "max_insert_size": 1048576,
     "safe_mode": true,
+    "auto_split": false,
+    "auto_split_schema": "autosql_admin",
+    "auto_round": 6,
+    "auto_split_tables": [
+        "tables_for_split",
+        "split_table_columns",
+        "id_columns_for_split",
+        "split_tables"
+    ],
 
     "locale": "en-US",
     "timezone": "UTC",

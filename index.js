@@ -1314,6 +1314,10 @@ async function auto_sql (provided_config, data) {
         var sql_dialect_lookup_object = require('./config/sql_dialect.json')
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
+        if(config.auto_split) {
+            await setup_auto_split(config)
+        }
+
         // From here begins the actual data insertion process
         // First let us get the provided data's meta data
         if(!config.meta_data) {
@@ -1379,12 +1383,36 @@ async function check_config (check_config, auto) {
         }
     }
 
+    var defaults = require('./config/defaults.json')
+    for(key in defaults) {
+        if(check_config[key] === null || check_config[key] === undefined) {
+            check_config[key] = defaults[key]
+        }
+    }
+
     // Establish a connection to the database (if not already existing)
     if(!check_config.connection) {
         check_config.connection = await sql_helper.establish_connection(check_config).catch(err => {reject(err)})
     }
 
     resolve(check_config)
+    })
+}
+
+async function setup_auto_split (config) {
+    return new Promise(async (resolve, reject) => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+
+        var auto_sql_schema_check_sql = sql_helper.check_database_exists(config, config.auto_split_schema)
+        var auto_sql_schema_check = await run_sql_query(config, auto_sql_schema_check_sql).catch(err => catch_errors(err))
+        if(!auto_sql_schema_check) {
+            var create_auto_sql_schema_sql = sql_helper.create_database(config, config.auto_split_schema)
+            var create_auto_sql_schema = await run_sql_query(config, create_auto_sql_schema_sql).catch(err => catch_errors(err))
+        }
+        for(var a = 0; a < config.auto_split_tables.length; a++) {
+            
+        }
     })
 }
 
