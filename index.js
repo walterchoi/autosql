@@ -603,6 +603,7 @@ async function auto_create_table (config, meta_data) {
 
         if(config.collation) {collation = config.collation}
         create_table_sql = await sql_helper.create_table(config, headers).catch(err => {reject(err)})
+        console.log(create_table_sql)
         create_table = await run_sql_query(config, create_table_sql).catch(err => {reject(err)})
         resolve(create_table)
     })
@@ -1315,18 +1316,36 @@ async function auto_sql (provided_config, data) {
         var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
 
         if(config.auto_split) {
+            config.table_backup = config.table
             await setup_auto_split(config)
+            await create_split_tables(config)
+            var table_is_split = await check_if_table_split(config)
+            if(table_is_split) {
+                await split_table_structure(config, table_is_split, data)
+            }
         }
 
+        if(config.split_data) {
+            for (split_table in config.split_data) {
+                config.table = split_table
+                delete config.meta_data
+                config.meta_data = await get_meta_data(config, config.split_data[split_table]).catch(err => {reject(err)})
+                await auto_configure_table(config, config.split_data[split_table]).catch(err => {reject(err)})
+                var inserted = await insert_data(config, config.split_data[split_table]).catch(err => {reject(err)})
+            }
+            config.table = config.table_backup
+        } else {
         // From here begins the actual data insertion process
         // First let us get the provided data's meta data
         if(!config.meta_data) {
             config.meta_data = await get_meta_data(config, data).catch(err => {reject(err)})
         }
+
         // First let us make sure that the table exists or the table is compatible with the new data being inserted
         await auto_configure_table(config, data).catch(err => {reject(err)})
         // Now let us insert the data into the table
-        var inserted = await insert_data(config, data).catch(err => {reject(err)})
+        var inserted = await insert_data(config, data).catch(err => {reject(err)})   
+        }
         var completion_time = new Date()
         resolve({
             start: start_time,
@@ -1410,11 +1429,174 @@ async function setup_auto_split (config) {
             var create_auto_sql_schema_sql = sql_helper.create_database(config, config.auto_split_schema)
             var create_auto_sql_schema = await run_sql_query(config, create_auto_sql_schema_sql).catch(err => catch_errors(err))
         }
+        config._database = config.schema || config.database
+        config.schema = config.auto_split_schema
         for(var a = 0; a < config.auto_split_tables.length; a++) {
-            
+            var table_name = config.auto_split_tables[a]
+            var table_check_sql = sql_helper.check_tables_exists(config, table_name)
+            var table_check = await run_sql_query(config, table_check_sql).catch(err => catch_errors(err))
+            if(table_check[0][table_name] == 0) {
+            var table_create_sql = sql_helper[table_name]()
+            if(table_name == 'split_tables') {
+                config._table = config.table
+                config.table = table_name
+                await auto_create_table(config, table_create_sql)
+                config.table = config._table
+            } else {
+                await run_sql_query(config, table_create_sql)
+            }
         }
+        }
+        var check_split_tables_count_sql = `SELECT COUNT(*) as count FROM ${config.auto_split_schema}.${config.auto_split_tables[0]};`
+        var check_split_tables_count = await run_sql_query(config, check_split_tables_count_sql).catch(err => catch_errors(err))
+        if(check_split_tables_count[0].count == 0) {
+            var split_tables_add_init_data_sql = `INSERT INTO ${config.auto_split_schema}.${config.auto_split_tables[0]} 
+            SELECT split_table_name, TABLE_NAME, table_schema, COLUMN_NAME, table_num, col_num FROM ${config.auto_split_schema}.${config.auto_split_tables[2]}
+            UNION
+            SELECT split_table_name, TABLE_NAME, table_schema, COLUMN_NAME, table_num, col_num FROM ${config.auto_split_schema}.${config.auto_split_tables[3]}
+            `
+            var split_tables_add_init_data = await run_sql_query(config, split_tables_add_init_data_sql).catch(err => catch_errors(err))
+        }
+        config.schema = config._database
+        resolve(null)
     })
 }
+
+async function create_split_tables (config) {
+    return new Promise(async (resolve, reject) => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+        var check_split_tables_sql = sql_helper.check_if_tables_require_split_sql(config, config.auto_split_schema)
+        var check_split_tables = await run_sql_query(config, check_split_tables_sql).catch(err => catch_errors(err))
+        if(check_split_tables) {
+            var create_split_tables_sql = sql_helper.create_split_tables_sql(config, config.auto_split_schema)
+            var create_split_tables = await run_sql_query(config, create_split_tables_sql).catch(err => catch_errors(err))
+    
+            for (var c = 0; c < create_split_tables.length; c++) {
+                var create_sql = create_split_tables[c].create_statement
+                var create_table = await run_sql_query(config, create_sql).catch(err => catch_errors(err))
+            }
+        }
+        resolve(null)
+    })
+}
+
+async function check_if_table_split (config) {
+    return new Promise(async (resolve, reject) => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+        var check_split_tables_sql = sql_helper.check_table_is_split_sql(config.table)
+        var check_split_tables = await run_sql_query(config, check_split_tables_sql).catch(err => catch_errors(err))
+        resolve(check_split_tables)
+    })
+}
+
+async function split_table_structure (config, split_table_columns, data) {
+    return new Promise(async (resolve, reject) => {
+        var sql_dialect_lookup_object = require('./config/sql_dialect.json')
+        var sql_helper = require(sql_dialect_lookup_object[config.sql_dialect].helper).exports
+
+        config.split_table_structure = {}
+        config.split_data = {}
+        var columns_total = {
+            inc: [],
+            exc: []
+        }
+
+        var split_table_names = Array.from(new Set(split_table_columns.map(x => x.split_table_name)));
+        for (var i = 0 ; i < split_table_names.length; i++) {
+            var split_table_name = split_table_names[i]
+            if(!config.split_table_structure[split_table_name]) {
+                config.split_table_structure[split_table_name] = []
+            }
+            if(!config.split_data[split_table_name]) {
+                config.split_data[split_table_name] = []
+            }
+            for (var c = 0; c < split_table_columns.length; c++) {
+                var split_table_for_col = split_table_columns[c].split_table_name
+                if(split_table_name == split_table_for_col) {
+                    config.split_table_structure[split_table_name][split_table_columns[c].col_num -1] = split_table_columns[c].column_name
+                } 
+                columns_total.inc.push(split_table_columns[c].column_name)
+            }
+            config.split_table_structure[split_table_name] = config.split_table_structure[split_table_name].filter(x => x)
+        }
+
+        var next_table
+        var next_cols
+        var added_cols = []
+        var added_next_table_col
+        for (var d = 0 ; d < data.length; d++) {
+            var data_keys = Object.keys(data[d])
+            for (var k = 0; k < data_keys.length; k++) {
+                var key = data_keys[k]
+                if(!columns_total.inc.includes(key) && !columns_total.exc.includes(key)) {
+                    if(!next_cols) {
+                        var next_cols_sql = await sql_helper.get_next_col_number(split_table_names[split_table_names.length-1])
+                        next_cols = await run_sql_query(config, next_cols_sql).catch(err => catch_errors(err))
+                        var next_col_value = next_cols[0].end_id+1
+                        var last_col_value = next_cols[1].start_id-1
+                    }
+                    columns_total.exc.push(key)
+                    if(config.split_table_structure[split_table_names[split_table_names.length-1]].length < 100 && next_col_value < last_col_value) {
+                        config.split_table_structure[split_table_names[split_table_names.length-1]].push(key)
+                        var next_col = {
+                            split_table_name: next_cols[0].split_table_name,
+                            table_name: next_cols[0].table_name,
+                            table_schema: next_cols[0].table_schema,
+                            column_name: key,
+                            table_num: next_cols[0].table_num,
+                            col_num: next_col_value
+                        }
+                        added_cols.push(next_col)
+                        next_col_value += 1
+                    } else {
+                        if(!next_table) {
+                            var next_table_split_primary_sql = await sql_helper.next_table_split_sql(split_table_names[split_table_names.length-1])
+                            var next_table_split_primary = await run_sql_query(config, next_table_split_primary_sql).catch(err => catch_errors(err))
+                            next_table = next_table_split_primary[0].split_table_name
+                            config.split_table_structure[next_table] = []
+                            for(var i = 0 ; i < next_table_split_primary.length; i++) {
+                                config.split_table_structure[next_table].push(next_table_split_primary.column_name)
+                            }
+                            added_next_table_col = next_table_split_primary.length + 1
+                        }
+                        config.split_table_structure[next_table].push(key)
+                        var next_col = {
+                            split_table_name: next_table,
+                            table_name: next_cols[0].table_name,
+                            table_schema: next_cols[0].table_schema,
+                            column_name: key,
+                            table_num: next_cols[0].table_num + 1,
+                            col_num: added_next_table_col
+                        }
+                        added_cols.push(next_col)
+                        added_next_table_col += 1
+                    }
+                }
+            }
+            for (table in config.split_table_structure) {
+                var keys = config.split_table_structure[table]
+                var res = extractKeyValuePairs(keys, data[d])
+                config.split_data[table].push(res)
+            }
+        }
+        if(added_cols.length > 0) {
+            var insert_split_table_values_sql = await sql_helper.insert_split_table_values(added_cols)
+            var insert_split_table_values = await run_sql_query(config, insert_split_table_values_sql).catch(err => catch_errors(err))
+        }
+        resolve(null)
+    })
+}
+
+const extractKeyValuePairs = (keys, json) => {
+    return keys.reduce((result, key) => {
+      if (json.hasOwnProperty(key)) {
+        result[key] = json[key];
+      }
+      return result;
+    }, {});
+  };
 
 async function set_ssh (ssh_keys) {
     return new Promise(async (resolve, reject) => {

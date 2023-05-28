@@ -19,10 +19,10 @@
     "auto_split_schema": "autosql_admin",
     "auto_round": 6,
     "auto_split_tables": [
+        "split_tables",
         "tables_for_split",
         "split_table_columns",
-        "id_columns_for_split",
-        "split_tables"
+        "id_columns_for_split"
     ],
 
     "locale": "en-US",

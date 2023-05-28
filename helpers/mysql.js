@@ -178,14 +178,14 @@ var exports = {
         var sql_query = "CREATE DATABASE `" + database + "`;"
         return(sql_query)
     },
-    check_tables_exists : function (config) {
+    check_tables_exists : function (config, table_name) {
         if(config.schema) {
             var database = config.schema
         }
         else if (config.database) {
             var database = config.database
         }
-        var table = config.table;
+        var table = table_name || config.table;
 
         var sql_query_part = ""
         // Handle multiple tables being provided as an array
@@ -557,6 +557,168 @@ var exports = {
     },
     rollback : function () {
         return('ROLLBACK;')
+    },
+    tables_for_split : function () {
+        return(`CREATE VIEW \`tables_for_split\` AS select \`cols\`.\`TABLE_NAME\` AS \`TABLE_NAME\`,\`cols\`.\`table_schema\` AS \`table_schema\`,\`cols\`.\`COLUMNS\` AS \`COLUMNS\`,group_concat(\`kcu\`.\`COLUMN_NAME\` separator ', ') AS \`key_name\`,count(\`kcu\`.\`COLUMN_NAME\`) AS \`key_count\` from (((select \`information_schema\`.\`columns\`.\`TABLE_NAME\` AS \`TABLE_NAME\`,\`information_schema\`.\`columns\`.\`TABLE_SCHEMA\` AS \`table_schema\`,count(0) AS \`COLUMNS\` from \`information_schema\`.\`columns\` group by \`information_schema\`.\`columns\`.\`TABLE_NAME\`,\`information_schema\`.\`columns\`.\`TABLE_SCHEMA\` having count(0) > 200 order by count(0) desc) \`cols\` join \`information_schema\`.\`table_constraints\` \`tc\` on(\`tc\`.\`TABLE_SCHEMA\` = \`cols\`.\`table_schema\` and \`tc\`.\`TABLE_NAME\` = \`cols\`.\`TABLE_NAME\` and \`tc\`.\`CONSTRAINT_TYPE\` = 'PRIMARY KEY')) join \`information_schema\`.\`key_column_usage\` \`kcu\` on(\`tc\`.\`CONSTRAINT_CATALOG\` = \`kcu\`.\`CONSTRAINT_CATALOG\` and \`tc\`.\`CONSTRAINT_SCHEMA\` = \`kcu\`.\`CONSTRAINT_SCHEMA\` and \`tc\`.\`CONSTRAINT_NAME\` = \`kcu\`.\`CONSTRAINT_NAME\` and \`tc\`.\`TABLE_SCHEMA\` = \`kcu\`.\`TABLE_SCHEMA\` and \`tc\`.\`TABLE_NAME\` = \`kcu\`.\`TABLE_NAME\`)) group by \`cols\`.\`TABLE_NAME\`,\`cols\`.\`table_schema\`,\`cols\`.\`COLUMNS\` ;`)
+    },
+    split_table_columns : function () {
+        return(`CREATE VIEW \`split_table_columns\` AS select coalesce(\`st_c\`.\`split_table_name\`,concat(\`t\`.\`TABLE_NAME\`,'_part',truncate(row_number() over ( partition by \`t\`.\`TABLE_NAME\`,\`t\`.\`table_schema\` order by \`c\`.\`ORDINAL_POSITION\` desc) / (100 - \`t\`.\`key_count\`),0) + 1)) AS \`split_table_name\`,\`t\`.\`TABLE_NAME\` AS \`TABLE_NAME\`,\`t\`.\`table_schema\` AS \`table_schema\`,\`c\`.\`COLUMN_NAME\` AS \`COLUMN_NAME\`,coalesce(\`st_c\`.\`table_num\`,truncate(row_number() over ( partition by \`t\`.\`TABLE_NAME\`,\`t\`.\`table_schema\` order by \`c\`.\`ORDINAL_POSITION\` desc) / (100 - \`t\`.\`key_count\`),0) + 1) AS \`table_num\`,coalesce(\`st_c\`.\`col_num\`,(row_number() over ( partition by \`t\`.\`TABLE_NAME\`,\`t\`.\`table_schema\` order by \`c\`.\`ORDINAL_POSITION\` desc) - 1) MOD (100 - \`t\`.\`key_count\`) + 1 + \`t\`.\`key_count\`) AS \`col_num\`,\`c\`.\`CHARACTER_MAXIMUM_LENGTH\` AS \`CHARACTER_MAXIMUM_LENGTH\` from (((\`autosql_admin\`.\`tables_for_split\` \`t\` join \`information_schema\`.\`columns\` \`c\` on(\`t\`.\`TABLE_NAME\` = \`c\`.\`TABLE_NAME\` and \`t\`.\`table_schema\` = \`c\`.\`TABLE_SCHEMA\`)) left join \`information_schema\`.\`key_column_usage\` \`kcu\` on(\`kcu\`.\`TABLE_SCHEMA\` = \`t\`.\`table_schema\` and \`kcu\`.\`TABLE_NAME\` = \`t\`.\`TABLE_NAME\` and \`kcu\`.\`COLUMN_NAME\` = \`c\`.\`COLUMN_NAME\` and \`kcu\`.\`CONSTRAINT_NAME\` = 'PRIMARY')) left join \`autosql_admin\`.\`split_tables\` \`st_c\` on(\`st_c\`.\`table_name\` = \`t\`.\`TABLE_NAME\` and \`st_c\`.\`table_schema\` = \`t\`.\`table_schema\` and \`st_c\`.\`column_name\` = \`c\`.\`COLUMN_NAME\`)) where \`kcu\`.\`CONSTRAINT_NAME\` is null ;`)
+    },
+    id_columns_for_split : function () {
+        return(`CREATE VIEW \`id_columns_for_split\` AS select \`st\`.\`split_table_name\` AS \`split_table_name\`,\`t\`.\`TABLE_NAME\` AS \`TABLE_NAME\`,\`t\`.\`table_schema\` AS \`table_schema\`,\`kcu\`.\`COLUMN_NAME\` AS \`COLUMN_NAME\`,coalesce(\`st_c\`.\`table_num\`,\`st\`.\`table_num\`) AS \`table_num\`,coalesce(\`st_c\`.\`col_num\`,row_number() over ( partition by \`t\`.\`TABLE_NAME\`,\`t\`.\`table_schema\`,\`st\`.\`table_num\` order by \`kcu\`.\`COLUMN_NAME\` desc)) AS \`col_num\` from (((\`autosql_admin\`.\`tables_for_split\` \`t\` join \`autosql_admin\`.\`split_table_columns\` \`st\` on(\`st\`.\`TABLE_NAME\` = \`t\`.\`TABLE_NAME\` and \`st\`.\`table_schema\` = \`t\`.\`table_schema\`)) join \`information_schema\`.\`key_column_usage\` \`kcu\` on(\`t\`.\`table_schema\` = \`kcu\`.\`TABLE_SCHEMA\` and \`t\`.\`TABLE_NAME\` = \`kcu\`.\`TABLE_NAME\` and \`kcu\`.\`CONSTRAINT_NAME\` = 'PRIMARY')) left join \`autosql_admin\`.\`split_tables\` \`st_c\` on(\`st_c\`.\`table_name\` = \`t\`.\`TABLE_NAME\` and \`st_c\`.\`table_schema\` = \`t\`.\`table_schema\` and \`kcu\`.\`COLUMN_NAME\` = \`st_c\`.\`column_name\` and \`st_c\`.\`table_num\` = \`st\`.\`table_num\`)) group by \`t\`.\`TABLE_NAME\`,\`t\`.\`table_schema\`,\`kcu\`.\`COLUMN_NAME\`,\`st\`.\`table_num\` ;`)
+    },
+    check_if_tables_require_split_sql : function () {
+        return(`SELECT st.split_table_name, st.table_schema,
+        CASE WHEN (SELECT t.TABLE_NAME
+        FROM information_schema.tables t WHERE t.TABLE_SCHEMA = st.table_schema AND t.TABLE_NAME = st.split_table_name) IS NOT NULL THEN 1 ELSE 0 END AS _exists
+         FROM autosql_admin.split_tables st
+        GROUP BY st.split_table_name, st.table_schema
+        HAVING _exists = 0;`)
+    },
+    create_split_tables_sql : function () {
+        return(`SELECT 
+        st.split_table_name,
+        st.table_name,
+        st.table_schema,
+        GROUP_CONCAT(DISTINCT(st.column_name) ORDER BY st.col_num ASC SEPARATOR ', '),
+        GROUP_CONCAT(DISTINCT(CASE WHEN sa.NON_UNIQUE = 1 THEN sa.COLUMN_NAME END) ORDER BY st.col_num ASC SEPARATOR ', ') AS indexes,
+        GROUP_CONCAT(DISTINCT(CASE WHEN sa.NON_UNIQUE = 0 THEN sa.COLUMN_NAME END) ORDER BY st.col_num ASC SEPARATOR ', ') AS uniques,
+        ts.key_name,
+        CONCAT('CREATE TABLE ', st.table_schema, '.', st.split_table_name, ' (PRIMARY KEY (', ts.key_name, ')', 
+        COALESCE(CASE WHEN SUM(CASE WHEN sa.NON_UNIQUE = 0 THEN 1 ELSE 0 END) > 0 OR SUM(CASE WHEN sa.NON_UNIQUE = 1 THEN 1 ELSE 0 END) > 0 THEN ', ' END, ''),
+        COALESCE(CASE WHEN SUM(CASE WHEN sa.NON_UNIQUE = 0 THEN 1 ELSE 0 END) > 0 THEN GROUP_CONCAT(DISTINCT(CASE WHEN sa.NON_UNIQUE = 0 THEN CONCAT('UNIQUE(',sa.COLUMN_NAME,')') END) ORDER BY st.col_num ASC SEPARATOR ', ') END, ''),
+        COALESCE(CASE WHEN SUM(CASE WHEN sa.NON_UNIQUE = 0 THEN 1 ELSE 0 END) > 0 AND SUM(CASE WHEN sa.NON_UNIQUE = 1 THEN 1 ELSE 0 END) > 0 THEN ', ' END, ''),
+        COALESCE(CASE WHEN SUM(CASE WHEN sa.NON_UNIQUE = 1 THEN 1 ELSE 0 END) > 0 THEN GROUP_CONCAT(DISTINCT(CASE WHEN sa.NON_UNIQUE = 1 THEN CONCAT('INDEX(',sa.COLUMN_NAME,')') END) ORDER BY st.col_num ASC SEPARATOR ', ') END, ''),
+        ') AS SELECT ', 
+        GROUP_CONCAT(DISTINCT(st.column_name) ORDER BY st.col_num ASC SEPARATOR ', '), ' FROM ', st.table_schema, '.', st.table_name, ';') AS create_statement
+         FROM autosql_admin.split_tables st
+        JOIN information_schema.columns c ON st.table_name = c.TABLE_NAME
+        AND st.table_schema = c.TABLE_SCHEMA
+        AND st.column_name = c.COLUMN_NAME
+        JOIN autosql_admin.tables_for_split ts ON ts.TABLE_NAME = st.table_name
+        AND ts.table_schema = st.table_schema
+        LEFT JOIN information_schema.statistics sa ON sa.table_name = st.table_name AND sa.table_schema = st.table_schema AND sa.COLUMN_NAME = st.column_name
+        LEFT JOIN information_schema.tables t ON t.TABLE_SCHEMA = st.table_schema AND t.TABLE_NAME = st.split_table_name
+        WHERE t.TABLE_NAME IS NULL
+        GROUP BY st.split_table_name;`)
+    },
+    check_table_is_split_sql : function (table_name) {
+        return(`SELECT st.* FROM autosql_admin.split_tables st
+        WHERE st.table_name = '${table_name}';`)
+    },
+    next_table_split_sql : function (table_name) {
+        return(`SELECT 
+        CONCAT(SUBSTRING_INDEX(st.split_table_name, 'part', 1), 'part',
+        CAST(SUBSTRING_INDEX(st.split_table_name, 'part', -1) AS SIGNED)+1) AS split_table_name,
+        st.TABLE_NAME, 
+        st.table_schema,
+        st.COLUMN_NAME,
+        st.table_num+1 AS table_num,
+        st.col_num
+         FROM autosql_admin.id_columns_for_split st
+                WHERE st.split_table_name = '${table_name}';`)
+    },
+    get_next_col_number : function (table_name) {
+        return(`
+        SELECT
+        split_table_name,
+        table_name,
+        table_schema,
+        table_num,
+        MIN(col_num) AS start_id,
+        MAX(col_num) AS end_id
+        FROM (
+            SELECT
+            split_table_name,
+            table_name,
+            table_schema,
+            table_num,
+            col_num,
+            col_num - ROW_NUMBER() OVER (ORDER BY col_num) AS grp
+        FROM autosql_admin.split_tables
+        WHERE split_table_name = '${table_name}'
+        ) t
+        GROUP BY split_table_name, grp
+        ORDER BY end_id asc;
+        `)
+    },
+    insert_split_table_values : function (values) {
+        var sql_query = `INSERT INTO autosql_admin.split_tables (split_table_name, table_name, table_schema, column_name, table_num, col_num) VALUES \n`
+        for (var v = 0 ; v < values.length; v++) {
+            var value_query = `('${values[v].split_table_name}', '${values[v].table_name}', '${values[v].table_schema}', '${values[v].column_name}', ${values[v].table_num}, ${values[v].col_num})`
+            if(v < values.length-1) {
+                value_query = value_query + ',\n'
+            }
+            sql_query = sql_query + value_query
+        }
+        return(sql_query)
+    },
+    split_tables : function () {
+        var meta_data = [
+            {
+                "split_table_name": {
+                    "type": "varchar",
+                    "length": 64,
+                    "allowNull": false,
+                    "unique": false,
+                    "primary": true,
+                    "index": false,
+                    "comment": "Name of the new table"
+            }},
+            {
+                "table_name": {
+                    "type": "varchar",
+                    "length": 64,
+                    "allowNull": false,
+                    "unique": false,
+                    "primary": true,
+                    "index": false,
+                    "comment": "Name of the original table"
+            }},
+            {
+                "table_schema": {
+                    "type": "varchar",
+                    "length": 64,
+                    "allowNull": false,
+                    "unique": false,
+                    "primary": true,
+                    "index": false,
+                    "comment": "schema for tables"
+            }},
+            {
+                "column_name": {
+                    "type": "varchar",
+                    "length": 64,
+                    "allowNull": false,
+                    "unique": false,
+                    "primary": true,
+                    "index": false,
+                    "comment": "Name of column"
+            }},
+            {
+                "table_num": {
+                    "type": "tinyint",
+                    "allowNull": true,
+                    "length": 3,
+                    "default": false,
+                    "unique": false,
+                    "primary": false,
+                    "index": false,
+                    "comment": "Table number"
+            }},
+            {
+                "col_num": {
+                    "type": "tinyint",
+                    "allowNull": true,
+                    "length": 3,
+                    "default": false,
+                    "unique": false,
+                    "primary": false,
+                    "index": false,
+                    "comment": "Table number"
+            }}
+        ]
+        return meta_data
     }
 }
 
