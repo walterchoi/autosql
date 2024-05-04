@@ -1,9 +1,9 @@
 {
   "name": "autosql",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "optionalDependencies": {
     "fs": "0.0.1-security",
-    "mysql2": "^2.3.3",
+    "mysql2": "^3.9.7",
     "pg": "^8.0.2",
     "ssh2": "^1.5.0"
   },
