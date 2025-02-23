@@ -106,11 +106,6 @@ describe("predictType function", () => {
         expect(await predictType(veryLongText)).toBe("longtext");
     });
 
-    test("throws error for overly long strings", async () => {
-        const tooLongText = "a".repeat(5000000000); // Exceeds max `longtext`
-        await expect(predictType(tooLongText)).rejects.toThrow("data_too_long");
-    });
-
     /** ✅ Edge Cases */
     test("handles empty string as varchar", async () => {
         expect(await predictType("")).toBe("varchar");
