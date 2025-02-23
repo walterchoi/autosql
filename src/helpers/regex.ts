@@ -9,12 +9,12 @@ const exponential = new RegExp(/^(-?[0-9]+(\.[0-9]+)?[eE][-+]?[0-9]+)$/);
 
 // Matches datetime with timezone (ISO 8601, Unix timestamps, and JS Date formats)
 const datetimetz = new RegExp(
-    /^\/Date\([0-9]{12,14}(\+[0-9]{4})?\)\/$|^["]?(?:\d{4})[-\/\.]?(0[1-9]|1[0-2])[-\/\.]?(0[1-9]|[12][0-9]|3[01])[T\s]?([01][0-9]|2[0-3]):([0-5][0-9]):?([0-5][0-9])?(\.[0-9]+)?(Z|([+-](?:[01][0-9]|2[0-3]):?[0-5][0-9]))?["]?$/i
-);  
+    /^\/Date\(\d{12,14}\+\d{4}\)\/$|^["]?(?:\d{4})[-\/\.]?(0[1-9]|1[0-2])[-\/\.]?(0[1-9]|[12][0-9]|3[01])[T\s]([01][0-9]|2[0-3]):([0-5][0-9]):([0-5][0-9])(?:\.\d+)?(?:Z|[+-](?:[01][0-9]|2[0-3]):?[0-5][0-9]| [A-Z]{3})["]?$|^["]?[A-Za-z]{3} [A-Za-z]{3} [0-9]{2} [0-9]{4} [0-9]{2}:[0-9]{2}:[0-9]{2} GMT[+-]?[0-9]{4}( \([A-Z]{3}\))?["]?$|^["]?[A-Za-z]{3} [0-9]{2}, [0-9]{4} [0-9]{2}:[0-9]{2} [AP]M [A-Z]{3}["]?$/
+);
 
 // Matches standard datetime (YYYY-MM-DD HH:MM:SS)
 const datetime = new RegExp(
-    /^\/Date\([0-9]{12,14}\)\/$|^["]?(?:\d{4})[-\/\.](0[1-9]|1[0-2])[-\/\.](0[1-9]|[12][0-9]|3[01])[T\s]?([01][0-9]|2[0-3]):([0-5][0-9]):?([0-5][0-9])?(\.[0-9]+)?["]?$/i
+    /^\/Date\(\d{12,14}\)\/$|^["]?(?:\d{4})[-\/\.]?(0[1-9]|1[0-2])[-\/\.]?(0[1-9]|[12][0-9]|3[01])[T\s]([01][0-9]|2[0-3]):([0-5][0-9])(:([0-5][0-9]))?(?:\.\d+)?["]?$|^["]?[A-Za-z]{3} [A-Za-z]{3} [0-9]{2} [0-9]{4} [0-9]{2}:[0-5][0-9](:[0-5][0-9])?["]?$|^["]?[A-Za-z]{3} [0-9]{2}, [0-9]{4} [0-9]{2}:[0-5][0-9](:[0-5][0-9])? [AP]M["]?$/
 );
   
 // Matches date-only formats (YYYY-MM-DD, MM/DD/YYYY)
@@ -25,14 +25,11 @@ const date = new RegExp(
 // Matches time-only formats (HH:MM:SS)
 const time = new RegExp(/^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/);
 
-// Matches JSON objects
-const json = new RegExp(/^{.+:.+}$/gmi);
-
 // Matches binary values (0s and 1s)
-const binary = new RegExp(/^[0-1]*$/gmi);
+const binary = new RegExp(/^[01]+$/i);
 
 // Matches boolean values (`true`, `false`, `0`, `1`)
-const boolean = new RegExp(/^[0-1]{1}$|^true$|^false$/gmi);
+const boolean = new RegExp(/^(?:[01]|true|false)$/i);
 
 export const regexPatterns = {
     number,
@@ -42,7 +39,6 @@ export const regexPatterns = {
     datetime,
     date,
     time,
-    json,
     binary,
     boolean
 };

@@ -5,14 +5,26 @@ import { normalizeNumber } from "./utilities";
 // Using regex, when provided a data point, predict what data type this will be
 export async function predictType(data: any): Promise<string | null> {
     try {
-        console.log(data)
+        if(data === undefined || data === null) {
+            return null
+        }
         let currentType: string | null = null;
         let strData : string | null = null;
-        strData = typeof data === "string" ? data : String(data);
+        let json : boolean = false;
+        if (typeof data === "object" && data !== null) {
+            strData = JSON.stringify(data);
+        } else if (typeof data === "string") {
+            strData = data
+        } else {
+            strData = String(data); // For non-objects, just convert to string
+        }
+        try {
+            JSON.parse(strData);
+            json = true
+        } catch (e) {}
 
         // ✅ Detect and normalize numbers
         if (regexPatterns.number.test(strData) || regexPatterns.decimal.test(strData)) {
-            console.log('normalizeNumber')
             strData = normalizeNumber(strData);
             if (!strData) {
                 console.log('!strData - varchar')
@@ -38,10 +50,9 @@ export async function predictType(data: any): Promise<string | null> {
             currentType = "date";
         } else if (regexPatterns.time.test(strData)) {
             currentType = "time";
-        } else if (regexPatterns.json.test(strData)) {
+        } else if (json) {
             currentType = "json";
         } else {
-            console.log('No match')
             currentType = "varchar";
         }
 

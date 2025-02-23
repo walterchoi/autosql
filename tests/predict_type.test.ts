@@ -45,13 +45,18 @@ describe("predictType function", () => {
     /** ✅ Boolean Tests */
     test("detects boolean values correctly", async () => {
         expect(await predictType("true")).toBe("boolean");
+        expect(await predictType("True")).toBe("boolean");
         expect(await predictType("false")).toBe("boolean");
+        expect(await predictType("False")).toBe("boolean");
+        expect(await predictType("1")).toBe("boolean");
+        expect(await predictType("0")).toBe("boolean");
     });
 
     /** ✅ Binary Tests */
     test("detects binary correctly", async () => {
-        expect(await predictType("0")).toBe("binary");
-        expect(await predictType("1")).toBe("binary");
+        expect(await predictType("01")).toBe("binary");
+        expect(await predictType("10")).toBe("binary");
+        expect(await predictType("1010001010")).toBe("binary");
     });
 
     /** ✅ Date/Time Tests */
@@ -69,7 +74,7 @@ describe("predictType function", () => {
     });
 
     test("handles invalid dates correctly", async () => {
-        expect(await predictType("Invalid Date")).toBe(null);
+        expect(await predictType("Invalid Date")).toBe("varchar");
     });
 
     /** ✅ JSON Tests */
@@ -112,11 +117,11 @@ describe("predictType function", () => {
     });
 
     test("handles null correctly", async () => {
-        expect(await predictType(null)).toBe("varchar");
+        expect(await predictType(null)).toBe(null);
     });
 
     test("handles undefined correctly", async () => {
-        expect(await predictType(undefined)).toBe("varchar");
+        expect(await predictType(undefined)).toBe(null);
     });
 
     test("handles non-string objects correctly", async () => {
