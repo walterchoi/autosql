@@ -1,0 +1,12 @@
+export const sqlDialectConfig = {
+    "mysql": {
+        "repository": "mysql2",
+        "helper": "./helpers/mysql.js",
+        "helper_json": "./config/mysql.json"
+    },
+    "pgsql": {
+        "repository": "pg",
+        "helper": "./helpers/pgsql.js",
+        "helper_json": "./config/pgsql.json"
+    }
+}
