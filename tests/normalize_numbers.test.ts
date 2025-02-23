@@ -29,6 +29,12 @@ describe("normalizeNumber function", () => {
         expect(normalizeNumber("12,34")).toBe("12.34");
     });
 
+    test("handles small numbers and negatives", () => {
+        expect(normalizeNumber("112.50")).toBe("112.50");
+        expect(normalizeNumber("-112.50")).toBe("-112.50");
+        expect(normalizeNumber("-127")).toBe("-127");
+    });
+
     /** ❌ Invalid Number Formats */
     test("returns null for mixed separators", () => {
         expect(normalizeNumber("1,234.567.89")).toBe(null);

@@ -105,7 +105,14 @@ export function normalizeNumber(input: string, thousandsIndicatorOverride?: stri
         input = tempInput;
     }
 
+    // 🚨 Ensure `-` appears only at the start
+    if (input.includes("-") && input.indexOf("-") !== 0) return null;
+
+    const isNegative = input.startsWith("-");
+    if (isNegative) input = input.slice(1); // Remove `-` temporarily for processing
+
     if (!input || /[^0-9., ]/.test(input)) return null; // Reject if non-numeric characters exist
+
     const dotCount = (input.match(/\./g) || []).length;
     const commaCount = (input.match(/,/g) || []).length;
     input = input.replace(/ /g, "");
@@ -179,6 +186,6 @@ export function normalizeNumber(input: string, thousandsIndicatorOverride?: stri
         preDecimal = thousandsSplit.join("");
     }
 
-    const normalized = `${preDecimal}${postDecimal ? "." + postDecimal : ""}`;
+    const normalized = `${isNegative ? "-" : ""}${preDecimal}${postDecimal ? "." + postDecimal : ""}`;
     return normalized;
 }
