@@ -113,86 +113,132 @@ export async function predictType(data: any): Promise<string | null> {
     }
 }
 
-export async function collateTypes(currentType: string | null, overallType: string | null): Promise<string> {
+export async function collateTypes(types: (string | null)[]): Promise<string> {
     try {
-        if (!currentType && !overallType) {
+        if (!types || types.length === 0) {
             throw new Error("No data types provided for collation");
         }
 
-        if (!overallType) return currentType!;
-        if (!currentType) return overallType;
+        // Remove null values
+        types = types.filter((t): t is string => t !== null);
 
-        // If types are the same, return one of them
-        if (currentType === overallType) return currentType;
-
-        let currentTypeGroup: string | null = null;
-        let overallTypeGroup: string | null = null;
-
-        // Identify the type grouping
-        if (groupings.intGroup.includes(currentType)) currentTypeGroup = "int";
-        else if (groupings.specialIntGroup.includes(currentType)) currentTypeGroup = "specialInt";
-        else if (groupings.textGroup.includes(currentType)) currentTypeGroup = "text";
-        else if (groupings.specialTextGroup.includes(currentType)) currentTypeGroup = "specialText";
-        else if (groupings.dateGroup.includes(currentType)) currentTypeGroup = "date";
-
-        if (groupings.intGroup.includes(overallType)) overallTypeGroup = "int";
-        else if (groupings.specialIntGroup.includes(overallType)) overallTypeGroup = "specialInt";
-        else if (groupings.textGroup.includes(overallType)) overallTypeGroup = "text";
-        else if (groupings.specialTextGroup.includes(overallType)) overallTypeGroup = "specialText";
-        else if (groupings.dateGroup.includes(overallType)) overallTypeGroup = "date";
-
-        let collatedType: string | null = null;
-
-        // Handle different groupings
-        if (currentTypeGroup !== overallTypeGroup) {
-            if ((currentType === "exponent" && overallTypeGroup === "int") || (overallType === "exponent" && currentTypeGroup === "int")) {
-                collatedType = "exponent";
-            } else if ((currentType === "double" && overallTypeGroup === "int") || (overallType === "double" && currentTypeGroup === "int")) {
-                collatedType = "double";
-            } else if ((currentType === "decimal" && overallTypeGroup === "int") || (overallType === "decimal" && currentTypeGroup === "int")) {
-                collatedType = "decimal";
-            } else if (overallTypeGroup === "text" || currentTypeGroup === "text") {
-                for (let i = groupings.textGroup.length - 1; i >= 0; i--) {
-                    if (groupings.textGroup[i] === currentType || groupings.textGroup[i] === overallType) {
-                        collatedType = groupings.textGroup[i];
-                        break;
-                    }
-                }
-            } else if (["specialText", "date"].includes(overallTypeGroup!) || ["specialText", "date"].includes(currentTypeGroup!)) {
-                collatedType = "varchar";
-            }
-
-            return collatedType || "varchar";
+        if (types.length === 0) {
+            return "varchar"; // Default fallback if all inputs were null
         }
 
-        // Handle similar groupings
-        if (overallTypeGroup === currentTypeGroup) {
-            if (overallTypeGroup === "specialInt") {
-                for (let i = groupings.specialIntGroup.length - 1; i >= 0; i--) {
-                    if (groupings.specialIntGroup[i] === currentType || groupings.specialIntGroup[i] === overallType) {
-                        return groupings.specialIntGroup[i];
+        // If there's only one unique type, return it
+        const uniqueTypes = [...new Set(types)];
+        if (uniqueTypes.length === 1) {
+            return uniqueTypes[0]!;
+        }
+
+        let overallType: string | null = null;
+
+        for (const currentType of types) {
+            if (!overallType) {
+                overallType = currentType;
+                continue;
+            }
+
+            if (currentType === overallType) {
+                continue;
+            }
+
+            let currentTypeGroup: string | null = null;
+            let overallTypeGroup: string | null = null;
+
+            // Identify the type grouping
+            if (currentType) {
+                if (groupings.intGroup.includes(currentType)) currentTypeGroup = "int";
+                else if (groupings.specialIntGroup.includes(currentType)) currentTypeGroup = "specialInt";
+                else if (groupings.textGroup.includes(currentType)) currentTypeGroup = "text";
+                else if (groupings.specialTextGroup.includes(currentType)) currentTypeGroup = "specialText";
+                else if (groupings.dateGroup.includes(currentType)) currentTypeGroup = "date";
+            }
+
+            if (overallType) {
+                if (groupings.intGroup.includes(overallType)) overallTypeGroup = "int";
+                else if (groupings.specialIntGroup.includes(overallType)) overallTypeGroup = "specialInt";
+                else if (groupings.textGroup.includes(overallType)) overallTypeGroup = "text";
+                else if (groupings.specialTextGroup.includes(overallType)) overallTypeGroup = "specialText";
+                else if (groupings.dateGroup.includes(overallType)) overallTypeGroup = "date";
+            }
+
+            let collatedType: string | null = null;
+
+            // ✅ Handle boolean + binary → binary
+            if ((currentType === "boolean" && overallType === "binary") || (currentType === "binary" && overallType === "boolean")) {
+                overallType = "binary";
+                continue;
+            }
+
+            // ✅ Handle decimal + exponential → exponential
+            if ((currentType === "decimal" && overallType === "exponential") || (overallType === "decimal" && currentType === "exponential")) {
+                overallType = "exponential";
+                continue;
+            }
+
+            // ✅ Handle datetimetz + datetime → datetimetz
+            if ((currentType === "datetimetz" && overallType === "datetime") || (overallType === "datetimetz" && currentType === "datetime")) {
+                overallType = "datetimetz";
+                continue;
+            }
+
+            // Handle different groupings
+            if (currentTypeGroup !== overallTypeGroup) {
+                if ((currentType === "exponential" && overallTypeGroup === "int") || (overallType === "exponential" && currentTypeGroup === "int")) {
+                    collatedType = "exponential";
+                } else if ((currentType === "double" && overallTypeGroup === "int") || (overallType === "double" && currentTypeGroup === "int")) {
+                    collatedType = "double";
+                } else if ((currentType === "decimal" && overallTypeGroup === "int") || (overallType === "decimal" && currentTypeGroup === "int")) {
+                    collatedType = "decimal";
+                } else if (overallTypeGroup === "text" || currentTypeGroup === "text") {
+                    for (let i = groupings.textGroup.length - 1; i >= 0; i--) {
+                        if (groupings.textGroup[i] === currentType || groupings.textGroup[i] === overallType) {
+                            collatedType = groupings.textGroup[i];
+                            break;
+                        }
                     }
+                } else if (["specialText", "date"].includes(overallTypeGroup!) || ["specialText", "date"].includes(currentTypeGroup!)) {
+                    collatedType = "varchar";
                 }
-            } else if (overallTypeGroup === "int") {
-                for (let i = groupings.intGroup.length - 1; i >= 0; i--) {
-                    if (groupings.intGroup[i] === currentType || groupings.intGroup[i] === overallType) {
-                        return groupings.intGroup[i];
+
+                overallType = collatedType || "varchar";
+                continue;
+            }
+
+            // Handle similar groupings
+            if (overallTypeGroup === currentTypeGroup) {
+                if (overallTypeGroup === "specialInt") {
+                    for (let i = groupings.specialIntGroup.length - 1; i >= 0; i--) {
+                        if (groupings.specialIntGroup[i] === currentType || groupings.specialIntGroup[i] === overallType) {
+                            overallType = groupings.specialIntGroup[i];
+                            break;
+                        }
                     }
-                }
-            } else if (overallTypeGroup === "text") {
-                for (let i = groupings.textGroup.length - 1; i >= 0; i--) {
-                    if (groupings.textGroup[i] === currentType || groupings.textGroup[i] === overallType) {
-                        return groupings.textGroup[i];
+                } else if (overallTypeGroup === "int") {
+                    for (let i = groupings.intGroup.length - 1; i >= 0; i--) {
+                        if (groupings.intGroup[i] === currentType || groupings.intGroup[i] === overallType) {
+                            overallType = groupings.intGroup[i];
+                            break;
+                        }
                     }
+                } else if (overallTypeGroup === "text") {
+                    for (let i = groupings.textGroup.length - 1; i >= 0; i--) {
+                        if (groupings.textGroup[i] === currentType || groupings.textGroup[i] === overallType) {
+                            overallType = groupings.textGroup[i];
+                            break;
+                        }
+                    }
+                } else if (overallTypeGroup === "date") {
+                    overallType = "datetime"; // Dates and times should be stored as datetime
                 }
-            } else if (overallTypeGroup === "date") {
-                return "datetime"; // Dates and times can be stored as datetime
             }
         }
 
-        throw new Error(`Unknown data type collation for: ${overallType}, ${currentType}`);
+        return overallType || "varchar";
     } catch (error) {
-        throw new Error(`Error in collateTypes: ${error}`);
+        throw new Error(`Error in collateTypes: ${(error as Error).message}`);
     }
 }
 
@@ -204,6 +250,6 @@ export async function updateColumnType(column: any, dataPoint: string) {
     }
 
     if (detectedType !== column.type) {
-        column.type = await collateTypes(detectedType, column.type);
+        column.type = await collateTypes([detectedType, column.type]);
     }
 }
