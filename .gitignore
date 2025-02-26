@@ -4,4 +4,4 @@ dist
 coverage/
 docker-compose.yml
 DevDoc.md
-config.local.json
+src/config/config.local.json

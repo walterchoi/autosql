@@ -1,22 +1,52 @@
 import { Pool } from "pg";
 import { Database } from "./database";
 
-export class PostgreSQL extends Database {
-    async connect(): Promise<void> {
+export class PostgresDatabase extends Database {
+    async establishConnection(): Promise<void> {
         this.connection = new Pool({
             host: this.config.host,
-            user: this.config.username,
+            user: this.config.user,
             password: this.config.password,
             database: this.config.database,
-            max: 25
+            port: this.config.port || 5432,
+            max: 10
         });
     }
 
     async runQuery(query: string, params?: any[]): Promise<any> {
-        if (!this.connection) await this.connect();
+        if (!this.connection) await this.establishConnection();
         const client = await (this.connection as Pool).connect();
-        const result = await client.query(query, params);
-        client.release();
-        return result.rows;
+
+        try {
+            const result = await client.query(query, params);
+            return result.rows;
+        } catch (error) {
+            console.error(`PostgreSQL Query Failed: ${query}`, error);
+
+            // If a transaction fails, rollback before continuing
+            if (query.startsWith("START TRANSACTION")) {
+                await client.query("ROLLBACK;");
+            }
+
+            throw error;
+        } finally {
+            client.release();
+        }
+    }
+
+    protected getCreateSchemaQuery(schemaName: string): string {
+        return `CREATE SCHEMA IF NOT EXISTS "${schemaName}";`;
+    }
+
+    protected getCheckSchemaQuery(schemaName: string | string[]): string {
+        if (Array.isArray(schemaName)) {
+            return `SELECT ${schemaName
+                .map(
+                    (db) =>
+                        `(CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${db}') THEN 1 ELSE 0 END) AS "${db}"`
+                )
+                .join(", ")};`;
+        }
+        return `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS "${schemaName}";`;
     }
 }
