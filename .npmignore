@@ -3,3 +3,6 @@ tests/
 jest.config.js
 .eslintrc.js
 tsconfig.json
+docker-compose.yml
+DevDoc.md
+config.local.json

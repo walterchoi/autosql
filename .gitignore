@@ -2,3 +2,6 @@ node_modules
 .serverless
 dist
 coverage/
+docker-compose.yml
+DevDoc.md
+config.local.json
