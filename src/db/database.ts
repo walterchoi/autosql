@@ -1,18 +1,50 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
 
-// Abstract database class to define common methods.
+export interface DatabaseConfig {
+    sql_dialect: string;
+    host?: string;
+    user?: string;
+    password?: string;
+    database?: string;
+    port?: number;
+}
 
+// Abstract database class to define common methods.
 export abstract class Database {
     protected connection: Pool | PgPool | null = null;
-    protected config: any;
+    protected config: DatabaseConfig;
 
-    constructor(config: any) {
+    constructor(config: DatabaseConfig) {
         this.config = config;
     }
 
-    abstract establishConnection(): Promise<void>;
+    static create(config: DatabaseConfig): Database {
+        const DIALECTS: Record<string, new (config: DatabaseConfig) => Database> = {
+            mysql: MySQLDatabase,
+            pgsql: PostgresDatabase
+        };
+
+        const dialect = config.sql_dialect?.toLowerCase();
+        if (!DIALECTS[dialect]) {
+            throw new Error(`Unsupported SQL dialect: ${dialect}`);
+        }
+
+        return new DIALECTS[dialect](config);
+    }
+
+    abstract establishDatabaseConnection(): Promise<void>;
     abstract runQuery(query: string, params?: any[]): Promise<any>;
+
+    async establishConnection(): Promise<void> {
+        try {
+            await this.establishDatabaseConnection();
+        } catch (error) {
+            console.error("Database connection failed:", error instanceof Error ? error.message : String(error));
+            await this.closeConnection(); // Ensure the connection is closed on failure
+            throw error; // Re-throw so tests can handle it
+        }
+    }
 
     // Test database connection.
     async testConnection(): Promise<boolean> {
@@ -71,17 +103,50 @@ export abstract class Database {
         await this.runQuery("ROLLBACK;");
     }
 
-    async closeConnection(): Promise<void> {
-        if (this.connection) {
-            try {
-                await this.connection.end(); // MySQL && PostgreSQL
-            } catch (error) {
-                console.error("Error closing database connection:", error);
+    async closeConnection(): Promise<{ success: boolean; error?: string }> {
+        if (!this.connection)  return { success: true };
+
+        try {
+            if ("end" in this.connection) {
+                await this.connection.end(); // MySQL & PostgreSQL close method
             }
+            return { success: true };
+        } catch (error) {
+            return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+        } finally {
             this.connection = null;
         }
     }
 
+    async runTransaction(queries: string[]): Promise<{ success: boolean; results?: any[]; error?: string }> {
+        if (!this.connection) {
+            await this.establishConnection();
+        }
+    
+        let results: any[] = [];
+    
+        try {
+            await this.startTransaction(); // Begin transaction
+    
+            for (const query of queries) {
+                const result = await this.runQuery(query);
+                results.push(result);
+            }
+    
+            await this.commit(); // Commit if all queries succeed
+            return { success: true, results };
+        } catch (error) {
+            console.error("Transaction failed, rolling back:", error);
+            await this.rollback(); // Rollback on error
+            return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+        }
+    }    
+
     protected abstract getCreateSchemaQuery(schemaName: string): string;
     protected abstract getCheckSchemaQuery(schemaName: string | string[]): string;
 }
+
+import { MySQLDatabase } from "./mysql";
+import { PostgresDatabase } from "./postgresql";
+
+export { MySQLDatabase, PostgresDatabase };

@@ -1,29 +1,37 @@
-import mysql, { Pool } from "mysql2/promise";
-import { Database } from "./database";
+import mysql, { Pool, PoolConnection } from "mysql2/promise";
+import { Database, DatabaseConfig } from "./database"; // Ensure correct import
 
 export class MySQLDatabase extends Database {
-    async establishConnection(): Promise<void> {
-        this.connection = await mysql.createPool({
+    constructor(config: DatabaseConfig) {
+        super(config); // Ensure constructor calls `super()`
+    }
+
+    async establishDatabaseConnection(): Promise<void> {
+        this.connection = mysql.createPool({
             host: this.config.host,
             user: this.config.user,
             password: this.config.password,
             database: this.config.database,
             port: this.config.port || 3306,
-            connectionLimit: 10
+            connectionLimit: 3
         });
     }
 
     async runQuery(query: string, params?: any[]): Promise<any> {
-        if (!this.connection) await this.establishConnection();
-
-        // Use `.query()` instead of `.execute()` for transactions
-        if (query.startsWith("START TRANSACTION") || query.startsWith("COMMIT") || query.startsWith("ROLLBACK")) {
-            const [rows] = await (this.connection as Pool).query(query, params);
-            return rows;
+        if (!this.connection) {
+            await this.establishConnection();
         }
+        let client: PoolConnection | null = null;
 
-        const [rows] = await (this.connection as Pool).execute(query, params);
-        return rows;
+        try {
+            client = await (this.connection as Pool).getConnection(); // Get a connection from the pool
+            const [rows] = await client.query(query, params);
+            return rows;
+        } catch (error) {
+            throw error;
+        } finally {
+            if (client) client.release(); // Always release connection
+        }
     }
 
     protected getCreateSchemaQuery(schemaName: string): string {
