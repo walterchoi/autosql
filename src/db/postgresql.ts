@@ -22,6 +22,22 @@ export class PostgresDatabase extends Database {
         return pgsqlPermanentErrors
     }
 
+    async testQuery(query: string): Promise<any> {
+            if (!this.connection) {
+                await this.establishConnection();
+            }
+            let client: PoolClient | null = null;
+            try {
+                client = await (this.connection as Pool).connect();
+                const result = await client.query(`EXPLAIN ${query}`);
+                return result.rows;
+            } catch (error) {
+                throw error;
+            } finally {
+                if (client) client.release();
+            }
+        }
+
     protected async executeQuery(query: string, params: any[] = []): Promise<any> {
         if (!this.connection) {
             await this.establishConnection();

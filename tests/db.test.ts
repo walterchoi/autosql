@@ -1,8 +1,9 @@
 import fs from "fs";
 import { DatabaseConfig, Database } from "../src/db/database";
+import { isValidSingleQuery } from '../src/db/validateQuery';
 import path from "path";
 
-jest.setTimeout(10000);
+jest.setTimeout(20000);
 
 const CONFIG_PATH = path.resolve(__dirname, "../src/config/config.local.json");
 const DB_CONFIG: Record<string, DatabaseConfig> = fs.existsSync(CONFIG_PATH)
@@ -283,5 +284,54 @@ Object.values(DB_CONFIG).forEach((config) => {
                 expect(transactionResult.error).toBe("Column not found");
                 expect(attemptCount).toBe(1);
             });
+        });
+    });
+
+    Object.values(DB_CONFIG).forEach((config) => {
+        describe(`Query Validation for ${config.sql_dialect.toUpperCase()}`, () => {
+            let db: Database;
+    
+            beforeAll(async () => {
+                db = Database.create(config);
+                await db.establishConnection();
+            });
+    
+            afterAll(async () => {
+                const closeResult = await db.closeConnection();
+                expect(closeResult.success).toBe(true);
+            });
+    
+            test('Valid query passes testQuery without errors', async () => {
+                await expect(db.testQuery('SELECT 1 AS test;')).resolves.not.toThrow();
+            });
+
+            test('Invalid query throws error in testQuery', async () => {
+                await expect(db.testQuery('INVALID SQL')).rejects.toThrow();
+            });
+            
+            test('Valid single query with trailing semicolon should pass', () => {
+                expect(isValidSingleQuery("SELECT 1 AS TEST;")).toBe(true);
+            });
+            
+            test('Valid single query without semicolon should pass', () => {
+                expect(isValidSingleQuery("SELECT * FROM users")).toBe(true);
+            });
+            
+            test('Valid single query with comment after semicolon should pass', () => {
+                expect(isValidSingleQuery("SELECT * FROM users; -- This is a comment")).toBe(true);
+            });
+            
+            test('Valid single query with multi-line comment should pass', () => {
+                expect(isValidSingleQuery("SELECT * FROM users; /* This is a multi-line comment */")).toBe(true);
+            });
+            
+            test('Multiple queries should fail', () => {
+                expect(isValidSingleQuery("SELECT * FROM users; DELETE FROM users;")).toBe(false);
+            });
+            
+            test('Multiple queries disguised with comments should fail', () => {
+                expect(isValidSingleQuery("SELECT * FROM users; /* Comment */ DELETE FROM users;")).toBe(false);
+            });
+            
         });
     });

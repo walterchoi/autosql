@@ -31,10 +31,6 @@ export const pgsqlPermanentErrors = [
   
   // Transaction and integrity issues
   "40001", // Serialization failure
-  "40P01", // Deadlock detected
-  "25P02", // In failed SQL transaction
-  "25P03", // Idle in transaction session timeout
-  "25P04", // Transaction timeout
 
   // Resource and system issues
   "53100", // Disk full

@@ -1,5 +1,6 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
+import { isValidSingleQuery } from './validateQuery';
 
 export interface DatabaseConfig {
     sql_dialect: string;
@@ -35,6 +36,7 @@ export abstract class Database {
     }
 
     abstract establishDatabaseConnection(): Promise<void>;
+    abstract testQuery(query: string): Promise<any>;
     protected abstract executeQuery(query: string, params?: any[]): Promise<any>;
 
     async establishConnection(): Promise<void> {
@@ -68,6 +70,9 @@ export abstract class Database {
         let attempts = 0;
         const maxAttempts = 3;
         let _error
+        if (!isValidSingleQuery(query)) {
+            throw new Error("Multiple SQL statements detected. Use transactions instead.");
+        }
         while (attempts < maxAttempts && !_error) {
             try {
                 return await this.executeQuery(query, params);
@@ -172,6 +177,10 @@ export abstract class Database {
             await this.startTransaction(); // Begin transaction
             let _error;
             for (const query of queries) {
+                if (!isValidSingleQuery(query)) {
+                    _error = "Each query in the transaction must be a single statement."
+                    throw new Error("Each query in the transaction must be a single statement.");
+                }
                 attempts = 0;
                 if(_error) {
                     console.log(`Not running query: ${query}`)

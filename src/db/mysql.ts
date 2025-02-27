@@ -22,6 +22,20 @@ export class MySQLDatabase extends Database {
         return mysqlPermanentErrors;
     }
 
+    async testQuery(query: string): Promise<any> {
+        if (!this.connection) {
+            await this.establishConnection();
+        }
+        let client: PoolConnection | null = null;
+        try {
+            client = await (this.connection as Pool).getConnection();
+            const [result] = await client.query(`EXPLAIN ${query}`);
+            return result;
+        } catch (error: any) {
+            throw error;
+        }
+    }
+
     protected async executeQuery(query: string, params: any[] = []): Promise<any> {
         if (!this.connection) {
             await this.establishConnection();

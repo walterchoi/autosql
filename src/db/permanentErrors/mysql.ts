@@ -25,10 +25,6 @@ export const mysqlPermanentErrors = [
   "ER_DATA_TOO_LONG", // Data too long for column
   "ER_DATA_OUT_OF_RANGE", // Out of range value for column
 
-  // Transaction errors
-  "ER_LOCK_WAIT_TIMEOUT", // Lock wait timeout exceeded; try restarting transaction
-  "ER_LOCK_DEADLOCK", // Deadlock found when trying to get lock; try restarting transaction
-
   // Authentication errors
   "ER_PASSWORD_NO_MATCH", // Password does not match
 
