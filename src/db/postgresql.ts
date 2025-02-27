@@ -1,5 +1,6 @@
-import { Pool } from "pg";
+import { Pool, PoolClient } from "pg";
 import { Database, DatabaseConfig } from "./database";
+import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
 
 export class PostgresDatabase extends Database {
     constructor(config: DatabaseConfig) {
@@ -17,18 +18,24 @@ export class PostgresDatabase extends Database {
         });
     }
 
-    async runQuery(query: string, params?: any[]): Promise<any> {
+    protected async getPermanentErrors(): Promise<string[]> {
+        return pgsqlPermanentErrors
+    }
+
+    protected async executeQuery(query: string, params: any[] = []): Promise<any> {
         if (!this.connection) {
             await this.establishConnection();
         }
-        const client = await (this.connection as Pool).connect();
+
+        let client: PoolClient | null = null;
         try {
+            client = await (this.connection as Pool).connect();
             const result = await client.query(query, params);
             return result.rows;
         } catch (error) {
             throw error;
         } finally {
-            client.release();
+            if (client) client.release();
         }
     }
 

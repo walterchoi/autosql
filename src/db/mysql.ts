@@ -1,5 +1,6 @@
 import mysql, { Pool, PoolConnection } from "mysql2/promise";
-import { Database, DatabaseConfig } from "./database"; // Ensure correct import
+import { Database, DatabaseConfig } from "./database";
+import { mysqlPermanentErrors } from './permanentErrors/mysql';
 
 export class MySQLDatabase extends Database {
     constructor(config: DatabaseConfig) {
@@ -17,20 +18,24 @@ export class MySQLDatabase extends Database {
         });
     }
 
-    async runQuery(query: string, params?: any[]): Promise<any> {
+    protected async getPermanentErrors(): Promise<string[]> {
+        return mysqlPermanentErrors;
+    }
+
+    protected async executeQuery(query: string, params: any[] = []): Promise<any> {
         if (!this.connection) {
             await this.establishConnection();
         }
-        let client: PoolConnection | null = null;
 
+        let client: PoolConnection | null = null;
         try {
-            client = await (this.connection as Pool).getConnection(); // Get a connection from the pool
+            client = await (this.connection as Pool).getConnection();
             const [rows] = await client.query(query, params);
             return rows;
         } catch (error) {
             throw error;
         } finally {
-            if (client) client.release(); // Always release connection
+            if (client) client.release();
         }
     }
 

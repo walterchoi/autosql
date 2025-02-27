@@ -14,6 +14,7 @@ export interface DatabaseConfig {
 export abstract class Database {
     protected connection: Pool | PgPool | null = null;
     protected config: DatabaseConfig;
+    protected abstract getPermanentErrors(): Promise<string[]>;
 
     constructor(config: DatabaseConfig) {
         this.config = config;
@@ -34,16 +35,58 @@ export abstract class Database {
     }
 
     abstract establishDatabaseConnection(): Promise<void>;
-    abstract runQuery(query: string, params?: any[]): Promise<any>;
+    protected abstract executeQuery(query: string, params?: any[]): Promise<any>;
 
     async establishConnection(): Promise<void> {
-        try {
-            await this.establishDatabaseConnection();
-        } catch (error) {
-            console.error("Database connection failed:", error instanceof Error ? error.message : String(error));
-            await this.closeConnection(); // Ensure the connection is closed on failure
-            throw error; // Re-throw so tests can handle it
+        let attempts = 0;
+        const maxAttempts = 3;
+
+        while (attempts < maxAttempts) {
+            try {
+                await this.establishDatabaseConnection();
+                return;
+            } catch (error: any) {
+                console.error(`Database connection attempt ${attempts + 1} failed:`, error.message);
+
+                const permanentErrors = await this.getPermanentErrors();
+                if (permanentErrors.includes(error.code)) {
+                    console.error("Permanent error detected. Aborting retry.");
+                    throw error;
+                }
+
+                attempts++;
+                if (attempts < maxAttempts) {
+                    await new Promise((res) => setTimeout(res, 1000)); // Wait 1 second before retrying
+                }
+            }
         }
+
+        throw new Error("Database connection failed after multiple attempts.");
+    }
+    
+    async runQuery(query: string, params: any[] = []): Promise<any> {
+        let attempts = 0;
+        const maxAttempts = 3;
+        let _error
+        while (attempts < maxAttempts && !_error) {
+            try {
+                return await this.executeQuery(query, params);
+            } catch (error: any) {
+                const permanentErrors = await this.getPermanentErrors();
+                if (permanentErrors.includes(error.code)) {
+                    _error = error
+                }
+
+                attempts++;
+                if (attempts < maxAttempts) {
+                    await new Promise((res) => setTimeout(res, 1000)); // Wait before retrying
+                } else {
+                    _error = error
+                }
+            }
+        }
+
+        throw _error
     }
 
     // Test database connection.
@@ -72,7 +115,6 @@ export abstract class Database {
 
             return { [schemaName]: result[0][schemaName] === 1 };
         } catch (error) {
-            console.error(`Error checking schema existence: ${error}`);
             return { [schemaName.toString()]: false };
         }
     }
@@ -83,24 +125,23 @@ export abstract class Database {
             await this.runQuery(query);
             return { success: true };
         } catch (error) {
-            console.error(`Error creating schema ${schemaName}:`, error);
             return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
         }
     }
 
     // Begin transaction.
     async startTransaction(): Promise<void> {
-        await this.runQuery("START TRANSACTION;");
+        await this.executeQuery("START TRANSACTION;");
     }
 
     // Commit transaction.
     async commit(): Promise<void> {
-        await this.runQuery("COMMIT;");
+        await this.executeQuery("COMMIT;");
     }
 
     // Rollback transaction.
     async rollback(): Promise<void> {
-        await this.runQuery("ROLLBACK;");
+        await this.executeQuery("ROLLBACK;");
     }
 
     async closeConnection(): Promise<{ success: boolean; error?: string }> {
@@ -124,23 +165,50 @@ export abstract class Database {
         }
     
         let results: any[] = [];
+        let attempts: number;
+        const maxAttempts = 3;
     
         try {
             await this.startTransaction(); // Begin transaction
-    
+            let _error;
             for (const query of queries) {
-                const result = await this.runQuery(query);
-                results.push(result);
-            }
+                attempts = 0;
+                if(_error) {
+                    console.log(`Not running query: ${query}`)
+                }
+                while (attempts < maxAttempts && !_error) {
+                    try {
+                        const result = await this.executeQuery(query);
+                        results.push(result);
+                        break; // Query succeeded, move to next query
+                    } catch (error: any) {
+                        attempts++;
     
-            await this.commit(); // Commit if all queries succeed
+                        // Check if it's a permanent error
+                        const permanentErrors = await this.getPermanentErrors();
+                        if (permanentErrors.includes(error.code)) {
+                            _error = error
+                        }
+    
+                        // If max retries reached, rollback and stop
+                        if (attempts >= maxAttempts) {
+                            _error = error
+                        }
+    
+                        await new Promise((res) => setTimeout(res, 1000)); // Wait before retrying
+                    }
+                }
+            }
+            if(_error) {
+                throw _error
+            }
+            await this.commit(); // Commit only if all queries succeed
             return { success: true, results };
-        } catch (error) {
-            console.error("Transaction failed, rolling back:", error);
-            await this.rollback(); // Rollback on error
-            return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+        } catch (error: any) {
+            await this.rollback();
+            return { success: false, error: error.message };
         }
-    }    
+    }
 
     protected abstract getCreateSchemaQuery(schemaName: string): string;
     protected abstract getCheckSchemaQuery(schemaName: string | string[]): string;
