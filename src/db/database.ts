@@ -1,6 +1,7 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './validateQuery';
+import { ColumnDefinition } from '../helpers/metadata';
 
 export interface DatabaseConfig {
     sql_dialect: string;
@@ -9,6 +10,8 @@ export interface DatabaseConfig {
     password?: string;
     database?: string;
     port?: number;
+    table?: string;
+    headers?: ColumnDefinition[]
 }
 
 // Abstract database class to define common methods.
@@ -134,6 +137,14 @@ export abstract class Database {
         }
     }
 
+    createTableQuery(table: string, headers: ColumnDefinition[]): string {
+        if (!table || !headers || headers.length === 0) {
+          throw new Error("Invalid table configuration: table name and headers are required.");
+        }
+    
+        return this.getCreateTableQuery(table, headers);
+    }
+
     // Begin transaction.
     async startTransaction(): Promise<void> {
         await this.executeQuery("START TRANSACTION;");
@@ -221,6 +232,7 @@ export abstract class Database {
 
     protected abstract getCreateSchemaQuery(schemaName: string): string;
     protected abstract getCheckSchemaQuery(schemaName: string | string[]): string;
+    protected abstract getCreateTableQuery(table: string, headers: ColumnDefinition[]): string;
 }
 
 import { MySQLDatabase } from "./mysql";
