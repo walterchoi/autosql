@@ -4,6 +4,7 @@ import { mysqlPermanentErrors } from './permanentErrors/mysql';
 import { ColumnDefinition } from "../helpers/metadata";
 import { mysqlConfig } from "./config/mysql";
 import { isValidSingleQuery } from './validateQuery';
+const dialectConfig = mysqlConfig
 
 export class MySQLDatabase extends Database {
     constructor(config: DatabaseConfig) {
@@ -83,30 +84,34 @@ export class MySQLDatabase extends Database {
         return `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS '${schemaName}';`;
     }
 
-    protected getCreateTableQuery(table: string, headers: ColumnDefinition[]): string {
+    protected getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): string[] {
+        let sqlQueries: string[] = [];
         let sqlQuery = `CREATE TABLE IF NOT EXISTS \`${table}\` (\n`;
         let primaryKeys: string[] = [];
         let uniqueKeys: string[] = [];
         let indexes: string[] = [];
     
-        for (const column of headers) {
-            if (!column.type) throw new Error(`Missing type for column ${column}`);
+        for (const columnObj of headers) {
+            const columnName = Object.keys(columnObj)[0]; // Extract column name
+            const column = columnObj[columnName];
+    
+            if (!column.type) throw new Error(`Missing type for column ${columnName}`);
     
             let columnType = column.type.toLowerCase();
-            if (mysqlConfig.translate.local_to_server[columnType]) {
-                columnType = mysqlConfig.translate.local_to_server[columnType];
+            if (dialectConfig.translate.local_to_server[columnType]) {
+                columnType = dialectConfig.translate.local_to_server[columnType];
             }
     
-            let columnDef = `\`${column.type}\` ${columnType}`;
+            let columnDef = `\`${columnName}\` ${columnType}`;
     
             // Handle column lengths
-            if (column.length && mysqlConfig.require_length.includes(columnType)) {
+            if (column.length && dialectConfig.require_length.includes(columnType)) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
     
             // Convert BOOLEAN → TINYINT(1) for MySQL
             if (column.type === "boolean") {
-                columnDef = `\`${column.type}\` TINYINT(1)`;
+                columnDef = `\`${columnName}\` TINYINT(1)`;
             }
     
             // Apply AUTO_INCREMENT only to valid integer types
@@ -119,11 +124,14 @@ export class MySQLDatabase extends Database {
             }
     
             if (!column.allowNull) columnDef += " NOT NULL";
-            if (column.default !== undefined) columnDef += ` DEFAULT ${column.default}`;
+            if (column.default !== undefined) {
+                const replacement = dialectConfig.default_translation[column.default];
+                columnDef += ` DEFAULT ${replacement ? replacement : column.default}`;
+            }
     
-            if (column.primary) primaryKeys.push(`\`${column.type}\``);
-            if (column.unique) uniqueKeys.push(`\`${column.type}\``);
-            if (column.index) indexes.push(`\`${column.type}\``);
+            if (column.primary) primaryKeys.push(`\`${columnName}\``);
+            if (column.unique) uniqueKeys.push(`\`${columnName}\``);
+            if (column.index) indexes.push(`\`${columnName}\``);
     
             sqlQuery += `${columnDef},\n`;
         }
@@ -132,14 +140,14 @@ export class MySQLDatabase extends Database {
         if (uniqueKeys.length) sqlQuery += `${uniqueKeys.map((key) => `UNIQUE(${key})`).join(", ")},\n`;
     
         sqlQuery = sqlQuery.slice(0, -2) + "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
+        sqlQueries.push(sqlQuery); // Store CREATE TABLE query as first item
     
         // Create indexes separately
-        if (indexes.length) {
-            sqlQuery += "\n" + indexes
-                .map((index) => `CREATE INDEX ${index}_idx ON \`${table}\` (${index});`)
-                .join("\n");
+        for (const index of indexes) {
+            sqlQueries.push(`CREATE INDEX \`${index.replace(/`/g, "")}_idx\` ON \`${table}\` (\`${index.replace(/`/g, "")}\`);`);
         }
     
-        return sqlQuery;
+        return sqlQueries;
     }    
+     
 }

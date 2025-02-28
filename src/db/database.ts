@@ -137,7 +137,7 @@ export abstract class Database {
         }
     }
 
-    createTableQuery(table: string, headers: ColumnDefinition[]): string {
+    createTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): string[] {
         if (!table || !headers || headers.length === 0) {
           throw new Error("Invalid table configuration: table name and headers are required.");
         }
@@ -232,7 +232,7 @@ export abstract class Database {
 
     protected abstract getCreateSchemaQuery(schemaName: string): string;
     protected abstract getCheckSchemaQuery(schemaName: string | string[]): string;
-    protected abstract getCreateTableQuery(table: string, headers: ColumnDefinition[]): string;
+    protected abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): string[]
 }
 
 import { MySQLDatabase } from "./mysql";

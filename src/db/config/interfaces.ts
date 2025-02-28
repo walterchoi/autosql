@@ -9,11 +9,12 @@ export interface DialectConfig {
     no_length: string[];
     decimals: string[];
     translate: TranslateMap;
+    default_translation: Record<string, string>;
     sqlize: Array<{
       find: string;
       replace: string;
       regex: string;
       type: boolean | string[];
     }>;
-  }
+}
   

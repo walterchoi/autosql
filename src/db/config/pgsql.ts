@@ -7,16 +7,6 @@ export const pgsqlConfig: DialectConfig = {
   decimals: ["exponent", "double", "decimal"],
   translate: {
     server_to_local: {
-      tinyint: "smallint",
-      exponent: "numeric",
-      double: "double precision",
-      datetime: "timestamp without time zone",
-      datetimetz: "timestamp with time zone",
-      binary: "bytea",
-      mediumtext: "text",
-      longtext: "text"
-    },
-    local_to_server: {
       "timestamp without time zone": "datetime",
       "timestamp with time zone": "datetimetz",
       integer: "int",
@@ -24,7 +14,21 @@ export const pgsqlConfig: DialectConfig = {
       numeric: "decimal",
       "double precision": "double",
       bytea: "binary"
+    },
+    local_to_server: {
+      "tinyint": "smallint",
+      "exponent": "numeric",
+      "double": "double precision",
+      "datetime": "timestamp without time zone",
+      "datetimetz": "timestamp with time zone",
+      "binary": "bytea",
+      "mediumtext": "text",
+      "longtext": "text"
     }
+  },
+  default_translation: {
+    "UUID()": "gen_random_uuid()",
+    "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP": "CURRENT_TIMESTAMP"
   },
   sqlize: [
     {
@@ -50,6 +54,18 @@ export const pgsqlConfig: DialectConfig = {
       replace: "false",
       regex: "^0$",
       type: ["boolean"]
+    },
+    {
+      find: ",",
+      replace: "",
+      regex: ",",
+      type: ["binary", "tinyint", "smallint", "int", "bigint", "decimal"]
+    },
+    {
+      find: ".",
+      replace: "0",
+      regex: "^\\.{1}$",
+      type: ["binary", "tinyint", "smallint", "int", "bigint", "decimal"]
     }
   ]
 };
