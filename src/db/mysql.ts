@@ -3,7 +3,7 @@ import { Database, DatabaseConfig } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
 import { ColumnDefinition } from "../helpers/metadata";
 import { mysqlConfig } from "./config/mysql";
-import { isValidSingleQuery } from './validateQuery';
+import { isValidSingleQuery } from './utils/validateQuery';
 const dialectConfig = mysqlConfig
 
 export class MySQLDatabase extends Database {

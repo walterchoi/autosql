@@ -1,6 +1,6 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
-import { isValidSingleQuery } from './validateQuery';
+import { isValidSingleQuery } from './utils/validateQuery';
 import { ColumnDefinition } from '../helpers/metadata';
 
 export interface DatabaseConfig {

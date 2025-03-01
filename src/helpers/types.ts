@@ -113,7 +113,7 @@ export async function predictType(data: any): Promise<string | null> {
     }
 }
 
-export async function collateTypes(types: (string | null)[]): Promise<string> {
+export function collateTypes(types: (string | null)[]): string {
     try {
         if (!types || types.length === 0) {
             throw new Error("No data types provided for collation");

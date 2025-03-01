@@ -3,7 +3,7 @@ import { Database, DatabaseConfig } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
 import { ColumnDefinition } from "../helpers/metadata";
 import { pgsqlConfig } from "./config/pgsql";
-import { isValidSingleQuery } from './validateQuery';
+import { isValidSingleQuery } from './utils/validateQuery';
 const dialectConfig = pgsqlConfig
 
 export class PostgresDatabase extends Database {
