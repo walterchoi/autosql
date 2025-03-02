@@ -151,6 +151,23 @@ export abstract class Database {
         return this.getCreateTableQuery(table, headers);
     }
 
+    alterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): string[] {
+        if (!table || !oldHeaders || !newHeaders) {
+            throw new Error("Invalid table configuration: table name and headers are required.");
+        }
+    
+        return this.getAlterTableQuery(table, oldHeaders, newHeaders);
+    }
+
+    dropTableQuery(table: string): string {
+        if (!table) {
+            throw new Error("Invalid table configuration: table name is required.");
+        }
+    
+        return this.getDropTableQuery(table);
+    }
+    
+
     // Begin transaction.
     async startTransaction(): Promise<void> {
         await this.executeQuery("START TRANSACTION;");
@@ -239,6 +256,8 @@ export abstract class Database {
     protected abstract getCreateSchemaQuery(schemaName: string): string;
     protected abstract getCheckSchemaQuery(schemaName: string | string[]): string;
     protected abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): string[]
+    protected abstract getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): string[]
+    protected abstract getDropTableQuery(table: string): string
 }
 
 import { MySQLDatabase } from "./mysql";

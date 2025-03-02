@@ -20,8 +20,8 @@ Object.values(DB_CONFIG).forEach((config) => {
 
         afterAll(async () => {
             try {
-                await db.runQuery(`DROP TABLE IF EXISTS test_schema.test_table;`);
-                await db.runQuery(`DROP SCHEMA IF EXISTS test_schema CASCADE;`);
+                const dropQuery = db.dropTableQuery("test_table");
+                await db.runQuery(dropQuery);
             } catch (error) {
                 
             }

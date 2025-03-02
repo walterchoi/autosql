@@ -4,6 +4,7 @@ import { mysqlPermanentErrors } from './permanentErrors/mysql';
 import { ColumnDefinition } from "../config/types";
 import { mysqlConfig } from "./config/mysql";
 import { isValidSingleQuery } from './utils/validateQuery';
+import { compareHeaders } from '../helpers/headers';
 const dialectConfig = mysqlConfig
 
 export class MySQLDatabase extends Database {
@@ -152,6 +153,55 @@ export class MySQLDatabase extends Database {
         }
     
         return sqlQueries;
+    }
+
+    protected getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): string[] {
+        let queries: string[] = [];
+        let alterStatements: string[] = [];
+    
+        // ✅ Get changes using compareHeaders()
+        const { addColumns, modifyColumns } = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+    
+        // ✅ Handle `ADD COLUMN`
+        addColumns.forEach(columnObj => {
+            const columnName = Object.keys(columnObj)[0];
+            const column = columnObj[columnName];
+    
+            let columnDef = `\`${columnName}\` ${column.type}`;
+            if (column.length && !dialectConfig.no_length.includes(column.type || "")) {
+                columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
+            }
+            if (!column.allowNull) columnDef += " NOT NULL";
+            if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
+    
+            alterStatements.push(`ADD COLUMN ${columnDef}`);
+        });
+    
+        // ✅ Handle `MODIFY COLUMN`
+        modifyColumns.forEach(columnObj => {
+            const columnName = Object.keys(columnObj)[0];
+            const column = columnObj[columnName];
+    
+            let columnDef = `\`${columnName}\` ${column.type}`;
+            if (column.length && !dialectConfig.no_length.includes(column.type || "")) {
+                columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
+            }
+            if (!column.allowNull) columnDef += " NOT NULL";
+            if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
+    
+            alterStatements.push(`MODIFY COLUMN ${columnDef}`);
+        });
+    
+        // ✅ Combine all `ALTER TABLE` statements
+        if (alterStatements.length > 0) {
+            queries.push(`ALTER TABLE \`${table}\` ${alterStatements.join(", ")};`);
+        }
+    
+        return queries;
+    }
+
+    protected getDropTableQuery(table: string): string {
+        return `DROP TABLE IF EXISTS \`${table}\`;`;
     }    
-     
+    
 }
