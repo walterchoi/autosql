@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { ColumnDefinition } from "../src/helpers/metadata";
+import { ColumnDefinition } from "../src/config/types";
 
 const TEST_TABLE_NAME = "users";
 

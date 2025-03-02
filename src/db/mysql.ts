@@ -1,7 +1,7 @@
 import mysql, { Pool, PoolConnection } from "mysql2/promise";
 import { Database, DatabaseConfig } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { ColumnDefinition } from "../helpers/metadata";
+import { ColumnDefinition } from "../config/types";
 import { mysqlConfig } from "./config/mysql";
 import { isValidSingleQuery } from './utils/validateQuery';
 const dialectConfig = mysqlConfig
@@ -24,6 +24,10 @@ export class MySQLDatabase extends Database {
 
     protected async getPermanentErrors(): Promise<string[]> {
         return mysqlPermanentErrors;
+    }
+
+    public getDialectConfig() {
+        return dialectConfig;
     }
 
     async testQuery(query: string): Promise<any> {

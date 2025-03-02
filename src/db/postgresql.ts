@@ -1,7 +1,7 @@
 import { Pool, PoolClient } from "pg";
 import { Database, DatabaseConfig } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
-import { ColumnDefinition } from "../helpers/metadata";
+import { ColumnDefinition } from "../config/types";
 import { pgsqlConfig } from "./config/pgsql";
 import { isValidSingleQuery } from './utils/validateQuery';
 const dialectConfig = pgsqlConfig
@@ -20,6 +20,10 @@ export class PostgresDatabase extends Database {
             port: this.config.port || 5432,
             max: 3
         });
+    }
+
+    public getDialectConfig() {
+        return dialectConfig;
     }
 
     protected async getPermanentErrors(): Promise<string[]> {

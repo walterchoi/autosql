@@ -189,3 +189,26 @@ export function normalizeNumber(input: string, thousandsIndicatorOverride?: stri
     const normalized = `${isNegative ? "-" : ""}${preDecimal}${postDecimal ? "." + postDecimal : ""}`;
     return normalized;
 }
+
+export function mergeColumnLengths(lengthA?: string, lengthB?: string): string | undefined {
+    if (!lengthA && !lengthB) return undefined;
+
+    const parseLength = (length: string) => {
+        const parts = length.split(",").map(Number);
+        return parts.length === 2 ? parts : [parts[0], 0]; // Ensure decimal part exists
+    };
+
+    const [lenA, decA] = lengthA ? parseLength(lengthA) : [0, 0];
+    const [lenB, decB] = lengthB ? parseLength(lengthB) : [0, 0];
+
+    return `${Math.max(lenA, lenB)},${Math.max(decA, decB)}`;
+}
+
+export function parseDatabaseLength(lengthStr?: string): { length?: number; decimal?: number } {
+    if (!lengthStr) return {};
+    
+    const parts = lengthStr.split(",").map(Number);
+    return parts.length === 2
+        ? { length: parts[0], decimal: parts[1] }
+        : { length: parts[0] };
+}

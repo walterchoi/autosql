@@ -1,7 +1,7 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './utils/validateQuery';
-import { ColumnDefinition } from '../helpers/metadata';
+import { ColumnDefinition } from '../config/types';
 
 export interface DatabaseConfig {
     sql_dialect: string;
@@ -37,6 +37,12 @@ export abstract class Database {
 
         return new DIALECTS[dialect](config);
     }
+
+    public getDialect() {
+        return this.config.sql_dialect
+    }
+
+    public abstract getDialectConfig(): DialectConfig;
 
     abstract establishDatabaseConnection(): Promise<void>;
     abstract testQuery(query: string): Promise<any>;
@@ -237,5 +243,6 @@ export abstract class Database {
 
 import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./postgresql";
+import { DialectConfig } from "./config/interfaces";
 
 export { MySQLDatabase, PostgresDatabase };
