@@ -257,11 +257,11 @@ export abstract class Database {
     protected abstract getCheckSchemaQuery(schemaName: string | string[]): string;
     protected abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): string[]
     protected abstract getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): string[]
-    protected abstract getDropTableQuery(table: string): string
+    protected abstract getDropTableQuery(table: string): string;
 }
 
 import { MySQLDatabase } from "./mysql";
-import { PostgresDatabase } from "./postgresql";
+import { PostgresDatabase } from "./pgsql";
 import { DialectConfig } from "./config/interfaces";
 
 export { MySQLDatabase, PostgresDatabase };
