@@ -1,11 +1,11 @@
-import { ColumnDefinition } from "../../../config/types";
+import { ColumnDefinition, QueryInput } from "../../../config/types";
 import { mysqlConfig } from "../../config/mysql";
 import { compareHeaders } from '../../../helpers/headers';
 const dialectConfig = mysqlConfig
 
 export class MySQLTableQueryBuilder {
-    static getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): string[] {
-        let sqlQueries: string[] = [];
+    static getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+        let sqlQueries: QueryInput[] = [];
         let sqlQuery = `CREATE TABLE IF NOT EXISTS \`${table}\` (\n`;
         let primaryKeys: string[] = [];
         let uniqueKeys: string[] = [];
@@ -60,18 +60,18 @@ export class MySQLTableQueryBuilder {
         if (uniqueKeys.length) sqlQuery += `${uniqueKeys.map((key) => `UNIQUE(${key})`).join(", ")},\n`;
     
         sqlQuery = sqlQuery.slice(0, -2) + "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
-        sqlQueries.push(sqlQuery); // Store CREATE TABLE query as first item
+        sqlQueries.push({query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
     
         // Create indexes separately
         for (const index of indexes) {
-            sqlQueries.push(`CREATE INDEX \`${index.replace(/`/g, "")}_idx\` ON \`${table}\` (\`${index.replace(/`/g, "")}\`);`);
+            sqlQueries.push({ query: `CREATE INDEX \`${index.replace(/`/g, "")}_idx\` ON \`${table}\` (\`${index.replace(/`/g, "")}\`);`, params: []});
         }
     
         return sqlQueries;
     }
 
-    static getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): string[] {
-        let queries: string[] = [];
+    static getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+        let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
         // ✅ Get changes using compareHeaders()
@@ -109,13 +109,13 @@ export class MySQLTableQueryBuilder {
     
         // ✅ Combine all `ALTER TABLE` statements
         if (alterStatements.length > 0) {
-            queries.push(`ALTER TABLE \`${table}\` ${alterStatements.join(", ")};`);
+            queries.push({query: `ALTER TABLE \`${table}\` ${alterStatements.join(", ")};`, params: []});
         }
     
         return queries;
     }
 
-    static getDropTableQuery(table: string): string {
-        return `DROP TABLE IF EXISTS \`${table}\`;`;
+    static getDropTableQuery(table: string): QueryInput {
+        return {query: `DROP TABLE IF EXISTS \`${table}\`;`, params: []};
     }
 }

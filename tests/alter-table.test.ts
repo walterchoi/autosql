@@ -24,16 +24,25 @@ Object.values(DB_CONFIG).forEach((config) => {
 
         test("Generate valid ALTER TABLE queries", async () => {
             const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
-            
+
             expect(Array.isArray(queries)).toBe(true);
-            expect(typeof queries[0]).toBe("string");
-            expect(queries[0].toLowerCase()).toContain(`alter table`);
-            expect(queries[0].toLowerCase()).toContain(TEST_TABLE_NAME.toLowerCase());
+            expect(queries.length).toBeGreaterThan(0);
+
+            const firstQuery = queries[0];
+
+            // Ensure the first query is a string or an object with .query
+            expect(typeof firstQuery === "string" || typeof firstQuery === "object").toBe(true);
+
+            const queryStr = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
+
+            expect(queryStr.toLowerCase()).toContain(`alter table`);
+            expect(queryStr.toLowerCase()).toContain(TEST_TABLE_NAME.toLowerCase());
         });
 
         test("Ensure table modification contains all changes", async () => {
             const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
-            const alterTableQuery = queries[0];
+            const firstQuery = queries[0];
+            const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
             if (config.sql_dialect === "mysql") {
                 expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255) NOT NULL");
@@ -47,7 +56,8 @@ Object.values(DB_CONFIG).forEach((config) => {
         if (config.sql_dialect === "mysql") {
             test("Check MySQL-specific query format", async () => {
                 const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
-                const alterTableQuery = queries[0];
+                const firstQuery = queries[0];
+                const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
                 expect(alterTableQuery).toContain("MODIFY COLUMN `name` varchar(100) NOT NULL");
                 expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255) NOT NULL");
@@ -55,7 +65,8 @@ Object.values(DB_CONFIG).forEach((config) => {
         } else if (config.sql_dialect === "pgsql") {
             test("Check PostgreSQL-specific query format", async () => {
                 const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
-                const alterTableQuery = queries[0];
+                const firstQuery = queries[0];
+                const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
                 expect(alterTableQuery).toContain("ALTER COLUMN \"name\" SET DATA TYPE varchar(100)");
                 expect(alterTableQuery).toContain("ADD COLUMN \"email\" varchar(255) NOT NULL");
@@ -88,7 +99,6 @@ Object.values(DB_CONFIG).forEach((config) => {
             const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
 
             for (const query of queries) {
-                console.log(query);
                 await expect(db.testQuery(query)).resolves.not.toThrow();
             }
         });

@@ -2,6 +2,7 @@ import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { ColumnDefinition } from '../config/types';
+import { QueryInput } from '../config/types';
 
 export interface DatabaseConfig {
     sql_dialect: string;
@@ -45,8 +46,8 @@ export abstract class Database {
     public abstract getDialectConfig(): DialectConfig;
 
     abstract establishDatabaseConnection(): Promise<void>;
-    abstract testQuery(query: string): Promise<any>;
-    protected abstract executeQuery(query: string, params?: any[]): Promise<any>;
+    abstract testQuery(queryOrParams: QueryInput): Promise<any>;
+    protected abstract executeQuery(queryOrParams: QueryInput): Promise<any>;
 
     async establishConnection(): Promise<void> {
         let attempts = 0;
@@ -75,38 +76,44 @@ export abstract class Database {
         throw new Error("Database connection failed after multiple attempts.");
     }
     
-    async runQuery(query: string, params: any[] = []): Promise<any> {
+    async runQuery(queryOrParams: QueryInput): Promise<any> {
         let attempts = 0;
         const maxAttempts = 3;
-        let _error
-        if (!isValidSingleQuery(query)) {
+        let _error;
+    
+        const QueryInput =
+            typeof queryOrParams === "string"
+                ? { query: queryOrParams, params: [] }
+                : queryOrParams;
+    
+        if (!isValidSingleQuery(QueryInput.query)) {
             throw new Error("Multiple SQL statements detected. Use transactions instead.");
         }
+    
         while (attempts < maxAttempts && !_error) {
             try {
-                return await this.executeQuery(query, params);
+                return await this.executeQuery(QueryInput);
             } catch (error: any) {
                 const permanentErrors = await this.getPermanentErrors();
                 if (permanentErrors.includes(error.code)) {
-                    _error = error
+                    _error = error;
                 }
-
+    
                 attempts++;
                 if (attempts < maxAttempts) {
-                    await new Promise((res) => setTimeout(res, 1000)); // Wait before retrying
+                    await new Promise((res) => setTimeout(res, 1000));
                 } else {
-                    _error = error
+                    _error = error;
                 }
             }
         }
-
-        throw _error
+        throw _error;
     }
 
     // Test database connection.
     async testConnection(): Promise<boolean> {
         try {
-            const result = await this.runQuery("SELECT 1 AS solution;");
+            const result = await this.runQuery({ query: "SELECT 1 AS solution;"});
             return !!result;
         } catch (error) {
             console.error("Test connection failed:", error);
@@ -117,8 +124,8 @@ export abstract class Database {
     // Check if schema(s) exist.
     async checkSchemaExists(schemaName: string | string[]): Promise<Record<string, boolean>> {
         try {
-            const query = this.getCheckSchemaQuery(schemaName);
-            const result = await this.runQuery(query);
+            const QueryInput = this.getCheckSchemaQuery(schemaName);
+            const result = await this.runQuery(QueryInput);
 
             if (Array.isArray(schemaName)) {
                 return schemaName.reduce((acc, db) => {
@@ -133,17 +140,16 @@ export abstract class Database {
         }
     }
 
-    async createSchema(schemaName: string): Promise<{ success: boolean; error?: string }> {
+    createSchemaQuery(schemaName: string): QueryInput {
         try {
-            const query = this.getCreateSchemaQuery(schemaName);
-            await this.runQuery(query);
-            return { success: true };
+            const QueryInput = this.getCreateSchemaQuery(schemaName);
+            return QueryInput;
         } catch (error) {
-            return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+            throw new Error(`Failed to create schema: ${error}`);
         }
     }
 
-    createTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): string[] {
+    createTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
         if (!table || !headers || headers.length === 0) {
           throw new Error("Invalid table configuration: table name and headers are required.");
         }
@@ -151,7 +157,7 @@ export abstract class Database {
         return this.getCreateTableQuery(table, headers);
     }
 
-    alterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): string[] {
+    alterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
         if (!table || !oldHeaders || !newHeaders) {
             throw new Error("Invalid table configuration: table name and headers are required.");
         }
@@ -159,7 +165,7 @@ export abstract class Database {
         return this.getAlterTableQuery(table, oldHeaders, newHeaders);
     }
 
-    dropTableQuery(table: string): string {
+    dropTableQuery(table: string): QueryInput {
         if (!table) {
             throw new Error("Invalid table configuration: table name is required.");
         }
@@ -198,7 +204,7 @@ export abstract class Database {
         }
     }
 
-    async runTransaction(queries: string[]): Promise<{ success: boolean; results?: any[]; error?: string }> {
+    async runTransaction(queriesOrStrings: QueryInput[] | string[]): Promise<{ success: boolean; results?: any[]; error?: string }> {
         if (!this.connection) {
             await this.establishConnection();
         }
@@ -207,57 +213,76 @@ export abstract class Database {
         let attempts: number;
         const maxAttempts = 3;
     
+        // Convert string queries into QueryInput
+        const queries = queriesOrStrings.map(query =>
+            typeof query === "string" ? { query, params: [] } : query
+        );
+    
         try {
-            await this.startTransaction(); // Begin transaction
+            await this.startTransaction();
             let _error;
-            for (const query of queries) {
+    
+            for (const QueryInput of queries) {
+                const query = QueryInput.query;
+                const params = QueryInput.params || [];
+    
                 if (!isValidSingleQuery(query)) {
-                    _error = "Each query in the transaction must be a single statement."
-                    throw new Error("Each query in the transaction must be a single statement.");
+                    _error = "Each query in the transaction must be a single statement.";
+                    throw new Error(_error);
                 }
+    
                 attempts = 0;
-                if(_error) {
-                    console.log(`Not running query: ${query}`)
+                if (_error) {
+                    console.log(`Not running query: ${query}`);
                 }
+    
                 while (attempts < maxAttempts && !_error) {
                     try {
-                        const result = await this.executeQuery(query);
+                        const result = await this.executeQuery(QueryInput);
                         results.push(result);
-                        break; // Query succeeded, move to next query
+                        break;
                     } catch (error: any) {
                         attempts++;
     
-                        // Check if it's a permanent error
                         const permanentErrors = await this.getPermanentErrors();
                         if (permanentErrors.includes(error.code)) {
-                            _error = error
+                            _error = error;
                         }
     
-                        // If max retries reached, rollback and stop
                         if (attempts >= maxAttempts) {
-                            _error = error
+                            _error = error;
                         }
     
-                        await new Promise((res) => setTimeout(res, 1000)); // Wait before retrying
+                        await new Promise((res) => setTimeout(res, 1000));
                     }
                 }
             }
-            if(_error) {
-                throw _error
+    
+            if (_error) {
+                throw _error;
             }
-            await this.commit(); // Commit only if all queries succeed
+    
+            await this.commit();
             return { success: true, results };
         } catch (error: any) {
             await this.rollback();
             return { success: false, error: error.message };
         }
     }
+    
 
-    protected abstract getCreateSchemaQuery(schemaName: string): string;
-    protected abstract getCheckSchemaQuery(schemaName: string | string[]): string;
-    protected abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): string[]
-    protected abstract getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): string[]
-    protected abstract getDropTableQuery(table: string): string;
+    protected abstract getCreateSchemaQuery(schemaName: string): QueryInput;
+    protected abstract getCheckSchemaQuery(schemaName: string | string[]): QueryInput;
+    protected abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[]
+    protected abstract getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[]
+    protected abstract getDropTableQuery(table: string): QueryInput;
+    /*
+    protected abstract getPrimaryKeysQuery(table: string): QueryInput;
+    protected abstract getForeignKeyConstraintsQuery(table: string): QueryInput;
+    protected abstract getViewDependenciesQuery(table: string): QueryInput;
+    protected abstract getDropPrimaryKeyQuery(table: string): QueryInput;
+    protected abstract getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput;
+    */
 }
 
 import { MySQLDatabase } from "./mysql";

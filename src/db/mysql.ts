@@ -6,6 +6,7 @@ import { mysqlConfig } from "./config/mysql";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
 import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
+import { QueryInput } from "../config/types";
 const dialectConfig = mysqlConfig
 
 export class MySQLDatabase extends Database {
@@ -32,10 +33,13 @@ export class MySQLDatabase extends Database {
         return mysqlPermanentErrors;
     }
 
-    async testQuery(query: string): Promise<any> {
+    async testQuery(queryOrParams: QueryInput): Promise<any> {
+        const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
+    
         if (!isValidSingleQuery(query)) {
             throw new Error("Each query in the transaction must be a single statement.");
         }
+    
         if (!this.connection) {
             await this.establishConnection();
         }
@@ -57,12 +61,18 @@ export class MySQLDatabase extends Database {
         }
     }
 
-    protected async executeQuery(query: string, params: any[] = []): Promise<any> {
+    protected async executeQuery(query: string): Promise<any>;
+    protected async executeQuery(QueryInput: QueryInput): Promise<any>;
+    protected async executeQuery(queryOrParams: QueryInput): Promise<any> {
         if (!this.connection) {
             await this.establishConnection();
         }
-
+    
         let client: PoolConnection | null = null;
+    
+        const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
+        const params = typeof queryOrParams === "string" ? [] : queryOrParams.params || [];
+    
         try {
             client = await (this.connection as Pool).getConnection();
             const [rows] = await client.query(query, params);
@@ -73,32 +83,34 @@ export class MySQLDatabase extends Database {
             if (client) client.release();
         }
     }
+    
 
-    protected getCreateSchemaQuery(schemaName: string): string {
-        return `CREATE SCHEMA IF NOT EXISTS \`${schemaName}\`;`;
+
+    protected getCreateSchemaQuery(schemaName: string): QueryInput {
+        return { query: `CREATE SCHEMA IF NOT EXISTS \`${schemaName}\`;` };
     }
 
-    protected getCheckSchemaQuery(schemaName: string | string[]): string {
+    protected getCheckSchemaQuery(schemaName: string | string[]): QueryInput {
         if (Array.isArray(schemaName)) {
-            return `SELECT ${schemaName
+            return { query: `SELECT ${schemaName
                 .map(
                     (db) =>
                         `(CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${db}') THEN 1 ELSE 0 END) AS '${db}'`
                 )
-                .join(", ")};`;
+                .join(", ")};`};
         }
-        return `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS '${schemaName}';`;
+        return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS '${schemaName}';`};
     }
 
-    protected getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): string[] {
+    protected getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
         return MySQLTableQueryBuilder.getCreateTableQuery(table, headers);
     }
 
-    protected getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): string[] {
+    protected getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
         return MySQLTableQueryBuilder.getAlterTableQuery(table, oldHeaders, newHeaders);
     }
 
-    protected getDropTableQuery(table: string): string {
+    protected getDropTableQuery(table: string): QueryInput {
         return MySQLTableQueryBuilder.getDropTableQuery(table);
     }
     

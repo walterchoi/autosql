@@ -12,3 +12,5 @@ export interface ColumnDefinition {
     default?: any;
     decimal?: number;
 }
+
+export type QueryInput = string | { query: string; params?: any[] };
