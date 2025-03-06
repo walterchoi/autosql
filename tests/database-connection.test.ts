@@ -1,4 +1,4 @@
-import { DB_CONFIG, Database, isValidSingleQuery } from "./utils/testConfig";
+import { DB_CONFIG, Database } from "./utils/testConfig";
     
 Object.values(DB_CONFIG).forEach((config) => {
         describe(`Database Tests for ${config.sql_dialect.toUpperCase()}`, () => {
@@ -26,7 +26,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             test("Create schema that already exists", async () => {
                 await db.createSchema("test_schema"); // First creation
-                const result = await db.createSchema("test_schema"); // Second attempt
+                const result = await db.createSchema("test_schema");
                 expect(result.success).toBe(true);
             });
 

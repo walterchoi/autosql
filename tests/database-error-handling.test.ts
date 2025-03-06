@@ -10,6 +10,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             // Ensure the schema and table exist before running tests
             await db.createSchema("test_schema");
+            await db.runQuery(`DROP TABLE IF EXISTS test_schema.test_table;`);
             await db.runQuery(`
                 CREATE TABLE IF NOT EXISTS test_schema.test_table (
                     id INT PRIMARY KEY,
@@ -20,8 +21,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
         afterAll(async () => {
             try {
-                const dropQuery = db.dropTableQuery("test_table");
-                await db.runQuery(dropQuery);
+                await db.runQuery(`DROP TABLE IF EXISTS test_schema.test_table;`);
             } catch (error) {
                 
             }

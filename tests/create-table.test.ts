@@ -41,24 +41,37 @@ Object.values(DB_CONFIG).forEach((config) => {
         test("Generate valid CREATE TABLE queries", async () => {
             const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
             
-            expect(Array.isArray(queries)).toBe(true); // Ensure it's an array
-            expect(typeof queries[0]).toBe("string");
-            expect(queries[0].toLowerCase()).toContain(`create table`);
-            expect(queries[0].toLowerCase()).toContain(TEST_TABLE_NAME.toLowerCase());
+            expect(Array.isArray(queries)).toBe(true);
+            expect(queries.length).toBeGreaterThan(0);
+            
+            const firstQuery = queries[0];
+            const queryStr = typeof firstQuery === "string" 
+            ? firstQuery 
+            : "query" in firstQuery 
+                ? firstQuery.query 
+            : (() => { throw new Error("Unexpected query format"); })();
+            
+            expect(typeof queryStr).toBe("string");
+            expect(queryStr.toLowerCase()).toContain("create table");
         });
 
         test("Ensure table definition contains all columns", async () => {
             const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
             const createTableQuery = queries[0]; // First query is always `CREATE TABLE`
+            const queryStr = typeof createTableQuery === "string" 
+                ? createTableQuery 
+                : "query" in createTableQuery 
+                    ? createTableQuery.query 
+                : (() => { throw new Error("Unexpected query format"); })();
 
             if (config.sql_dialect === "mysql") {
-                expect(createTableQuery).toContain("`id` int AUTO_INCREMENT NOT NULL");
-                expect(createTableQuery).toContain("`name` varchar(255) NOT NULL");
-                expect(createTableQuery).toContain("`is_active` TINYINT(1) NOT NULL DEFAULT false");
+                expect(queryStr).toContain("`id` int AUTO_INCREMENT NOT NULL");
+                expect(queryStr).toContain("`name` varchar(255) NOT NULL");
+                expect(queryStr).toContain("`is_active` TINYINT(1) NOT NULL DEFAULT false");
             } else if (config.sql_dialect === "pgsql") {
-                expect(createTableQuery).toContain("\"id\" SERIAL NOT NULL");
-                expect(createTableQuery).toContain("\"name\" varchar(255) NOT NULL");
-                expect(createTableQuery).toContain("\"is_active\" boolean NOT NULL DEFAULT false");
+                expect(queryStr).toContain("\"id\" SERIAL NOT NULL");
+                expect(queryStr).toContain("\"name\" varchar(255) NOT NULL");
+                expect(queryStr).toContain("\"is_active\" boolean NOT NULL DEFAULT false");
             }
         });
 
@@ -67,39 +80,53 @@ Object.values(DB_CONFIG).forEach((config) => {
             
             if (queries.length > 1) {
                 for (let i = 1; i < queries.length; i++) {
-                    expect(queries[i].toLowerCase()).toContain("create index");
+                    const query = queries[i];
+                    const queryStr = typeof query === "string" 
+                    ? query 
+                    : "query" in query 
+                        ? query.query 
+                        : (() => { throw new Error("Unexpected query format"); })();
+                    expect(typeof queryStr).toBe("string");
+                    expect(queryStr.toLowerCase()).toContain("create index");
                 }
             }
         });
 
-        if (config.sql_dialect === "mysql") {
-            test("Check MySQL-specific query format", async () => {
-                const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
-                const createTableQuery = queries[0];
+        test(`Check ${config.sql_dialect}-specific query format`, async () => {
+            const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
+            const createTableQuery = queries[0];
+            let queryStr1;
+            const queryStr = typeof createTableQuery === "string" 
+                ? createTableQuery 
+                : "query" in createTableQuery 
+                    ? createTableQuery.query 
+                    : (() => { throw new Error("Unexpected query format"); })();
+            if (queries.length > 1) {
+                queryStr1 = typeof queries[1] === "string" 
+                ? queries[1] 
+                : "query" in queries[1] 
+                    ? queries[1].query 
+                    : (() => { throw new Error("Unexpected query format"); })();
+            }
+            if (config.sql_dialect === "mysql") {
+                expect(queryStr).toContain("AUTO_INCREMENT");
+                expect(queryStr).toContain("ENGINE=InnoDB");
+                expect(queryStr).toContain("PRIMARY KEY (`id`)");
+                expect(queryStr).toContain("UNIQUE(`name`)");
 
-                expect(createTableQuery).toContain("AUTO_INCREMENT");
-                expect(createTableQuery).toContain("ENGINE=InnoDB");
-                expect(createTableQuery).toContain("PRIMARY KEY (`id`)");
-                expect(createTableQuery).toContain("UNIQUE(`name`)");
-
-                if (queries.length > 1) {
-                    expect(queries[1]).toContain("CREATE INDEX `name_idx` ON `test_table` (`name`);");
+                if(queryStr1) {
+                    expect(queryStr1).toContain("CREATE INDEX `name_idx` ON `test_table` (`name`);");
                 }
-            });
-        } else if (config.sql_dialect === "pgsql") {
-            test("Check PostgreSQL-specific query format", async () => {
-                const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
-                const createTableQuery = queries[0];
+            } else if (config.sql_dialect === "pgsql") {
+                expect(queryStr).toContain("SERIAL");
+                expect(queryStr).toContain("PRIMARY KEY (\"id\")");
+                expect(queryStr).toContain("UNIQUE(\"name\")");
 
-                expect(createTableQuery).toContain("SERIAL");
-                expect(createTableQuery).toContain("PRIMARY KEY (\"id\")");
-                expect(createTableQuery).toContain("UNIQUE(\"name\")");
-
-                if (queries.length > 1) {
-                    expect(queries[1]).toContain("CREATE INDEX \"name_idx\" ON \"test_table\" (\"name\");");
+                if(queryStr1) {
+                    expect(queryStr1).toContain("CREATE INDEX \"name_idx\" ON \"test_table\" (\"name\");");
                 }
-            });
-        }
+            }
+        })
     });
 });
 

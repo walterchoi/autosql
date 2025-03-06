@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { ColumnDefinition } from "../src/config/types";
+import { ColumnDefinition, QueryWithParams } from "../src/config/types";
 
 const TEST_TABLE_NAME = "users";
 
@@ -107,80 +107,114 @@ Object.values(DB_CONFIG).forEach((config) => {
         });
 
         test("Generate valid CREATE TABLE queries", async () => {
-            const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
+            const createTableQuery = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
+            const queryStr = typeof createTableQuery[0] === "string" 
+                ? createTableQuery[0] 
+                : "query" in createTableQuery[0]
+                    ? createTableQuery[0].query 
+                : (() => { throw new Error("Unexpected query format"); })();
             
-            expect(Array.isArray(queries)).toBe(true);
-            expect(typeof queries[0]).toBe("string");
-            expect(queries[0].toLowerCase()).toContain(`create table`);
-            expect(queries[0].toLowerCase()).toContain(TEST_TABLE_NAME.toLowerCase());
+            expect(typeof queryStr).toBe("string");
+            expect(queryStr.toLowerCase()).toContain(`create table`);
+            expect(queryStr.toLowerCase()).toContain(TEST_TABLE_NAME.toLowerCase());
         });
 
         test("Ensure table definition contains all columns", async () => {
-            const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
-            const createTableQuery = queries[0];
+            const createTableQuery = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
+            const queryStr = typeof createTableQuery[0] === "string" 
+            ? createTableQuery[0] 
+            : "query" in createTableQuery[0]
+                ? createTableQuery[0].query 
+            : (() => { throw new Error("Unexpected query format"); })();
 
             if (config.sql_dialect === "mysql") {
-                expect(createTableQuery).toContain("`user_id` int AUTO_INCREMENT NOT NULL");
-                expect(createTableQuery).toContain("`user_uuid` varchar(36) NOT NULL DEFAULT (UUID())");
-                expect(createTableQuery).toContain("`username` varchar(50) NOT NULL");
-                expect(createTableQuery).toContain("`email` varchar(255) NOT NULL");
-                expect(createTableQuery).toContain("`password_hash` varchar(255) NOT NULL");
-                expect(createTableQuery).toContain("`bio` text");
-                expect(createTableQuery).toContain("`age` int DEFAULT 18");
-                expect(createTableQuery).toContain("`is_active` TINYINT(1) NOT NULL DEFAULT true");
-                expect(createTableQuery).toContain("`account_balance` decimal(12,2) NOT NULL DEFAULT 0");
-                expect(createTableQuery).toContain("`user_metadata` json");
-                expect(createTableQuery).toContain("`created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP");
-                expect(createTableQuery).toContain("`updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+                expect(queryStr).toContain("`user_id` int AUTO_INCREMENT NOT NULL");
+                expect(queryStr).toContain("`user_uuid` varchar(36) NOT NULL DEFAULT (UUID())");
+                expect(queryStr).toContain("`username` varchar(50) NOT NULL");
+                expect(queryStr).toContain("`email` varchar(255) NOT NULL");
+                expect(queryStr).toContain("`password_hash` varchar(255) NOT NULL");
+                expect(queryStr).toContain("`bio` text");
+                expect(queryStr).toContain("`age` int DEFAULT 18");
+                expect(queryStr).toContain("`is_active` TINYINT(1) NOT NULL DEFAULT true");
+                expect(queryStr).toContain("`account_balance` decimal(12,2) NOT NULL DEFAULT 0");
+                expect(queryStr).toContain("`user_metadata` json");
+                expect(queryStr).toContain("`created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP");
+                expect(queryStr).toContain("`updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
             } else if (config.sql_dialect === "pgsql") {
-                expect(createTableQuery).toContain("\"user_id\" SERIAL NOT NULL");
-                expect(createTableQuery).toContain("\"user_uuid\" varchar(36) NOT NULL DEFAULT gen_random_uuid()");
-                expect(createTableQuery).toContain("\"username\" varchar(50) NOT NULL");
-                expect(createTableQuery).toContain("\"email\" varchar(255) NOT NULL");
-                expect(createTableQuery).toContain("\"password_hash\" varchar(255) NOT NULL");
-                expect(createTableQuery).toContain("\"bio\" text");
-                expect(createTableQuery).toContain("\"age\" int DEFAULT 18");
-                expect(createTableQuery).toContain("\"is_active\" boolean NOT NULL DEFAULT true");
-                expect(createTableQuery).toContain("\"account_balance\" decimal NOT NULL DEFAULT 0");
-                expect(createTableQuery).toContain("\"user_metadata\" json");
-                expect(createTableQuery).toContain("\"created_at\" timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP");
-                expect(createTableQuery).toContain("\"updated_at\" timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP");
+                expect(queryStr).toContain("\"user_id\" SERIAL NOT NULL");
+                expect(queryStr).toContain("\"user_uuid\" varchar(36) NOT NULL DEFAULT gen_random_uuid()");
+                expect(queryStr).toContain("\"username\" varchar(50) NOT NULL");
+                expect(queryStr).toContain("\"email\" varchar(255) NOT NULL");
+                expect(queryStr).toContain("\"password_hash\" varchar(255) NOT NULL");
+                expect(queryStr).toContain("\"bio\" text");
+                expect(queryStr).toContain("\"age\" int DEFAULT 18");
+                expect(queryStr).toContain("\"is_active\" boolean NOT NULL DEFAULT true");
+                expect(queryStr).toContain("\"account_balance\" decimal NOT NULL DEFAULT 0");
+                expect(queryStr).toContain("\"user_metadata\" json");
+                expect(queryStr).toContain("\"created_at\" timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP");
+                expect(queryStr).toContain("\"updated_at\" timestamp without time zone NOT NULL DEFAULT CURRENT_TIMESTAMP");
             }
         });
 
         test("Ensure index queries are separate", async () => {
             const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
-
-            if (queries.length > 1) {
-                for (let i = 1; i < queries.length; i++) {
-                    expect(queries[i].toLowerCase()).toContain("create index");
-                }
+        
+            expect(Array.isArray(queries)).toBe(true);
+            expect(queries.length).toBeGreaterThan(1);
+        
+            for (let i = 1; i < queries.length; i++) {
+                const queryItem = queries[i];
+        
+                const queryStr = typeof queryItem === "string" 
+                    ? queryItem 
+                    : (queryItem as QueryWithParams).query;
+        
+                expect(queryStr.toLowerCase()).toContain("create index");
             }
         });
+        
 
         test("Check SQL dialect-specific query format", async () => {
-            const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
-            const createTableQuery = queries[0];
-
+            const createTableQuery = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
+        
+            expect(Array.isArray(createTableQuery)).toBe(true);
+            expect(createTableQuery.length).toBeGreaterThan(0);
+        
+            // Extract query string safely
+            const firstQuery = createTableQuery[0];
+            const queryStr = typeof firstQuery === "string" 
+                ? firstQuery 
+                : "query" in firstQuery 
+                    ? firstQuery.query 
+                    : (() => { throw new Error("Unexpected query format"); })();
+        
             if (config.sql_dialect === "mysql") {
-                expect(createTableQuery).toContain("ENGINE=InnoDB");
-                expect(createTableQuery).toContain("PRIMARY KEY (`user_id`)");
-                expect(createTableQuery).toContain("UNIQUE(`user_uuid`)");
-                expect(createTableQuery).toContain("UNIQUE(`username`)");
-                expect(createTableQuery).toContain("UNIQUE(`email`)");
-                if (queries.length > 1) {
-                    expect(queries).toContainEqual(expect.stringMatching(/CREATE INDEX `email_idx` ON `users` \(`email`\);/));
+                expect(queryStr).toContain("ENGINE=InnoDB");
+                expect(queryStr).toContain("PRIMARY KEY (`user_id`)");
+                expect(queryStr).toContain("UNIQUE(`user_uuid`)");
+                expect(queryStr).toContain("UNIQUE(`username`)");
+                expect(queryStr).toContain("UNIQUE(`email`)");
+        
+                if (createTableQuery.length > 1) {
+                    const indexQueries = createTableQuery.map(q => 
+                        typeof q === "string" ? q : q.query
+                    );
+                    expect(indexQueries).toContainEqual(expect.stringMatching(/CREATE INDEX `email_idx` ON `users` \(`email`\);/));
                 }
             } else if (config.sql_dialect === "pgsql") {
-                expect(createTableQuery).toContain("PRIMARY KEY (\"user_id\")");
-                expect(createTableQuery).toContain("UNIQUE(\"user_uuid\")");
-                expect(createTableQuery).toContain("UNIQUE(\"username\")");
-                expect(createTableQuery).toContain("UNIQUE(\"email\")");
-                if (queries.length > 1) {
-                    expect(queries).toContainEqual(expect.stringMatching(/CREATE INDEX "email_idx" ON "users" \("email"\);/));
+                expect(queryStr).toContain("PRIMARY KEY (\"user_id\")");
+                expect(queryStr).toContain("UNIQUE(\"user_uuid\")");
+                expect(queryStr).toContain("UNIQUE(\"username\")");
+                expect(queryStr).toContain("UNIQUE(\"email\")");
+        
+                if (createTableQuery.length > 1) {
+                    const indexQueries = createTableQuery.map(q => 
+                        typeof q === "string" ? q : q.query
+                    );
+                    expect(indexQueries).toContainEqual(expect.stringMatching(/CREATE INDEX "email_idx" ON "users" \("email"\);/));
                 }
             }
-        });
+        });        
     });
 });
 
@@ -202,8 +236,13 @@ Object.values(DB_CONFIG).forEach((config) => {
             const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
 
             for (const query of queries) {
-                if (config.sql_dialect === "pgsql" && query.toLowerCase().startsWith("create index")) {
-                    console.log("Skipping index validation:", query);
+                const queryStr = typeof query === "string" 
+                ? query
+                : "query" in query
+                    ? query.query 
+                : (() => { throw new Error("Unexpected query format"); })();
+                if (config.sql_dialect === "pgsql" && queryStr.toLowerCase().startsWith("create index")) {
+                    console.log("Skipping index validation:", queryStr);
                     continue;
                 }
                 await expect(db.testQuery(query)).resolves.not.toThrow();

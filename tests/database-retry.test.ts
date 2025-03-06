@@ -1,4 +1,5 @@
 import { DB_CONFIG, Database, isValidSingleQuery } from "./utils/testConfig";
+import { QueryInput, QueryWithParams } from "../src/config/types";
 jest.setTimeout(10000);
 
 Object.values(DB_CONFIG).forEach((config) => {
@@ -57,8 +58,11 @@ Object.values(DB_CONFIG).forEach((config) => {
     
         test('Retries transactions with temporary errors and rolls back on failure', async () => {
             let attemptCount = 0;
-            jest.spyOn(db as any, 'executeQuery').mockImplementation(async (query) => {
-                const queryStr = query as string;
+            jest.spyOn(db as any, 'executeQuery').mockImplementation(async (queryOrParams: unknown) => {
+                const queryStr = typeof queryOrParams === "string" 
+                    ? queryOrParams 
+                    : (queryOrParams as QueryWithParams).query;
+            
                 if (queryStr.startsWith("BEGIN") || queryStr.startsWith("COMMIT") || queryStr.startsWith("ROLLBACK")) {
                     return;
                 }
@@ -66,10 +70,9 @@ Object.values(DB_CONFIG).forEach((config) => {
                     attemptCount++;
                     if (attemptCount < 3) {
                         const tempError = new Error("Deadlock");
-                        if(config.sql_dialect == 'mysql') {
-                            (tempError as any).code = "ER_LOCK_DEADLOCK"; // Example MySQL temporary error
-                        }
-                        else if (config.sql_dialect === 'pgsql') {
+                        if (config.sql_dialect === 'mysql') {
+                            (tempError as any).code = "ER_LOCK_DEADLOCK"; // MySQL temporary error
+                        } else if (config.sql_dialect === 'pgsql') {
                             (tempError as any).code = "40P01"; // PostgreSQL deadlock error
                         }
                         throw tempError;
@@ -77,36 +80,41 @@ Object.values(DB_CONFIG).forEach((config) => {
                 }
                 return { affectedRows: 1 };
             });
-    
+            
+        
             const transactionResult = await db.runTransaction([
-                "UPDATE users SET name='Test' WHERE id=1",
-                "UPDATE users SET name='Another' WHERE id=2",
+                { query: "UPDATE users SET name='Test' WHERE id=1" },
+                { query: "UPDATE users SET name='Another' WHERE id=2" },
             ]);
-    
+        
             expect(transactionResult.success).toBe(true);
             expect(attemptCount).toBe(4);
         });
     
         test('Fails transaction immediately on permanent error', async () => {
             let attemptCount = 0;
-            jest.spyOn(db as any, 'executeQuery').mockImplementation(async (query) => {
-                const queryStr = query as string;
+            jest.spyOn(db as any, 'executeQuery').mockImplementation(async (queryOrParams: unknown) => {
+                const queryStr = typeof queryOrParams === "string" 
+                    ? queryOrParams 
+                    : (queryOrParams as QueryWithParams).query;
+            
                 if (queryStr.startsWith("BEGIN") || queryStr.startsWith("COMMIT") || queryStr.startsWith("ROLLBACK")) {
                     return;
                 }
                 if (queryStr.startsWith("UPDATE")) {
                     attemptCount++;
                     const permanentError = new Error("Column not found");
-                    if(config.sql_dialect == 'mysql') {
+            
+                    if (config.sql_dialect === 'mysql') {
                         (permanentError as any).code = "ER_BAD_FIELD_ERROR"; // MySQL permanent error
-                    }
-                    else if (config.sql_dialect === 'pgsql') {
+                    } else if (config.sql_dialect === 'pgsql') {
                         (permanentError as any).code = "42P01"; // PostgreSQL permanent error
                     }
+                    
                     throw permanentError;
                 }
                 return { affectedRows: 1 };
-            });
+            });            
     
             const transactionResult = await db.runTransaction([
                 "UPDATE users SET non_existent_column='Test' WHERE id=1",

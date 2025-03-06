@@ -140,10 +140,11 @@ export abstract class Database {
         }
     }
 
-    createSchemaQuery(schemaName: string): QueryInput {
+    async createSchema(schemaName: string): Promise<Record<string, boolean>> {
         try {
             const QueryInput = this.getCreateSchemaQuery(schemaName);
-            return QueryInput;
+            const result = await this.runQuery(QueryInput);
+            return { success: true };
         } catch (error) {
             throw new Error(`Failed to create schema: ${error}`);
         }
@@ -204,7 +205,7 @@ export abstract class Database {
         }
     }
 
-    async runTransaction(queriesOrStrings: QueryInput[] | string[]): Promise<{ success: boolean; results?: any[]; error?: string }> {
+    async runTransaction(queriesOrStrings: QueryInput[]): Promise<{ success: boolean; results?: any[]; error?: string }> {
         if (!this.connection) {
             await this.establishConnection();
         }
@@ -234,6 +235,7 @@ export abstract class Database {
                 attempts = 0;
                 if (_error) {
                     console.log(`Not running query: ${query}`);
+                    console.log(`Due to error: ${_error}`);
                 }
     
                 while (attempts < maxAttempts && !_error) {

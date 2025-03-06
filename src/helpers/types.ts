@@ -238,7 +238,7 @@ export function collateTypes(types: (string | null)[]): string {
 
         return overallType || "varchar";
     } catch (error) {
-        throw new Error(`Error in collateTypes: ${(error as Error).message}`);
+        throw error
     }
 }
 
@@ -250,6 +250,6 @@ export async function updateColumnType(column: any, dataPoint: string) {
     }
 
     if (detectedType !== column.type) {
-        column.type = await collateTypes([detectedType, column.type]);
+        column.type = collateTypes([detectedType, column.type]);
     }
 }
