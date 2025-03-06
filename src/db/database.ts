@@ -273,18 +273,16 @@ export abstract class Database {
     }
     
 
-    protected abstract getCreateSchemaQuery(schemaName: string): QueryInput;
-    protected abstract getCheckSchemaQuery(schemaName: string | string[]): QueryInput;
-    protected abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[]
-    protected abstract getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[]
-    protected abstract getDropTableQuery(table: string): QueryInput;
-    /*
-    protected abstract getPrimaryKeysQuery(table: string): QueryInput;
-    protected abstract getForeignKeyConstraintsQuery(table: string): QueryInput;
-    protected abstract getViewDependenciesQuery(table: string): QueryInput;
-    protected abstract getDropPrimaryKeyQuery(table: string): QueryInput;
-    protected abstract getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput;
-    */
+    abstract getCreateSchemaQuery(schemaName: string): QueryInput;
+    abstract getCheckSchemaQuery(schemaName: string | string[]): QueryInput;
+    abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[]
+    abstract getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[]
+    abstract getDropTableQuery(table: string): QueryInput;
+    abstract getPrimaryKeysQuery(table: string): QueryInput;
+    abstract getForeignKeyConstraintsQuery(table: string): QueryInput;
+    abstract getViewDependenciesQuery(table: string): QueryInput;
+    abstract getDropPrimaryKeyQuery(table: string): QueryInput;
+    abstract getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput;
 }
 
 import { MySQLDatabase } from "./mysql";

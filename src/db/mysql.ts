@@ -6,6 +6,7 @@ import { mysqlConfig } from "./config/mysql";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
 import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
+import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
 import { QueryInput } from "../config/types";
 const dialectConfig = mysqlConfig
 
@@ -83,14 +84,12 @@ export class MySQLDatabase extends Database {
             if (client) client.release();
         }
     }
-    
 
-
-    protected getCreateSchemaQuery(schemaName: string): QueryInput {
+    getCreateSchemaQuery(schemaName: string): QueryInput {
         return { query: `CREATE SCHEMA IF NOT EXISTS \`${schemaName}\`;` };
     }
 
-    protected getCheckSchemaQuery(schemaName: string | string[]): QueryInput {
+    getCheckSchemaQuery(schemaName: string | string[]): QueryInput {
         if (Array.isArray(schemaName)) {
             return { query: `SELECT ${schemaName
                 .map(
@@ -102,16 +101,35 @@ export class MySQLDatabase extends Database {
         return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS '${schemaName}';`};
     }
 
-    protected getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
         return MySQLTableQueryBuilder.getCreateTableQuery(table, headers);
     }
 
-    protected getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
         return MySQLTableQueryBuilder.getAlterTableQuery(table, oldHeaders, newHeaders);
     }
 
-    protected getDropTableQuery(table: string): QueryInput {
+    getDropTableQuery(table: string): QueryInput {
         return MySQLTableQueryBuilder.getDropTableQuery(table);
     }
-    
+
+    getPrimaryKeysQuery(table: string): QueryInput {
+        return MySQLIndexQueryBuilder.getPrimaryKeysQuery(table);
+    }
+
+    getForeignKeyConstraintsQuery(table: string): QueryInput {
+        return MySQLIndexQueryBuilder.getForeignKeyConstraintsQuery(table);
+    }
+
+    getViewDependenciesQuery(table: string): QueryInput {
+        return MySQLIndexQueryBuilder.getViewDependenciesQuery(table);
+    }
+
+    getDropPrimaryKeyQuery(table: string): QueryInput {
+        return MySQLIndexQueryBuilder.getDropPrimaryKeyQuery(table);
+    }
+
+    getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
+        return MySQLIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys);
+    }
 }

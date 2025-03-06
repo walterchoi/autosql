@@ -6,6 +6,7 @@ import { pgsqlConfig } from "./config/pgsql";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
 import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
+import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
 import { QueryInput } from "../config/types";
 const dialectConfig = pgsqlConfig
 
@@ -95,11 +96,11 @@ export class PostgresDatabase extends Database {
         }
     }    
 
-    protected getCreateSchemaQuery(schemaName: string): QueryInput {
+    getCreateSchemaQuery(schemaName: string): QueryInput {
         return { query: `CREATE SCHEMA IF NOT EXISTS "${schemaName}";`};
     }
 
-    protected getCheckSchemaQuery(schemaName: string | string[]): QueryInput {
+    getCheckSchemaQuery(schemaName: string | string[]): QueryInput {
         if (Array.isArray(schemaName)) {
             return { query: `SELECT ${schemaName
                 .map(
@@ -111,15 +112,35 @@ export class PostgresDatabase extends Database {
         return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS "${schemaName}";`};
     }
 
-    protected getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
             return PostgresTableQueryBuilder.getCreateTableQuery(table, headers);
         }
     
-    protected getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
         return PostgresTableQueryBuilder.getAlterTableQuery(table, oldHeaders, newHeaders);
     }
 
-    protected getDropTableQuery(table: string): QueryInput {
+    getDropTableQuery(table: string): QueryInput {
         return PostgresTableQueryBuilder.getDropTableQuery(table);
-    }    
+    }
+
+    getPrimaryKeysQuery(table: string): QueryInput {
+        return PostgresIndexQueryBuilder.getPrimaryKeysQuery(table);
+    }
+
+    getForeignKeyConstraintsQuery(table: string): QueryInput {
+        return PostgresIndexQueryBuilder.getForeignKeyConstraintsQuery(table);
+    }
+
+    getViewDependenciesQuery(table: string): QueryInput {
+        return PostgresIndexQueryBuilder.getViewDependenciesQuery(table);
+    }
+
+    getDropPrimaryKeyQuery(table: string): QueryInput {
+        return PostgresIndexQueryBuilder.getDropPrimaryKeyQuery(table);
+    }
+
+    getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
+        return PostgresIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys);
+    }
 }
