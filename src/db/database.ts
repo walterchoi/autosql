@@ -1,7 +1,7 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './utils/validateQuery';
-import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition } from '../config/types';
+import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges } from '../config/types';
 
 // Abstract database class to define common methods.
 export abstract class Database {
@@ -263,7 +263,7 @@ export abstract class Database {
     abstract getCreateSchemaQuery(schemaName: string): QueryInput;
     abstract getCheckSchemaQuery(schemaName: string | string[]): QueryInput;
     abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[]
-    abstract getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[]
+    abstract getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): QueryInput[];
     abstract getDropTableQuery(table: string): QueryInput;
     abstract getPrimaryKeysQuery(table: string): QueryInput;
     abstract getForeignKeyConstraintsQuery(table: string): QueryInput;

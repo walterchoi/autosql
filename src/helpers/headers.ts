@@ -1,5 +1,5 @@
 import { initializeMetaData } from './metadata';
-import { DialectConfig, MetadataHeader, ColumnDefinition } from '../config/types';
+import { DialectConfig, MetadataHeader, ColumnDefinition, AlterTableChanges } from '../config/types';
 import { collateTypes } from './types';
 import { parseDatabaseLength, mergeColumnLengths } from './utilities';
 
@@ -39,20 +39,51 @@ export function initializeHeaders(validatedConfig: any, data: Record<string, any
     return headers;
 }
 
-export function compareHeaders(oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[], dialectConfig?: DialectConfig): 
-{ addColumns: { [column: string]: ColumnDefinition }[], modifyColumns: { [column: string]: ColumnDefinition }[] } {
+export function compareHeaders(oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[], dialectConfig?: DialectConfig): AlterTableChanges {
     
     const addColumns: { [column: string]: ColumnDefinition }[] = [];
     const modifyColumns: { [column: string]: ColumnDefinition }[] = [];
+    const dropColumns: string[] = [];
+    const renameColumns: { oldName: string; newName: string }[] = [];
+    const nullableColumns: string[] = [];
+    const noLongerUnique: string[] = [];
 
     const oldMap = new Map<string, ColumnDefinition>(
         oldHeaders.map(header => [Object.keys(header)[0], header[Object.keys(header)[0]]])
     );
 
-    for (const newHeader of newHeaders) {
-        const columnName = Object.keys(newHeader)[0];
-        const newColumn = newHeader[columnName];
+    const newMap = new Map<string, ColumnDefinition>(
+        newHeaders.map(header => [Object.keys(header)[0], header[Object.keys(header)[0]]])
+    );
 
+    // ✅ Identify removed columns
+    for (const oldColumnName of oldMap.keys()) {
+        if (!newMap.has(oldColumnName)) {
+            dropColumns.push(oldColumnName);
+        }
+    }
+
+    // ✅ Identify renamed columns
+    for (const oldColumnName of oldMap.keys()) {
+        for (const newColumnName of newMap.keys()) {
+            const oldColumn = oldMap.get(oldColumnName);
+            const newColumn = newMap.get(newColumnName);
+
+            // ✅ A rename is detected if:
+            // - The columns do not share the same name
+            // - The type and properties are identical
+            if (oldColumnName !== newColumnName && oldColumn && newColumn && JSON.stringify(oldColumn) === JSON.stringify(newColumn)) {
+                renameColumns.push({ oldName: oldColumnName, newName: newColumnName });
+
+                // ✅ Remove renamed columns from dropColumns and addColumns lists
+                dropColumns.splice(dropColumns.indexOf(oldColumnName), 1);
+                newMap.delete(newColumnName);
+            }
+        }
+    }
+
+    // ✅ Identify added & modified columns
+    for (const [columnName, newColumn] of newMap.entries()) {
         if (!oldMap.has(columnName)) {
             // New column - needs to be added
             addColumns.push({ [columnName]: newColumn });
@@ -73,16 +104,17 @@ export function compareHeaders(oldHeaders: { [column: string]: ColumnDefinition 
                 modified = true;
             }
 
+            // ✅ Merge column lengths safely
+            const oldLength = oldColumn.length ?? 0;
+            const newLength = newColumn.length ?? 0;
+            const oldDecimal = oldColumn.decimal ?? 0;
+            const newDecimal = newColumn.decimal ?? 0;
+            
             // ✅ Remove `length` if the new type is in `no_length`
             if (dialectConfig?.no_length.includes(modifiedColumn.type || newColumn.type || oldColumn.type || "varchar")) {
                 delete modifiedColumn.length;
                 delete modifiedColumn.decimal;
             } else {
-                // ✅ Merge column lengths safely
-                const oldLength = oldColumn.length ?? 0;
-                const newLength = newColumn.length ?? 0;
-                const oldDecimal = oldColumn.decimal ?? 0;
-                const newDecimal = newColumn.decimal ?? 0;
 
                 if (dialectConfig?.decimals.includes(modifiedColumn.type || newColumn.type || oldColumn.type || "varchar")) {
                     // ✅ If type supports decimals, merge decimal values correctly
@@ -104,7 +136,13 @@ export function compareHeaders(oldHeaders: { [column: string]: ColumnDefinition 
             // ✅ Allow `NOT NULL` to `NULL`, but not vice versa
             if (newColumn.allowNull && !oldColumn.allowNull) {
                 modifiedColumn.allowNull = true;
+                nullableColumns.push(columnName);
                 modified = true;
+            }
+
+            // ✅ Remove unique constraint if it's no longer unique
+            if (oldColumn.unique && !newColumn.unique) {
+                noLongerUnique.push(columnName);
             }
 
             // ✅ Ensure a type is set
@@ -133,5 +171,5 @@ export function compareHeaders(oldHeaders: { [column: string]: ColumnDefinition 
         }
     }
 
-    return { addColumns, modifyColumns };
+    return { addColumns, modifyColumns, dropColumns, renameColumns, nullableColumns, noLongerUnique };
 }

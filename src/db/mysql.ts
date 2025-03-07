@@ -1,7 +1,7 @@
 import mysql, { Pool, PoolConnection } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { QueryInput, ColumnDefinition, DatabaseConfig } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges } from "../config/types";
 import { mysqlConfig } from "./config/mysql";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
@@ -104,8 +104,16 @@ export class MySQLDatabase extends Database {
         return MySQLTableQueryBuilder.getCreateTableQuery(table, headers);
     }
 
-    getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
-        return MySQLTableQueryBuilder.getAlterTableQuery(table, oldHeaders, newHeaders);
+    getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+        let alterTableChanges: AlterTableChanges;
+        if (Array.isArray(alterTableChangesOrOldHeaders) && newHeaders) {
+            alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders);
+        } else if (Array.isArray(alterTableChangesOrOldHeaders)) {
+            throw new Error("Missing new headers for ALTER TABLE query");
+        } else {
+            alterTableChanges = alterTableChangesOrOldHeaders;
+        }
+        return MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges);
     }
 
     getDropTableQuery(table: string): QueryInput {

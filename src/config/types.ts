@@ -1,11 +1,13 @@
 export type MetadataHeader = Record<string, ColumnDefinition>;
 
 export interface AlterTableChanges {
-    addColumns: { [column: string]: ColumnDefinition }[];
-    modifyColumns: { [column: string]: ColumnDefinition }[];
-    dropColumns: string[];
-    renameColumns: { oldName: string; newName: string }[];
-  }
+  addColumns: { [column: string]: ColumnDefinition }[];
+  modifyColumns: { [column: string]: ColumnDefinition }[];
+  dropColumns: string[];
+  renameColumns: { oldName: string; newName: string }[];
+  nullableColumns: string[];
+  noLongerUnique: string[];
+}
   
 export interface DatabaseConfig {
       sql_dialect: string;

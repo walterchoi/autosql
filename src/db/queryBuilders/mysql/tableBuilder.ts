@@ -1,4 +1,4 @@
-import { ColumnDefinition, QueryInput } from "../../../config/types";
+import { ColumnDefinition, QueryInput, AlterTableChanges } from "../../../config/types";
 import { mysqlConfig } from "../../config/mysql";
 import { compareHeaders } from '../../../helpers/headers';
 const dialectConfig = mysqlConfig
@@ -70,15 +70,22 @@ export class MySQLTableQueryBuilder {
         return sqlQueries;
     }
 
-    static getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    static getAlterTableQuery(table: string, changes: AlterTableChanges): QueryInput[] {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
-        // ✅ Get changes using compareHeaders()
-        const { addColumns, modifyColumns } = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+        // ✅ Handle `DROP COLUMN`
+        changes.dropColumns.forEach(columnName => {
+            alterStatements.push(`DROP COLUMN \`${columnName}\``);
+        });
+    
+        // ✅ Handle `RENAME COLUMN`
+        changes.renameColumns.forEach(({ oldName, newName }) => {
+            alterStatements.push(`CHANGE COLUMN \`${oldName}\` \`${newName}\` varchar(255) NOT NULL`); // Default type assumption
+        });
     
         // ✅ Handle `ADD COLUMN`
-        addColumns.forEach(columnObj => {
+        changes.addColumns.forEach(columnObj => {
             const columnName = Object.keys(columnObj)[0];
             const column = columnObj[columnName];
     
@@ -92,28 +99,50 @@ export class MySQLTableQueryBuilder {
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         });
     
-        // ✅ Handle `MODIFY COLUMN`
-        modifyColumns.forEach(columnObj => {
+        // ✅ Handle `MODIFY COLUMN` - Include `NULL` conditionally
+        changes.modifyColumns.forEach(columnObj => {
             const columnName = Object.keys(columnObj)[0];
             const column = columnObj[columnName];
-    
+
             let columnDef = `\`${columnName}\` ${column.type}`;
             if (column.length && !dialectConfig.no_length.includes(column.type || "")) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
-            if (!column.allowNull) columnDef += " NOT NULL";
-            if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
-    
+            
+            // ✅ Apply NULL or NOT NULL depending on whether the column is in nullableColumns
+            if (changes.nullableColumns.includes(columnName)) {
+                columnDef += " NULL";
+            } else if (!column.allowNull) {
+                columnDef += " NOT NULL";
+            }
+
+            if (column.default !== undefined) {
+                columnDef += ` DEFAULT '${column.default}'`;
+            }
+
             alterStatements.push(`MODIFY COLUMN ${columnDef}`);
+        });
+
+        // ✅ Handle standalone `NULLABLE COLUMNS` not in modifyColumns
+        changes.nullableColumns.forEach(columnName => {
+            if (!changes.modifyColumns.some(col => Object.keys(col)[0] === columnName)) {
+                alterStatements.push(`MODIFY COLUMN \`${columnName}\` DROP NOT NULL`);
+            }
+        });
+    
+        // ✅ Handle `REMOVE UNIQUE CONSTRAINT`
+        changes.noLongerUnique.forEach(columnName => {
+            alterStatements.push(`DROP INDEX \`${columnName}_unique\``);
         });
     
         // ✅ Combine all `ALTER TABLE` statements
         if (alterStatements.length > 0) {
-            queries.push({query: `ALTER TABLE \`${table}\` ${alterStatements.join(", ")};`, params: []});
+            queries.push({ query: `ALTER TABLE \`${table}\` ${alterStatements.join(", ")};`, params: [] });
         }
     
         return queries;
     }
+    
 
     static getDropTableQuery(table: string): QueryInput {
         return {query: `DROP TABLE IF EXISTS \`${table}\`;`, params: []};

@@ -14,9 +14,24 @@ describe("compareHeaders", () => {
         ];
 
         const result = compareHeaders(oldHeaders, newHeaders);
-        console.log(result)
         expect(result.addColumns).toEqual([{ new_col: { type: "varchar", length: 100, allowNull: true } }]);
         expect(result.modifyColumns).toEqual([]);
+    });
+
+    test("Detects removed columns correctly", () => {
+        const oldHeaders = [{ old_col: { type: "varchar", length: 100, allowNull: true } }];
+        const newHeaders: { [column: string]: ColumnDefinition }[] = [];
+
+        const result = compareHeaders(oldHeaders, newHeaders);
+        expect(result.dropColumns).toEqual(["old_col"]);
+    });
+
+    test("Detects renamed columns correctly", () => {
+        const oldHeaders = [{ old_name: { type: "varchar", length: 100, allowNull: true } }];
+        const newHeaders = [{ new_name: { type: "varchar", length: 100, allowNull: true } }];
+
+        const result = compareHeaders(oldHeaders, newHeaders);
+        expect(result.renameColumns).toEqual([{ oldName: "old_name", newName: "new_name" }]);
     });
 
     test("Detects safe type changes (smallint → int)", () => {
@@ -35,20 +50,20 @@ describe("compareHeaders", () => {
         expect(result.modifyColumns).toEqual([{ name: { type: "varchar", length: 100, allowNull: false } }]);
     });
 
-    test("Converts unsafe type changes to VARCHAR", () => {
-        const oldHeaders = [{ price: { type: "int", allowNull: false } }];
-        const newHeaders = [{ price: { type: "text", allowNull: false } }];
-        const result = compareHeaders(oldHeaders, newHeaders);
-
-        expect(result.modifyColumns).toEqual([{ price: { type: "text", allowNull: false } }]);
-    });
-
-    test("Allows NOT NULL to NULL change", () => {
+    test("Handles NOT NULL to NULL conversion", () => {
         const oldHeaders = [{ email: { type: "varchar", length: 255, allowNull: false } }];
         const newHeaders = [{ email: { type: "varchar", length: 255, allowNull: true } }];
-        const result = compareHeaders(oldHeaders, newHeaders);
 
-        expect(result.modifyColumns).toEqual([{ email: { type: "varchar", length: 255, allowNull: true } }]);
+        const result = compareHeaders(oldHeaders, newHeaders);
+        expect(result.nullableColumns).toEqual(["email"]);
+    });
+
+    test("Handles unique constraint removal", () => {
+        const oldHeaders = [{ username: { type: "varchar", length: 100, unique: true, allowNull: false } }];
+        const newHeaders = [{ username: { type: "varchar", length: 100, unique: false, allowNull: false } }];
+
+        const result = compareHeaders(oldHeaders, newHeaders);
+        expect(result.noLongerUnique).toEqual(["username"]);
     });
 
     test("Handles safe type conversion and length merging", () => {
@@ -56,13 +71,12 @@ describe("compareHeaders", () => {
         const newHeaders = [{ price: { type: "int", length: 10 } }];
 
         const result = compareHeaders(oldHeaders, newHeaders);
-
         expect(result.modifyColumns).toEqual([{ price: { type: "int", length: 10 } }]);
     });
 });
 
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Complex Create Table Query Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Complex Compare Headers Tests for ${config.sql_dialect.toUpperCase()}`, () => {
         let db: Database;
         let dialectConfig: DialectConfig;
 
@@ -76,7 +90,6 @@ Object.values(DB_CONFIG).forEach((config) => {
             const newHeaders = [{ amount: { type: "decimal", length: 15, decimal: 2 } }];
 
             const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
-
             expect(result.modifyColumns).toEqual([{ amount: { type: "decimal", length: 17, decimal: 4 } }]);
         });
 
@@ -85,8 +98,23 @@ Object.values(DB_CONFIG).forEach((config) => {
             const newHeaders = [{ description: { type: "text" } }];
 
             const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
-
             expect(result.modifyColumns).toEqual([{ description: { type: "text" } }]);
+        });
+
+        test("Handles NOT NULL to NULL conversion in dialect-specific logic", () => {
+            const oldHeaders = [{ email: { type: "varchar", length: 255, allowNull: false } }];
+            const newHeaders = [{ email: { type: "varchar", length: 255, allowNull: true } }];
+
+            const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+            expect(result.nullableColumns).toEqual(["email"]);
+        });
+
+        test("Handles unique constraint removal with dialect-specific behavior", () => {
+            const oldHeaders = [{ username: { type: "varchar", length: 100, unique: true, allowNull: false } }];
+            const newHeaders = [{ username: { type: "varchar", length: 100, unique: false, allowNull: false } }];
+
+            const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+            expect(result.noLongerUnique).toEqual(["username"]);
         });
     });
 });

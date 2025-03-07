@@ -1,4 +1,4 @@
-import { ColumnDefinition, QueryInput } from "../../../config/types";
+import { ColumnDefinition, QueryInput, AlterTableChanges } from "../../../config/types";
 import { pgsqlConfig } from "../../config/pgsql";
 import { compareHeaders } from '../../../helpers/headers';
 const dialectConfig = pgsqlConfig
@@ -64,40 +64,49 @@ export class PostgresTableQueryBuilder {
     
         return sqlQueries;
     }    
-    
-    static getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    // ✅ Get changes using compareHeaders()
+    //const { addColumns, modifyColumns } = compareHeaders(oldHeaders, newHeaders, pgsqlConfig);
+
+    static getAlterTableQuery(table: string, changes: AlterTableChanges): QueryInput[] {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
-        // ✅ Get changes using compareHeaders()
-        const { addColumns, modifyColumns } = compareHeaders(oldHeaders, newHeaders, pgsqlConfig);
-
+        // ✅ Handle `DROP COLUMN`
+        changes.dropColumns.forEach(columnName => {
+            alterStatements.push(`DROP COLUMN "${columnName}"`);
+        });
+    
+        // ✅ Handle `RENAME COLUMN`
+        changes.renameColumns.forEach(({ oldName, newName }) => {
+            alterStatements.push(`RENAME COLUMN "${oldName}" TO "${newName}"`);
+        });
+    
         // ✅ Handle `ADD COLUMN`
-        addColumns.forEach(columnObj => {
+        changes.addColumns.forEach(columnObj => {
             const columnName = Object.keys(columnObj)[0];
             const column = columnObj[columnName];
-
+    
             let columnDef = `"${columnName}" ${column.type}`;
             if (column.length && !pgsqlConfig.no_length.includes(column.type ?? "")) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
-
+    
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         });
-
-        // ✅ Handle `ALTER COLUMN` - Consolidating all modifications per column
+    
+        // ✅ Handle `ALTER COLUMN` - Consolidate changes per column
         const alterColumnMap: { [key: string]: string[] } = {};
-
-        modifyColumns.forEach(columnObj => {
+    
+        changes.modifyColumns.forEach(columnObj => {
             const columnName = Object.keys(columnObj)[0];
             const column = columnObj[columnName];
-
+    
             if (!alterColumnMap[columnName]) {
                 alterColumnMap[columnName] = [];
             }
-
+    
             if (column.type) {
                 let columnDef = `SET DATA TYPE ${column.type}`;
                 if (column.length && !pgsqlConfig.no_length.includes(column.type ?? "")) {
@@ -105,27 +114,39 @@ export class PostgresTableQueryBuilder {
                 }
                 alterColumnMap[columnName].push(columnDef);
             }
-            if (column.allowNull) {
+            if (column.allowNull || changes.nullableColumns.includes(columnName)) {
                 alterColumnMap[columnName].push(`DROP NOT NULL`);
             }
             if (column.default !== undefined) {
                 alterColumnMap[columnName].push(`SET DEFAULT '${column.default}'`);
             }
         });
-
+    
         // ✅ Generate consolidated `ALTER COLUMN` statements
         Object.keys(alterColumnMap).forEach(columnName => {
             const changes = alterColumnMap[columnName].join(", ");
             alterStatements.push(`ALTER COLUMN "${columnName}" ${changes}`);
         });
-
+    
+        // ✅ Handle `NULLABLE COLUMNS` separately (if not already modified)
+        changes.nullableColumns.forEach(columnName => {
+            if (!alterColumnMap[columnName]) {
+                alterStatements.push(`ALTER COLUMN "${columnName}" DROP NOT NULL`);
+            }
+        });
+    
+        // ✅ Handle `REMOVE UNIQUE CONSTRAINT`
+        changes.noLongerUnique.forEach(columnName => {
+            alterStatements.push(`DROP INDEX IF EXISTS "${columnName}_unique"`);
+        });
+    
         // ✅ Combine all `ALTER TABLE` statements
         if (alterStatements.length > 0) {
-            queries.push({ query: `ALTER TABLE "${table}" ${alterStatements.join(", ")};`, params: []});
+            queries.push({ query: `ALTER TABLE "${table}" ${alterStatements.join(", ")};`, params: [] });
         }
-
+    
         return queries;
-    }
+    }    
 
     static getDropTableQuery(table: string): QueryInput {
         return { query: `DROP TABLE IF EXISTS "${table}";`, params: []};

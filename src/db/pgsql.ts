@@ -1,7 +1,7 @@
 import { Pool, PoolClient } from "pg";
 import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
-import { QueryInput, ColumnDefinition, DatabaseConfig } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges } from "../config/types";
 import { pgsqlConfig } from "./config/pgsql";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
@@ -115,8 +115,16 @@ export class PostgresDatabase extends Database {
             return PostgresTableQueryBuilder.getCreateTableQuery(table, headers);
         }
     
-    getAlterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
-        return PostgresTableQueryBuilder.getAlterTableQuery(table, oldHeaders, newHeaders);
+    getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+        let alterTableChanges: AlterTableChanges;
+        if (Array.isArray(alterTableChangesOrOldHeaders) && newHeaders) {
+            alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders);
+        } else if (Array.isArray(alterTableChangesOrOldHeaders)) {
+            throw new Error("Missing new headers for ALTER TABLE query");
+        } else {
+            alterTableChanges = alterTableChangesOrOldHeaders;
+        }
+        return PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges);
     }
 
     getDropTableQuery(table: string): QueryInput {
