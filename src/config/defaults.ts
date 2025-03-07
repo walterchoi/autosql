@@ -24,11 +24,9 @@ export const defaults = {
         "split_table_columns",
         "id_columns_for_split"
     ],
-
     "locale": "en-US",
     "timezone": "UTC",
     "convert_timezone": false,
-
     "delete_columns": false,
     "wait_for_approval": false
 }

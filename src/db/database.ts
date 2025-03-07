@@ -1,19 +1,7 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './utils/validateQuery';
-import { ColumnDefinition } from '../config/types';
-import { QueryInput } from '../config/types';
-
-export interface DatabaseConfig {
-    sql_dialect: string;
-    host?: string;
-    user?: string;
-    password?: string;
-    database?: string;
-    port?: number;
-    table?: string;
-    headers?: ColumnDefinition[]
-}
+import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition } from '../config/types';
 
 // Abstract database class to define common methods.
 export abstract class Database {
@@ -272,7 +260,6 @@ export abstract class Database {
         }
     }
     
-
     abstract getCreateSchemaQuery(schemaName: string): QueryInput;
     abstract getCheckSchemaQuery(schemaName: string | string[]): QueryInput;
     abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[]
@@ -287,6 +274,5 @@ export abstract class Database {
 
 import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
-import { DialectConfig } from "./config/interfaces";
 
 export { MySQLDatabase, PostgresDatabase };

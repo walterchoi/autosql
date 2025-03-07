@@ -1,4 +1,4 @@
-import { TranslateMap, DialectConfig } from "./interfaces"
+import { TranslateMap, DialectConfig } from "../../config/types";
 
 export const pgsqlConfig: DialectConfig = {
   require_length: ["varchar"],

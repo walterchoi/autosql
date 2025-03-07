@@ -1,13 +1,12 @@
 import { Pool, PoolClient } from "pg";
-import { Database, DatabaseConfig } from "./database";
+import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
-import { ColumnDefinition } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig } from "../config/types";
 import { pgsqlConfig } from "./config/pgsql";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
 import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
 import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
-import { QueryInput } from "../config/types";
 const dialectConfig = pgsqlConfig
 
 export class PostgresDatabase extends Database {

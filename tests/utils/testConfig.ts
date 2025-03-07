@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
-import { DatabaseConfig, Database } from "../../src/db/database";
+import { Database } from "../../src/db/database";
+import { DatabaseConfig } from "../../src/config/types";
 import { isValidSingleQuery } from "../../src/db/utils/validateQuery";
 
 const CONFIG_PATH = path.resolve(__dirname, "../../src/config/config.local.json");
@@ -14,7 +15,8 @@ export const DB_CONFIG: Record<string, DatabaseConfig> = fs.existsSync(CONFIG_PA
               user: "root",
               password: "root",
               database: "mysql",
-              port: 3306
+              port: 3306,
+              updatePrimaryKey: true
           },
           pgsql: {
               sql_dialect: "pgsql",
@@ -22,7 +24,8 @@ export const DB_CONFIG: Record<string, DatabaseConfig> = fs.existsSync(CONFIG_PA
               user: "test_user",
               password: "test_password",
               database: "postgres",
-              port: 5432
+              port: 5432,
+              updatePrimaryKey: true
           }
       };
 

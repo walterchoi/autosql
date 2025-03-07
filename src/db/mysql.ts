@@ -1,13 +1,12 @@
 import mysql, { Pool, PoolConnection } from "mysql2/promise";
-import { Database, DatabaseConfig } from "./database";
+import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { ColumnDefinition } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig } from "../config/types";
 import { mysqlConfig } from "./config/mysql";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
 import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
 import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
-import { QueryInput } from "../config/types";
 const dialectConfig = mysqlConfig
 
 export class MySQLDatabase extends Database {

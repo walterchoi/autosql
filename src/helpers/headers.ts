@@ -1,7 +1,6 @@
 import { initializeMetaData } from './metadata';
-import { MetadataHeader, ColumnDefinition } from '../config/types';
+import { DialectConfig, MetadataHeader, ColumnDefinition } from '../config/types';
 import { collateTypes } from './types';
-import { DialectConfig } from '../db/config/interfaces';
 import { parseDatabaseLength, mergeColumnLengths } from './utilities';
 
 export function getHeaders(data: Record<string, any>[]): string[] {

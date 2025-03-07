@@ -1,7 +1,6 @@
-import { ColumnDefinition } from "../../../config/types";
+import { ColumnDefinition, QueryInput } from "../../../config/types";
 import { pgsqlConfig } from "../../config/pgsql";
 import { compareHeaders } from '../../../helpers/headers';
-import { QueryInput } from "../../../config/types";
 const dialectConfig = pgsqlConfig
 
 export class PostgresTableQueryBuilder {

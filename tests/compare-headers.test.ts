@@ -1,7 +1,6 @@
 import { compareHeaders } from "../src/helpers/headers";
-import { ColumnDefinition } from "../src/config/types";
+import { DialectConfig, ColumnDefinition } from "../src/config/types";
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { DialectConfig } from "../src/db/config/interfaces";
 
 describe("compareHeaders", () => {
     test("Detects new columns correctly", () => {
