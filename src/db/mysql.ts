@@ -139,4 +139,8 @@ export class MySQLDatabase extends Database {
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
         return MySQLIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys);
     }
+
+    getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
+        return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name);
+    }
 }

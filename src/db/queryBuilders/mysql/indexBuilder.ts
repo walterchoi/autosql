@@ -48,4 +48,25 @@ export class MySQLIndexQueryBuilder {
             params: []
         };
     }
+
+    static getUniqueIndexesQuery(table: string, columnName?: string): QueryInput {
+        let query = `
+            SELECT DISTINCT index_name, GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns
+            FROM information_schema.statistics
+            WHERE table_schema = DATABASE() 
+            AND table_name = ?
+            AND non_unique = 0
+        `;
+        
+        const params = [table];
+    
+        if (columnName) {
+            query += " AND column_name = ?";
+            params.push(columnName);
+        }
+    
+        query += " GROUP BY index_name;";
+    
+        return { query, params };
+    }    
 }

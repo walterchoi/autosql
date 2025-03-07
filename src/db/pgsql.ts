@@ -150,4 +150,8 @@ export class PostgresDatabase extends Database {
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
         return PostgresIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys);
     }
+
+    getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
+        return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name);
+    }
 }

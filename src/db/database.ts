@@ -270,6 +270,7 @@ export abstract class Database {
     abstract getViewDependenciesQuery(table: string): QueryInput;
     abstract getDropPrimaryKeyQuery(table: string): QueryInput;
     abstract getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput;
+    abstract getUniqueIndexesQuery(table: string, column_name?: string): QueryInput;
 }
 
 import { MySQLDatabase } from "./mysql";

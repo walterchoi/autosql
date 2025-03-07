@@ -49,4 +49,27 @@ export class PostgresIndexQueryBuilder {
             params: []
         };
     }
+
+    static getUniqueIndexesQuery(table: string, columnName?: string): QueryInput {
+        let query = `
+            SELECT i.relname AS indexname, array_to_string(array_agg(a.attname), ', ') AS columns
+            FROM pg_index ix
+            JOIN pg_class i ON i.oid = ix.indexrelid
+            JOIN pg_class t ON t.oid = ix.indrelid
+            JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+            WHERE t.relname = $1
+            AND ix.indisunique = true
+        `;
+        
+        const params = [table];
+    
+        if (columnName) {
+            query += " AND a.attname = $2";
+            params.push(columnName);
+        }
+    
+        query += " GROUP BY i.relname;";
+    
+        return { query, params };
+    }    
 }
