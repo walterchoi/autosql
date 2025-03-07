@@ -146,12 +146,12 @@ export abstract class Database {
         return this.getCreateTableQuery(table, headers);
     }
 
-    alterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    async alterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): Promise<QueryInput[]> {
         if (!table || !oldHeaders || !newHeaders) {
             throw new Error("Invalid table configuration: table name and headers are required.");
         }
     
-        return this.getAlterTableQuery(table, oldHeaders, newHeaders);
+        return await this.getAlterTableQuery(table, oldHeaders, newHeaders);
     }
 
     dropTableQuery(table: string): QueryInput {
@@ -263,7 +263,7 @@ export abstract class Database {
     abstract getCreateSchemaQuery(schemaName: string): QueryInput;
     abstract getCheckSchemaQuery(schemaName: string | string[]): QueryInput;
     abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[]
-    abstract getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): QueryInput[];
+    abstract getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): Promise<QueryInput[]>;
     abstract getDropTableQuery(table: string): QueryInput;
     abstract getPrimaryKeysQuery(table: string): QueryInput;
     abstract getForeignKeyConstraintsQuery(table: string): QueryInput;

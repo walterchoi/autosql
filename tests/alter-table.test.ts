@@ -23,7 +23,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         });
 
         test("Generate valid ALTER TABLE queries", async () => {
-            const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
+            const queries = await db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
 
             expect(Array.isArray(queries)).toBe(true);
             expect(queries.length).toBeGreaterThan(0);
@@ -40,7 +40,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         });
 
         test("Ensure table modification contains all changes", async () => {
-            const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
+            const queries = await db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
             const firstQuery = queries[0];
             const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
@@ -55,7 +55,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
         if (config.sql_dialect === "mysql") {
             test("Check MySQL-specific query format", async () => {
-                const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
+                const queries = await db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
                 const firstQuery = queries[0];
                 const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
@@ -64,7 +64,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             });
         } else if (config.sql_dialect === "pgsql") {
             test("Check PostgreSQL-specific query format", async () => {
-                const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
+                const queries = await db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
                 const firstQuery = queries[0];
                 const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
@@ -96,7 +96,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         });
 
         test('Valid queries pass testQuery without errors', async () => {
-            const queries = db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
+            const queries = await db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
 
             for (const query of queries) {
                 await expect(db.testQuery(query)).resolves.not.toThrow();

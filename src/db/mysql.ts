@@ -104,7 +104,7 @@ export class MySQLDatabase extends Database {
         return MySQLTableQueryBuilder.getCreateTableQuery(table, headers);
     }
 
-    getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
         if (Array.isArray(alterTableChangesOrOldHeaders) && newHeaders) {
             alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders);
@@ -113,7 +113,19 @@ export class MySQLDatabase extends Database {
         } else {
             alterTableChanges = alterTableChangesOrOldHeaders;
         }
-        return MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges);
+        let indexesToDrop: string[] = [];
+        if (alterTableChanges.noLongerUnique.length > 0) {
+            const uniqueIndexes = await this.runQuery(this.getUniqueIndexesQuery(table)) as { indexname: string; columns: string }[];
+    
+            indexesToDrop = uniqueIndexes
+                .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
+                .map(({ indexname }) => `DROP INDEX \`${indexname}\``);
+        }
+        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges);
+        if (indexesToDrop.length > 0) {
+            alterQueries.unshift({ query: `ALTER TABLE \`${table}\` ${indexesToDrop.join(", ")};`, params: [] });
+        }
+        return alterQueries;
     }
 
     getDropTableQuery(table: string): QueryInput {

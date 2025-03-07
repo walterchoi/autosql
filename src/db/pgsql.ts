@@ -115,7 +115,7 @@ export class PostgresDatabase extends Database {
             return PostgresTableQueryBuilder.getCreateTableQuery(table, headers);
         }
     
-    getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
         if (Array.isArray(alterTableChangesOrOldHeaders) && newHeaders) {
             alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders);
@@ -124,7 +124,26 @@ export class PostgresDatabase extends Database {
         } else {
             alterTableChanges = alterTableChangesOrOldHeaders;
         }
-        return PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges);
+        let indexesToDrop: string[] = [];
+
+        // ✅ Only fetch unique indexes if there are columns to remove uniqueness from
+        if (alterTableChanges.noLongerUnique.length > 0) {
+            const uniqueIndexes = await this.runQuery(this.getUniqueIndexesQuery(table)) as { indexname: string; columns: string }[];
+
+            indexesToDrop = uniqueIndexes
+                .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
+                .map(({ indexname }) => `DROP INDEX IF EXISTS "${indexname}"`);
+        }
+
+        // ✅ Get actual ALTER TABLE queries
+        const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges);
+
+        // ✅ Append DROP INDEX statements if needed
+        if (indexesToDrop.length > 0) {
+            alterQueries.unshift({ query: `ALTER TABLE "${table}" ${indexesToDrop.join(", ")};`, params: [] });
+        }
+
+        return alterQueries;
     }
 
     getDropTableQuery(table: string): QueryInput {
