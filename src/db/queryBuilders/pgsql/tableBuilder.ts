@@ -1,5 +1,5 @@
 import { ColumnDefinition, QueryInput, AlterTableChanges } from "../../../config/types";
-import { pgsqlConfig } from "../../config/pgsql";
+import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { compareHeaders } from '../../../helpers/headers';
 const dialectConfig = pgsqlConfig
 

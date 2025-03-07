@@ -2,7 +2,7 @@ import mysql, { Pool, PoolConnection } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
 import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges } from "../config/types";
-import { mysqlConfig } from "./config/mysql";
+import { mysqlConfig } from "./config/mysqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
 import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";

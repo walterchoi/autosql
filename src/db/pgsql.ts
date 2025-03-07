@@ -2,7 +2,7 @@ import { Pool, PoolClient } from "pg";
 import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
 import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges } from "../config/types";
-import { pgsqlConfig } from "./config/pgsql";
+import { pgsqlConfig } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
 import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";

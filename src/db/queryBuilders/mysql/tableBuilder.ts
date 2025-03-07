@@ -1,5 +1,5 @@
 import { ColumnDefinition, QueryInput, AlterTableChanges } from "../../../config/types";
-import { mysqlConfig } from "../../config/mysql";
+import { mysqlConfig } from "../../config/mysqlConfig";
 import { compareHeaders } from '../../../helpers/headers';
 const dialectConfig = mysqlConfig
 
