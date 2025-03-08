@@ -135,11 +135,6 @@ export class PostgresTableQueryBuilder {
             }
         });
     
-        // ✅ Handle `REMOVE UNIQUE CONSTRAINT`
-        changes.noLongerUnique.forEach(columnName => {
-            alterStatements.push(`DROP INDEX IF EXISTS "${columnName}_unique"`);
-        });
-    
         // ✅ Combine all `ALTER TABLE` statements
         if (alterStatements.length > 0) {
             queries.push({ query: `ALTER TABLE "${table}" ${alterStatements.join(", ")};`, params: [] });
