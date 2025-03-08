@@ -1,10 +1,10 @@
-import { ColumnDefinition, QueryInput, AlterTableChanges } from "../../../config/types";
+import { ColumnDefinition, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { compareHeaders } from '../../../helpers/headers';
 const dialectConfig = pgsqlConfig
 
 export class PostgresTableQueryBuilder {
-    static getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    static getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[], databaseConfig?: DatabaseConfig): QueryInput[] {
         let sqlQueries: QueryInput[] = [];
         let sqlQuery = `CREATE TABLE IF NOT EXISTS "${table}" (\n`;
         let primaryKeys: string[] = [];

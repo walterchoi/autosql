@@ -1,6 +1,10 @@
 import { TranslateMap, DialectConfig } from "../../config/types";
 
 export const pgsqlConfig: DialectConfig = {
+  encoding: "UTF8",
+  collate: "en_US.UTF-8",
+  engine: "",
+  charset: "",
   require_length: ["varchar"],
   optional_length: ["int", "bigint"],
   no_length: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "boolean"],

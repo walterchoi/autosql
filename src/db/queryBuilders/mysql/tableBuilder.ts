@@ -1,10 +1,10 @@
-import { ColumnDefinition, QueryInput, AlterTableChanges } from "../../../config/types";
+import { ColumnDefinition, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { mysqlConfig } from "../../config/mysqlConfig";
 import { compareHeaders } from '../../../helpers/headers';
 const dialectConfig = mysqlConfig
 
 export class MySQLTableQueryBuilder {
-    static getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    static getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[], databaseConfig?: DatabaseConfig): QueryInput[] {
         let sqlQueries: QueryInput[] = [];
         let sqlQuery = `CREATE TABLE IF NOT EXISTS \`${table}\` (\n`;
         let primaryKeys: string[] = [];
@@ -59,7 +59,10 @@ export class MySQLTableQueryBuilder {
         if (primaryKeys.length) sqlQuery += `PRIMARY KEY (${primaryKeys.join(", ")}),\n`;
         if (uniqueKeys.length) sqlQuery += `${uniqueKeys.map((key) => `UNIQUE(${key})`).join(", ")},\n`;
     
-        sqlQuery = sqlQuery.slice(0, -2) + "\n) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;";
+        sqlQuery = sqlQuery.slice(0, -2) + `) ENGINE=${databaseConfig?.engine || dialectConfig.engine} 
+            DEFAULT CHARSET=${databaseConfig?.charset || dialectConfig.charset} 
+            COLLATE=${databaseConfig?.collate || dialectConfig.collate};`;
+
         sqlQueries.push({query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
     
         // Create indexes separately

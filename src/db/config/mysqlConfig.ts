@@ -1,6 +1,10 @@
 import { TranslateMap, DialectConfig } from "../../config/types";
 
 export const mysqlConfig: DialectConfig = {
+  engine: "InnoDB",
+  charset: "utf8mb4",
+  collate: "utf8mb4_unicode_ci",
+  encoding: "",
   require_length: ["varchar", "binary", "decimal"],
   optional_length: ["boolean", "tinyint", "smallint", "int", "bigint"],
   no_length: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double"],

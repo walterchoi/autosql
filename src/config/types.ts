@@ -20,6 +20,10 @@ export interface DatabaseConfig {
       headers?: ColumnDefinition[];
       updatePrimaryKey?: boolean;
       primaryKey?: string[];
+      engine?: string;
+      charset?: string;
+      collate?: string;
+      encoding?: string;
 }
 
 export interface ColumnDefinition {
@@ -56,4 +60,8 @@ export interface DialectConfig {
       regex: string;
       type: boolean | string[];
     }>;
+    engine: string;
+    charset: string;
+    collate: string;
+    encoding: string;
 }
