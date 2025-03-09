@@ -4,7 +4,7 @@ import { Database } from "../../src/db/database";
 import { DatabaseConfig } from "../../src/config/types";
 import { isValidSingleQuery } from "../../src/db/utils/validateQuery";
 
-const CONFIG_PATH = path.resolve(__dirname, "../../src/config/config.local.json");
+const CONFIG_PATH = path.resolve(__dirname, "./config.local.json");
 
 export const DB_CONFIG: Record<string, DatabaseConfig> = fs.existsSync(CONFIG_PATH)
     ? (JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, DatabaseConfig>)
