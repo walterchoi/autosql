@@ -111,10 +111,21 @@ export function normalizeNumber(input: string, thousandsIndicatorOverride?: stri
     const isNegative = input.startsWith("-");
     if (isNegative) input = input.slice(1); // Remove `-` temporarily for processing
 
-    if (!input || /[^0-9., ]/.test(input)) return null; // Reject if non-numeric characters exist
+    if (!input || /[^0-9., `']/.test(input)) return null; // Reject if non-numeric characters exist. Allowing ` and ' as part of the Swiss number format
 
     const dotCount = (input.match(/\./g) || []).length;
-    const commaCount = (input.match(/,/g) || []).length;
+    let commaCount = (input.match(/,/g) || []).length;
+
+    // 🔍 Detect and normalize Swiss format if no commas are present but apostrophes exist
+    if (commaCount === 0 && input.includes("'")) {
+        input = input.replace(/'/g, ","); // ✅ Convert apostrophes to commas
+        commaCount = (input.match(/,/g) || []).length;
+    }
+    if (commaCount === 0 && input.includes("`")) {
+        input = input.replace(/`/g, ","); 
+        commaCount = (input.match(/,/g) || []).length;
+    }
+
     input = input.replace(/ /g, "");
 
     // 🚨 Reject cases
