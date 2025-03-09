@@ -16,6 +16,7 @@ export interface DatabaseConfig {
       password?: string;
       database?: string;
       port?: number;
+      schema?: string;
       table?: string;
       headers?: ColumnDefinition[];
       updatePrimaryKey?: boolean;

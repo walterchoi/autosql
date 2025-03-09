@@ -6,7 +6,8 @@ const dialectConfig = mysqlConfig
 export class MySQLTableQueryBuilder {
     static getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[], databaseConfig?: DatabaseConfig): QueryInput[] {
         let sqlQueries: QueryInput[] = [];
-        let sqlQuery = `CREATE TABLE IF NOT EXISTS \`${table}\` (\n`;
+        const schemaPrefix = databaseConfig?.schema ? `\`${databaseConfig.schema}\`.` : "";
+        let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}\`${table}\` (\n`;
         let primaryKeys: string[] = [];
         let uniqueKeys: string[] = [];
         let indexes: string[] = [];
@@ -73,7 +74,7 @@ export class MySQLTableQueryBuilder {
         return sqlQueries;
     }
 
-    static getAlterTableQuery(table: string, changes: AlterTableChanges): QueryInput[] {
+    static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string): QueryInput[] {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
@@ -132,17 +133,19 @@ export class MySQLTableQueryBuilder {
                 alterStatements.push(`MODIFY COLUMN \`${columnName}\` DROP NOT NULL`);
             }
         });
-    
+        const schemaPrefix = schema ? `\`${schema}\`.` : "";
+
         // ✅ Combine all `ALTER TABLE` statements
         if (alterStatements.length > 0) {
-            queries.push({ query: `ALTER TABLE \`${table}\` ${alterStatements.join(", ")};`, params: [] });
+            queries.push({ query: `ALTER TABLE ${schemaPrefix}\`${table}\` ${alterStatements.join(", ")};`, params: [] });
         }
     
         return queries;
     }
     
 
-    static getDropTableQuery(table: string): QueryInput {
-        return {query: `DROP TABLE IF EXISTS \`${table}\`;`, params: []};
+    static getDropTableQuery(table: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `\`${schema}\`.` : "";
+        return {query: `DROP TABLE IF EXISTS ${schemaPrefix}\`${table}\`;`, params: []};
     }
 }

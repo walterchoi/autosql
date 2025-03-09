@@ -19,7 +19,7 @@ export class MySQLDatabase extends Database {
             host: this.config.host,
             user: this.config.user,
             password: this.config.password,
-            database: this.config.database,
+            database: this.config.database || this.config.schema,
             port: this.config.port || 3306,
             connectionLimit: 3
         });
@@ -101,7 +101,7 @@ export class MySQLDatabase extends Database {
     }
 
     getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
-        return MySQLTableQueryBuilder.getCreateTableQuery(table, headers);
+        return MySQLTableQueryBuilder.getCreateTableQuery(table, headers, this.config);
     }
 
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): Promise<QueryInput[]> {
@@ -121,38 +121,43 @@ export class MySQLDatabase extends Database {
                 .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
                 .map(({ indexname }) => `DROP INDEX \`${indexname}\``);
         }
-        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges);
+        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema);
         if (indexesToDrop.length > 0) {
-            alterQueries.unshift({ query: `ALTER TABLE \`${table}\` ${indexesToDrop.join(", ")};`, params: [] });
+            const schemaPrefix = this.config.schema ? `\`${this.config.schema}\`.` : ""; // Add schema if provided
+
+            alterQueries.unshift({ 
+                query: `ALTER TABLE ${schemaPrefix}\`${table}\` ${indexesToDrop.join(", ")};`, 
+                params: [] 
+            });
         }
         return alterQueries;
     }
 
     getDropTableQuery(table: string): QueryInput {
-        return MySQLTableQueryBuilder.getDropTableQuery(table);
+        return MySQLTableQueryBuilder.getDropTableQuery(table, this.config.schema);
     }
 
     getPrimaryKeysQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getPrimaryKeysQuery(table);
+        return MySQLIndexQueryBuilder.getPrimaryKeysQuery(table, this.config.schema);
     }
 
     getForeignKeyConstraintsQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getForeignKeyConstraintsQuery(table);
+        return MySQLIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.config.schema);
     }
 
     getViewDependenciesQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getViewDependenciesQuery(table);
+        return MySQLIndexQueryBuilder.getViewDependenciesQuery(table, this.config.schema);
     }
 
     getDropPrimaryKeyQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getDropPrimaryKeyQuery(table);
+        return MySQLIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.config.schema);
     }
 
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
-        return MySQLIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys);
+        return MySQLIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.config.schema);
     }
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
-        return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name);
+        return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
     }
 }

@@ -1,60 +1,63 @@
 import { QueryInput } from "../../../config/types";
 
 export class MySQLIndexQueryBuilder {
-    static getPrimaryKeysQuery(table: string): QueryInput {
+    static getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
         return {
             query: `
                 SELECT COLUMN_NAME 
                 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
                 WHERE TABLE_NAME = ? 
+                ${schema ? "AND TABLE_SCHEMA = ?" : ""}
                 AND CONSTRAINT_NAME = 'PRIMARY';
             `,
-            params: [table]
+            params: schema ? [table, schema] : [table]
         };
     }
-
-    static getForeignKeyConstraintsQuery(table: string): QueryInput {
+    
+    static getForeignKeyConstraintsQuery(table: string, schema?: string): QueryInput {
         return {
             query: `
                 SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME 
                 FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE 
-                WHERE REFERENCED_TABLE_NAME = ?;
+                WHERE REFERENCED_TABLE_NAME = ? 
+                ${schema ? "AND TABLE_SCHEMA = ?" : ""};
             `,
-            params: [table]
+            params: schema ? [table, schema] : [table]
         };
     }
-
-    static getViewDependenciesQuery(table: string): QueryInput {
+    
+    static getViewDependenciesQuery(table: string, schema?: string): QueryInput {
         return {
             query: `
                 SELECT TABLE_NAME 
                 FROM INFORMATION_SCHEMA.VIEWS 
-                WHERE VIEW_DEFINITION LIKE CONCAT('%', ?, '%');
+                WHERE VIEW_DEFINITION LIKE CONCAT('%', ?, '%') 
+                ${schema ? "AND TABLE_SCHEMA = ?" : ""};
             `,
-            params: [table]
+            params: schema ? [table, schema] : [table]
         };
-    }
+    }    
 
-    static getDropPrimaryKeyQuery(table: string): QueryInput {
+    static getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `\`${schema}\`.` : "";
         return {
-            query: `ALTER TABLE \`${table}\` DROP PRIMARY KEY;`,
+            query: `ALTER TABLE ${schemaPrefix}\`${table}\` DROP PRIMARY KEY;`,
             params: []
         };
     }
 
-    static getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
+    static getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
         return {
             query: `ALTER TABLE \`${table}\` ADD PRIMARY KEY (${primaryKeys.map(pk => `\`${pk}\``).join(", ")});`,
             params: []
         };
     }
 
-    static getUniqueIndexesQuery(table: string, columnName?: string): QueryInput {
+    static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
         let query = `
             SELECT DISTINCT index_name, GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns
             FROM information_schema.statistics
-            WHERE table_schema = DATABASE() 
-            AND table_name = ?
+            WHERE table_name = ?
             AND non_unique = 0
         `;
         
@@ -64,9 +67,14 @@ export class MySQLIndexQueryBuilder {
             query += " AND column_name = ?";
             params.push(columnName);
         }
+
+        if (schema) {
+            query += " AND table_schema = ?";
+            params.push(schema);
+        }
     
         query += " GROUP BY index_name;";
     
         return { query, params };
-    }    
+    }
 }

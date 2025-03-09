@@ -6,7 +6,8 @@ const dialectConfig = pgsqlConfig
 export class PostgresTableQueryBuilder {
     static getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[], databaseConfig?: DatabaseConfig): QueryInput[] {
         let sqlQueries: QueryInput[] = [];
-        let sqlQuery = `CREATE TABLE IF NOT EXISTS "${table}" (\n`;
+        const schemaPrefix = databaseConfig?.schema ? `"${databaseConfig.schema}".` : "";
+        let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}"${table}" (\n`;
         let primaryKeys: string[] = [];
         let uniqueKeys: string[] = [];
         let indexes: string[] = [];
@@ -59,7 +60,7 @@ export class PostgresTableQueryBuilder {
     
         // Create indexes separately
         for (const index of indexes) {
-            sqlQueries.push({ query: `CREATE INDEX "${index.replace(/"/g, "")}_idx" ON "${table}" ("${index.replace(/"/g, "")}");`, params: []});
+            sqlQueries.push({ query: `CREATE INDEX "${index.replace(/"/g, "")}_idx" ON ${schemaPrefix}"${table}" ("${index.replace(/"/g, "")}");`, params: []});
         }
     
         return sqlQueries;
@@ -67,7 +68,7 @@ export class PostgresTableQueryBuilder {
     // ✅ Get changes using compareHeaders()
     //const { addColumns, modifyColumns } = compareHeaders(oldHeaders, newHeaders, pgsqlConfig);
 
-    static getAlterTableQuery(table: string, changes: AlterTableChanges): QueryInput[] {
+    static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string): QueryInput[] {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
@@ -136,14 +137,16 @@ export class PostgresTableQueryBuilder {
         });
     
         // ✅ Combine all `ALTER TABLE` statements
+        const schemaPrefix = schema ? `"${schema}".` : "";
         if (alterStatements.length > 0) {
-            queries.push({ query: `ALTER TABLE "${table}" ${alterStatements.join(", ")};`, params: [] });
+            queries.push({ query: `ALTER TABLE ${schemaPrefix}"${table}" ${alterStatements.join(", ")};`, params: [] });
         }
     
         return queries;
     }    
 
-    static getDropTableQuery(table: string): QueryInput {
-        return { query: `DROP TABLE IF EXISTS "${table}";`, params: []};
+    static getDropTableQuery(table: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `"${schema}".` : "";
+        return { query: `DROP TABLE IF EXISTS ${schemaPrefix}"${table}";`, params: []};
     }
 }

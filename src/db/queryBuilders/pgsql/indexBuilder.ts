@@ -1,56 +1,63 @@
 import { QueryInput } from "../../../config/types";
 
 export class PostgresIndexQueryBuilder {
-    static getPrimaryKeysQuery(table: string): QueryInput {
+    static getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `"${schema}".` : "";
         return {
             query: `
                 SELECT a.attname AS column_name
                 FROM pg_index i
                 JOIN pg_attribute a ON a.attrelid = i.indrelid AND a.attnum = ANY(i.indkey)
-                WHERE i.indrelid = $1::regclass
+                WHERE i.indrelid = '${schemaPrefix}${table}'::regclass
                 AND i.indisprimary;
             `,
-            params: [table]
+            params: []
         };
     }
 
-    static getForeignKeyConstraintsQuery(table: string): QueryInput {
+    static getForeignKeyConstraintsQuery(table: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `"${schema}".` : "";
         return {
             query: `
                 SELECT conname AS constraint_name, conrelid::regclass AS table_name 
                 FROM pg_constraint 
-                WHERE confrelid = $1::regclass;
+                WHERE confrelid = '${schemaPrefix}${table}'::regclass;
             `,
-            params: [table]
+            params: []
         };
     }
 
-    static getViewDependenciesQuery(table: string): QueryInput {
+    static getViewDependenciesQuery(table: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `"${schema}".` : "";
         return {
             query: `
                 SELECT viewname 
                 FROM pg_views 
-                WHERE definition LIKE '%' || $1 || '%';
+                WHERE schemaname = '${schema}' 
+                AND definition LIKE '%' || $1 || '%';
             `,
             params: [table]
         };
     }
 
-    static getDropPrimaryKeyQuery(table: string): QueryInput {
+    static getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `"${schema}".` : "";
         return {
-            query: `ALTER TABLE "${table}" DROP CONSTRAINT "${table}_pkey";`,
+            query: `ALTER TABLE ${schemaPrefix}"${table}" DROP CONSTRAINT "${table}_pkey";`,
             params: []
         };
     }
 
-    static getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
+    static getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
+        const schemaPrefix = schema ? `"${schema}".` : "";
         return {
-            query: `ALTER TABLE "${table}" ADD PRIMARY KEY (${primaryKeys.map(pk => `"${pk}"`).join(", ")});`,
+            query: `ALTER TABLE ${schemaPrefix}"${table}" ADD PRIMARY KEY (${primaryKeys.map(pk => `"${pk}"`).join(", ")});`,
             params: []
         };
     }
 
-    static getUniqueIndexesQuery(table: string, columnName?: string): QueryInput {
+    static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `"${schema}".` : "";
         let query = `
             SELECT i.relname AS indexname, array_to_string(array_agg(a.attname), ', ') AS columns
             FROM pg_index ix
@@ -60,16 +67,16 @@ export class PostgresIndexQueryBuilder {
             WHERE t.relname = $1
             AND ix.indisunique = true
         `;
-        
+
         const params = [table];
-    
+
         if (columnName) {
             query += " AND a.attname = $2";
             params.push(columnName);
         }
-    
+
         query += " GROUP BY i.relname;";
-    
+
         return { query, params };
-    }    
+    }
 }

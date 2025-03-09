@@ -136,41 +136,45 @@ export class PostgresDatabase extends Database {
         }
 
         // ✅ Get actual ALTER TABLE queries
-        const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges);
+        const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema);
 
         // ✅ Append DROP INDEX statements if needed
         if (indexesToDrop.length > 0) {
-            alterQueries.unshift({ query: `ALTER TABLE "${table}" ${indexesToDrop.join(", ")};`, params: [] });
-        }
+            const schemaPrefix = this.config.schema ? `"${this.config.schema}".` : "";
+            alterQueries.unshift({
+                query: `ALTER TABLE ${schemaPrefix}"${table}" ${indexesToDrop.join(", ")};`,
+                params: []
+            });
+        }        
 
         return alterQueries;
     }
 
     getDropTableQuery(table: string): QueryInput {
-        return PostgresTableQueryBuilder.getDropTableQuery(table);
+        return PostgresTableQueryBuilder.getDropTableQuery(table, this.config.schema);
     }
 
     getPrimaryKeysQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getPrimaryKeysQuery(table);
+        return PostgresIndexQueryBuilder.getPrimaryKeysQuery(table, this.config.schema);
     }
 
     getForeignKeyConstraintsQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getForeignKeyConstraintsQuery(table);
+        return PostgresIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.config.schema);
     }
 
     getViewDependenciesQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getViewDependenciesQuery(table);
+        return PostgresIndexQueryBuilder.getViewDependenciesQuery(table, this.config.schema);
     }
 
     getDropPrimaryKeyQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getDropPrimaryKeyQuery(table);
+        return PostgresIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.config.schema);
     }
 
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
-        return PostgresIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys);
+        return PostgresIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.config.schema);
     }
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
-        return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name);
+        return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
     }
 }
