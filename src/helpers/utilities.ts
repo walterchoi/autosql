@@ -177,12 +177,26 @@ export function normalizeNumber(input: string, thousandsIndicatorOverride?: stri
     // Validate thousands separator formatting
     if (thousandsIndicator) {
         const thousandsSplit = preDecimal.split(thousandsIndicator);
-        for (let i = 0; i < thousandsSplit.length; i++) {
-            const part = thousandsSplit[i];
-            if (i === 0 && part.length > 3) return null; // First group must be ≤ 3 digits
-            if (i > 0 && part.length !== 3) return null; // Subsequent groups must be exactly 3 digits
+    
+        if(thousandsSplit.length == 1) {
+            const part = thousandsSplit[0];
+            if(part.length > 3) {
+                return null;
+            }
+        } else {
+            // 🔍 Detect if the format is Indian-style or Western-style
+            const isWesternFormat = thousandsSplit.length > 1 && thousandsSplit.every((part, i) =>
+                (i === 0 ? part.length <= 3 : part.length === 3)
+            );
+        
+            const isIndianFormat = thousandsSplit.length > 1 && thousandsSplit.every((part, i) =>
+                (i === 0 ? part.length <= 2 : i === thousandsSplit.length - 1 ? part.length === 3 : part.length === 2)
+            );
+        
+            if (!isWesternFormat && !isIndianFormat) return null; // ❌ Reject if it fits neither format
+        
+            // ✅ If valid, remove thousands separators
         }
-        // Remove thousands separator
         preDecimal = thousandsSplit.join("");
     }
 

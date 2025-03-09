@@ -14,6 +14,17 @@ describe("normalizeNumber function", () => {
         expect(normalizeNumber("12.345,67")).toBe("12345.67");
     });
 
+    test("correctly normalizes French format with space thousands and comma decimal", () => {
+        expect(normalizeNumber("1 234 567.89")).toBe("1234567.89");
+        expect(normalizeNumber("1 000.50")).toBe("1000.50");
+        expect(normalizeNumber("12 345.67")).toBe("12345.67");
+    });
+
+    test("correctly normalizes Indian format with e.g. #,##,##,###.##", () => {
+        expect(normalizeNumber("1,23,45,678.90")).toBe("12345678.90");
+        expect(normalizeNumber("12,345.67")).toBe("12345.67");
+    });
+
     test("correctly normalizes whole numbers with thousand separators", () => {
         expect(normalizeNumber("1,234,567")).toBe("1234567");
         expect(normalizeNumber("1.234.567")).toBe("1234567");
