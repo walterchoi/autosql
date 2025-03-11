@@ -5,19 +5,19 @@ export const pgsqlConfig: DialectConfig = {
   collate: "en_US.UTF-8",
   engine: "",
   charset: "",
-  requireLength: ["varchar"],
-  optionalLength: [],
-  noLength: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "boolean", "int", "bigint"],
+  requireLength: ["varchar", "binary", "decimal"],
+  optionalLength: ["int", "bigint", "smallint", "tinyint"],
+  noLength: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "double", "boolean"],
   decimals: ["exponent", "double", "decimal"],
   translate: {
     serverToLocal: {
       "timestamp without time zone": "datetime",
       "timestamp with time zone": "datetimetz",
-      integer: "int",
+      "integer": "int",
       "character varying": "varchar",
-      numeric: "decimal",
+      "numeric": "decimal",
       "double precision": "double",
-      bytea: "binary"
+      "bytea": "binary"
     },
     localToServer: {
       "tinyint": "smallint",

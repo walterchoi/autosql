@@ -214,7 +214,7 @@ export function parseDatabaseLength(lengthStr?: string): { length?: number; deci
     return { length, decimal };
 }
 
-export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig): Record<string, ColumnDefinition> {
+export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig): Record<string, ColumnDefinition> | null {
     const metadata: Record<string, ColumnDefinition> = {};
 
     rows.forEach((row: any) => {
@@ -223,23 +223,31 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
             acc[key.toLowerCase()] = row[key];
             return acc;
         }, {} as Record<string, any>);
-
         // Extract normalized values
         const lengthInfo = parseDatabaseLength(String(normalizedRow["length"]));
-        const dataType = dialectConfig?.translate?.serverToLocal[normalizedRow["data_type"].toLowerCase()] || normalizedRow["data_type"].toLowerCase();
+        const dataType = dialectConfig?.translate?.serverToLocal[normalizedRow.data_type.toLowerCase()] || normalizedRow["data_type"].toLowerCase();
         const columnKey = (normalizedRow["column_key"] || "").toUpperCase();
         
+        let normalizedLength: number | undefined = lengthInfo.length;
+        if (dialectConfig?.noLength.includes(dataType)) {
+            normalizedLength = undefined; // ✅ Force `undefined` for `TEXT`, `JSON`, `BOOLEAN`, etc.
+        } else if (dialectConfig?.optionalLength.includes(dataType) && lengthInfo.length === undefined) {
+            normalizedLength = undefined; // ✅ Ensure `undefined` if the DB does not store it
+        }
+
+        const autoIncrement = String(normalizedRow["extra"] || "").includes("auto_increment") || String(normalizedRow["column_default"] || "").includes("nextval");
+
         metadata[normalizedRow["column_name"]] = {
             type: dataType,
-            length: lengthInfo.length ?? undefined, // Ensure null instead of undefined
+            length: normalizedLength,
             allowNull: normalizedRow["is_nullable"] === "YES",
             unique: columnKey === "UNIQUE",
             primary: columnKey === "PRIMARY",
             index: columnKey === "INDEX",
-            autoIncrement: String(normalizedRow["extra"] || "").includes("auto_increment"),
-            decimal: lengthInfo.decimal ?? undefined // Ensure null instead of undefined
+            autoIncrement: autoIncrement,
+            decimal: lengthInfo.decimal ?? undefined
         };
     });
 
-    return metadata;
+    return Object.keys(metadata).length > 0 ? metadata : null;
 }

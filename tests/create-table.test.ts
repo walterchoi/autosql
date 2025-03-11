@@ -1,7 +1,7 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
 import { ColumnDefinition, MetadataHeader } from "../src/config/types";
 
-const TEST_TABLE_NAME = "test_table";
+const TEST_TABLE_NAME = "create_table_test_table";
 
 const TEST_COLUMNS: MetadataHeader = 
     {
@@ -58,9 +58,9 @@ Object.values(DB_CONFIG).forEach((config) => {
                 : "query" in createTableQuery 
                     ? createTableQuery.query 
                 : (() => { throw new Error("Unexpected query format"); })();
-
+        
             if (config.sqlDialect === "mysql") {
-                expect(queryStr).toContain("`id` int AUTO_INCREMENT NOT NULL");
+                expect(queryStr).toContain("`id` int(11) AUTO_INCREMENT NOT NULL");
                 expect(queryStr).toContain("`name` varchar(255) NOT NULL");
                 expect(queryStr).toContain("`is_active` TINYINT(1) NOT NULL DEFAULT false");
             } else if (config.sqlDialect === "pgsql") {
@@ -68,7 +68,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 expect(queryStr).toContain("\"name\" varchar(255) NOT NULL");
                 expect(queryStr).toContain("\"is_active\" boolean NOT NULL DEFAULT false");
             }
-        });
+        });        
 
         test("Ensure index queries are separate", async () => {
             const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);

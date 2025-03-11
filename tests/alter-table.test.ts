@@ -1,7 +1,7 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
 import { MetadataHeader } from "../src/config/types";
 
-const TEST_TABLE_NAME = "test_table";
+const TEST_TABLE_NAME = "alker_table_test_table";
 
 const OLD_COLUMNS: MetadataHeader = {
     id: { type: "int", length: 11, primary: true, allowNull: false, autoIncrement: true },

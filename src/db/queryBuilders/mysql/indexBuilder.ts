@@ -47,8 +47,9 @@ export class MySQLIndexQueryBuilder {
     }
 
     static getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
+        const schemaPrefix = schema ? `\`${schema}\`.` : "";
         return {
-            query: `ALTER TABLE \`${table}\` ADD PRIMARY KEY (${primaryKeys.map(pk => `\`${pk}\``).join(", ")});`,
+            query: `ALTER TABLE ${schemaPrefix}\`${table}\` ADD PRIMARY KEY (${primaryKeys.map(pk => `\`${pk}\``).join(", ")});`,
             params: []
         };
     }

@@ -1,7 +1,7 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
 import { ColumnDefinition, MetadataHeader } from "../src/config/types";
 
-const TEST_TABLE_NAME = "test_table";
+const TEST_TABLE_NAME = "alter_table_complex_test_table";
 
 const BASE_COLUMNS: MetadataHeader = {
     id: { type: "int", length: 11, primary: true, allowNull: false },

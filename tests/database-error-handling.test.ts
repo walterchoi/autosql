@@ -10,9 +10,9 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             // Ensure the schema and table exist before running tests
             await db.createSchema("test_schema");
-            await db.runQuery(`DROP TABLE IF EXISTS test_schema.test_table;`);
+            await db.runQuery(`DROP TABLE IF EXISTS test_schema.database_error_handling_test_table;`);
             await db.runQuery(`
-                CREATE TABLE IF NOT EXISTS test_schema.test_table (
+                CREATE TABLE IF NOT EXISTS test_schema.database_error_handling_test_table (
                     id INT PRIMARY KEY,
                     name VARCHAR(255)
                 );
@@ -21,7 +21,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
         afterAll(async () => {
             try {
-                await db.runQuery(`DROP TABLE IF EXISTS test_schema.test_table;`);
+                await db.runQuery(`DROP TABLE IF EXISTS test_schema.database_error_handling_test_table;`);
             } catch (error) {
                 
             }
@@ -43,7 +43,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         // ✅ Inserting Wrong Data Types
         test("Insert wrong data type", async () => {
             try {
-                await db.runQuery("INSERT INTO test_schema.test_table (id) VALUES ('string');");
+                await db.runQuery("INSERT INTO test_schema.database_error_handling_test_table (id) VALUES ('string');");
                 fail("Expected query to throw an error");
             } catch (error) {
                 expect(error).toBeDefined();
@@ -65,7 +65,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         // ✅ Transaction Errors
         test("Transaction rollback on failure", async () => {
             const result = await db.runTransaction([
-                "INSERT INTO test_schema.test_table (id, name) VALUES (1, 'Alice');",
+                "INSERT INTO test_schema.database_error_handling_test_table (id, name) VALUES (1, 'Alice');",
                 "INVALID SQL SYNTAX;" // Intentional failure
             ]);
 
@@ -77,8 +77,8 @@ Object.values(DB_CONFIG).forEach((config) => {
         describe(`Database Transaction Handling for ${config.sqlDialect.toUpperCase()}`, () => {
             test("Successful transaction", async () => {
                 const result = await db.runTransaction([
-                    "INSERT INTO test_schema.test_table (id, name) VALUES (2, 'Bob');",
-                    "INSERT INTO test_schema.test_table (id, name) VALUES (3, 'Charlie');"
+                    "INSERT INTO test_schema.database_error_handling_test_table (id, name) VALUES (2, 'Bob');",
+                    "INSERT INTO test_schema.database_error_handling_test_table (id, name) VALUES (3, 'Charlie');"
                 ]);
 
                 expect(result.success).toBe(true);
@@ -86,7 +86,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             test("Failed transaction rolls back", async () => {
                 const result = await db.runTransaction([
-                    "INSERT INTO test_schema.test_table (id, name) VALUES (4, 'David');",
+                    "INSERT INTO test_schema.database_error_handling_test_table (id, name) VALUES (4, 'David');",
                     "INVALID SQL SYNTAX;" // Intentional failure
                 ]);
 

@@ -276,7 +276,7 @@ export abstract class Database {
 
             const MetaQueryInput = this.getTableMetaDataQuery(schema, table);
             const result = await this.runQuery(MetaQueryInput);
-            return parseDatabaseMetaData(result);
+            return parseDatabaseMetaData(result, this.getDialectConfig());
         } catch (error) {
             console.error("Error fetching table metadata:", error);
             return null;

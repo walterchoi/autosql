@@ -195,10 +195,11 @@ export class MySQLTableQueryBuilder {
               AND i.INDEX_NAME <> 'PRIMARY'
         ) THEN 'INDEX'
         ELSE NULL 
-    END AS COLUMN_KEY
+        END AS COLUMN_KEY
     FROM INFORMATION_SCHEMA.COLUMNS AS c
     WHERE c.TABLE_SCHEMA = ?
-    AND c.TABLE_NAME = ?;`,
+    AND c.TABLE_NAME = ?;
+    `,
             params: [schema, table],
         };
     }

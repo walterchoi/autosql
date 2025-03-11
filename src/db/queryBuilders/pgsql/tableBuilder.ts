@@ -23,7 +23,7 @@ export class PostgresTableQueryBuilder {
             let columnDef = `"${columnName}" ${columnType}`;
     
             // Handle column lengths
-            if (column.length && !dialectConfig.noLength.includes(columnType)) {
+            if (column.length && dialectConfig.requireLength.includes(columnType)) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
     
@@ -37,7 +37,7 @@ export class PostgresTableQueryBuilder {
             }
     
             if (!column.allowNull) columnDef += " NOT NULL";
-            if (column.default !== undefined) {
+            if (column.default !== undefined && !column.autoIncrement) {
                 const replacement = dialectConfig.defaultTranslation[column.default] || column.default;
                 columnDef += ` DEFAULT ${replacement}`;
             }
@@ -50,7 +50,11 @@ export class PostgresTableQueryBuilder {
         }
     
         if (primaryKeys.length) sqlQuery += `PRIMARY KEY (${primaryKeys.join(", ")}),\n`;
-        if (uniqueKeys.length) sqlQuery += `${uniqueKeys.map((key) => `UNIQUE(${key})`).join(", ")},\n`;
+        if (uniqueKeys.length) {
+            sqlQuery += `${uniqueKeys
+                .map((key) => `CONSTRAINT "${table}_${key.replace(/"/g, '')}_key" UNIQUE("${key.replace(/"/g, '')}")`)
+                .join(", ")},\n`;
+        }        
     
         sqlQuery = sqlQuery.slice(0, -2) + "\n);";
         sqlQueries.push({ query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
@@ -153,57 +157,54 @@ export class PostgresTableQueryBuilder {
     static getTableMetaDataQuery(schema: string, table: string): QueryInput {
         return {
             query: `SELECT 
-                        DISTINCT ON (c.COLUMN_NAME) 
-                        c.COLUMN_NAME, 
-                        c.DATA_TYPE,
-                        CASE 
-                            WHEN c.COLUMN_DEFAULT ILIKE 'nextval%' THEN 'auto_increment'
-                            WHEN c.COLUMN_DEFAULT ILIKE 'CURRENT_TIMESTAMP%' THEN 'on update CURRENT_TIMESTAMP'
-                            ELSE NULL
-                        END AS EXTRA,
-                        CASE
-                            WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL THEN CONCAT(c.NUMERIC_PRECISION,',',c.NUMERIC_SCALE)
-                            WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NULL THEN c.NUMERIC_PRECISION::varchar
-                            WHEN c.CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN c.CHARACTER_MAXIMUM_LENGTH::varchar
+                    DISTINCT ON (c.COLUMN_NAME) 
+                    c.COLUMN_NAME, 
+                    c.DATA_TYPE,
+                    c.COLUMN_DEFAULT,
+                    CASE
+                        WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL THEN CONCAT(c.NUMERIC_PRECISION,',',c.NUMERIC_SCALE)
+                        WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NULL THEN c.NUMERIC_PRECISION::varchar
+                        WHEN c.CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN c.CHARACTER_MAXIMUM_LENGTH::varchar
                         ELSE NULL
-                        END AS LENGTH,
-                        c.IS_NULLABLE, 
-                        CASE 
-                            WHEN EXISTS (
-                                SELECT 1 
-                                FROM pg_index pi 
-                                JOIN pg_attribute pa ON pa.attrelid = pi.indrelid 
-                                AND pa.attnum = ANY(pi.indkey) 
-                                AND pa.attname = c.COLUMN_NAME
-                                WHERE pi.indrelid = t.oid 
-                                AND pi.indisprimary = TRUE
-                            ) THEN 'PRIMARY'
-                            WHEN EXISTS (
-                                SELECT 1 
-                                FROM pg_constraint pc 
-                                JOIN pg_attribute pa ON pa.attrelid = pc.conrelid 
-                                AND pa.attnum = ANY(pc.conkey) 
-                                AND pa.attname = c.COLUMN_NAME
-                                WHERE pc.conrelid = t.oid 
-                                AND pc.contype = 'u'
-                            ) THEN 'UNIQUE'
-                            WHEN EXISTS (
-                                SELECT 1 
-                                FROM pg_index pi
-                                JOIN pg_attribute pa ON pa.attrelid = pi.indrelid 
-                                    AND pa.attnum = ANY(pi.indkey) 
-                                    AND pa.attname = c.COLUMN_NAME
-                                WHERE pi.indrelid = t.oid 
-                                AND pi.indisunique = FALSE 
-                                AND pi.indisprimary = FALSE
-                            ) THEN 'INDEX'
-                            ELSE NULL
-                        END AS COLUMN_KEY
-                    FROM INFORMATION_SCHEMA.COLUMNS AS c
-                    LEFT JOIN pg_class AS t 
+                    END AS LENGTH,
+                    c.IS_NULLABLE, 
+                    CASE 
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM pg_index pi 
+                            JOIN pg_attribute pa ON pa.attrelid = pi.indrelid 
+                            AND pa.attnum = ANY(pi.indkey) 
+                            AND pa.attname = c.COLUMN_NAME
+                            WHERE pi.indrelid = t.oid 
+                            AND pi.indisprimary = TRUE
+                        ) THEN 'PRIMARY'
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM pg_constraint pc 
+                            JOIN pg_attribute pa ON pa.attrelid = pc.conrelid 
+                            AND pa.attnum = ANY(pc.conkey)
+                            AND pa.attname = c.COLUMN_NAME
+                            WHERE pc.conrelid = t.oid 
+                            AND pc.contype = 'u'
+                        ) THEN 'UNIQUE'
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM pg_index pi
+                            JOIN pg_attribute pa ON pa.attrelid = pi.indrelid 
+                            AND pa.attnum = ANY(pi.indkey) 
+                            AND pa.attname = c.COLUMN_NAME
+                            WHERE pi.indrelid = t.oid 
+                            AND pi.indisunique = FALSE
+                            AND pi.indisprimary = FALSE
+                        ) THEN 'INDEX'
+                        ELSE NULL
+                    END AS COLUMN_KEY
+                FROM INFORMATION_SCHEMA.COLUMNS AS c
+                LEFT JOIN pg_class AS t 
                     ON t.relname = c.TABLE_NAME 
                     AND t.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = c.TABLE_SCHEMA)
-                    WHERE c.TABLE_SCHEMA = $1 AND c.TABLE_NAME = $2;`,
+                WHERE c.TABLE_SCHEMA = $1 AND c.TABLE_NAME = $2;
+                `,
             params: [schema, table],
         };
     }
