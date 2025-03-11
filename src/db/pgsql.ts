@@ -113,7 +113,7 @@ export class PostgresDatabase extends Database {
     }
 
     getCreateTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
-            return PostgresTableQueryBuilder.getCreateTableQuery(table, headers);
+            return PostgresTableQueryBuilder.getCreateTableQuery(table, headers, this.config);
         }
     
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {

@@ -1,5 +1,5 @@
 import { defaults } from "../config/defaults";
-import { DatabaseConfig, ColumnDefinition } from "../config/types";
+import { DatabaseConfig, ColumnDefinition, DialectConfig } from "../config/types";
 export function isObject(val: any): boolean {
     return val !== null && typeof val === "object";
 }
@@ -200,31 +200,44 @@ export function mergeColumnLengths(lengthA?: string, lengthB?: string): string |
     return `${Math.max(lenA, lenB)},${Math.max(decA, decB)}`;
 }
 
-export function parseDatabaseLength(lengthStr?: string): { length?: number; decimal?: number } {
-    if (!lengthStr) return {};
-    
-    const parts = lengthStr.split(",").map(Number);
-    return parts.length === 2
-        ? { length: parts[0], decimal: parts[1] }
-        : { length: parts[0] };
-}
-
 export function setToArray<T>(inputSet: Set<T>): T[] {
     return [...inputSet]; // Spread operator converts Set to an array
 }
 
-export function parseDatabaseMetaData(rows: any[]): Record<string, ColumnDefinition> {
+export function parseDatabaseLength(lengthStr?: string): { length?: number; decimal?: number } {
+    if (!lengthStr) return {};
+    
+    const parts = lengthStr.split(",").map(Number);
+    const length = isNaN(parts[0]) ? undefined : parts[0];
+    const decimal = parts.length === 2 && !isNaN(parts[1]) ? parts[1] : undefined;
+
+    return { length, decimal };
+}
+
+export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig): Record<string, ColumnDefinition> {
     const metadata: Record<string, ColumnDefinition> = {};
+
     rows.forEach((row: any) => {
-        metadata[row.COLUMN_NAME] = {
-            type: row.DATA_TYPE,
-            length: row.LENGTH ? Number(row.LENGTH) : undefined,
-            allowNull: row.IS_NULLABLE === "YES",
-            unique: row.COLUMN_KEY === "UNIQUE",
-            primary: row.COLUMN_KEY === "PRIMARY",
-            index: row.COLUMN_KEY === "INDEX",
-            autoIncrement: row.EXTRA && row.EXTRA.includes("auto_increment"),
-            decimal: row.LENGTH && row.LENGTH.includes(",") ? Number(row.LENGTH.split(",")[1]) : 0,
+        // Normalize column keys to lowercase
+        const normalizedRow = Object.keys(row).reduce((acc, key) => {
+            acc[key.toLowerCase()] = row[key];
+            return acc;
+        }, {} as Record<string, any>);
+
+        // Extract normalized values
+        const lengthInfo = parseDatabaseLength(String(normalizedRow["length"]));
+        const dataType = dialectConfig?.translate?.serverToLocal[normalizedRow["data_type"].toLowerCase()] || normalizedRow["data_type"].toLowerCase();
+        const columnKey = (normalizedRow["column_key"] || "").toUpperCase();
+        
+        metadata[normalizedRow["column_name"]] = {
+            type: dataType,
+            length: lengthInfo.length ?? undefined, // Ensure null instead of undefined
+            allowNull: normalizedRow["is_nullable"] === "YES",
+            unique: columnKey === "UNIQUE",
+            primary: columnKey === "PRIMARY",
+            index: columnKey === "INDEX",
+            autoIncrement: String(normalizedRow["extra"] || "").includes("auto_increment"),
+            decimal: lengthInfo.decimal ?? undefined // Ensure null instead of undefined
         };
     });
 

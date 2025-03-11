@@ -6,8 +6,8 @@ export const pgsqlConfig: DialectConfig = {
   engine: "",
   charset: "",
   requireLength: ["varchar"],
-  optionalLength: ["int", "bigint"],
-  noLength: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "boolean"],
+  optionalLength: [],
+  noLength: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "boolean", "int", "bigint"],
   decimals: ["exponent", "double", "decimal"],
   translate: {
     serverToLocal: {

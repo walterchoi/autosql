@@ -6,8 +6,8 @@ export const mysqlConfig: DialectConfig = {
   collate: "utf8mb4_unicode_ci",
   encoding: "",
   requireLength: ["varchar", "binary", "decimal"],
-  optionalLength: ["boolean", "tinyint", "smallint", "int", "bigint"],
-  noLength: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double"],
+  optionalLength: [],
+  noLength: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double", "tinyint", "smallint", "int", "bigint", "boolean"],
   decimals: ["exponent", "double", "decimal"],
   translate: {
     serverToLocal: {

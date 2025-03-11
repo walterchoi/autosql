@@ -23,7 +23,7 @@ export class MySQLTableQueryBuilder {
             let columnDef = `\`${columnName}\` ${columnType}`;
     
             // Handle column lengths
-            if (column.length && dialectConfig.requireLength.includes(columnType)) {
+            if (column.length && !dialectConfig.noLength.includes(columnType)) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
     
@@ -65,7 +65,7 @@ export class MySQLTableQueryBuilder {
     
         // Create indexes separately
         for (const index of indexes) {
-            sqlQueries.push({ query: `CREATE INDEX \`${index.replace(/`/g, "")}_idx\` ON \`${table}\` (\`${index.replace(/`/g, "")}\`);`, params: []});
+            sqlQueries.push({ query: `CREATE INDEX \`${index.replace(/`/g, "")}_idx\` ON ${schemaPrefix}\`${table}\` (\`${index.replace(/`/g, "")}\`);`, params: []});
         }
     
         return sqlQueries;
@@ -150,16 +150,55 @@ export class MySQLTableQueryBuilder {
 
     static getTableMetaDataQuery(schema: string, table: string): QueryInput {
         return {
-            query: `SELECT COLUMN_NAME, DATA_TYPE, 
-                        CASE 
-                            WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NOT NULL THEN CONCAT(NUMERIC_PRECISION,',',NUMERIC_SCALE)
-                            WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NULL THEN NUMERIC_PRECISION
-                            WHEN CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN CHARACTER_MAXIMUM_LENGTH 
-                            ELSE NULL 
-                        END AS LENGTH, 
-                        IS_NULLABLE, COLUMN_KEY
-                    FROM INFORMATION_SCHEMA.COLUMNS
-                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
+            query: `SELECT 
+    c.COLUMN_NAME, 
+    c.DATA_TYPE,
+    c.EXTRA,
+    CASE 
+        WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL THEN CONCAT(c.NUMERIC_PRECISION,',',c.NUMERIC_SCALE)
+        WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NULL THEN c.NUMERIC_PRECISION
+        WHEN c.CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN c.CHARACTER_MAXIMUM_LENGTH
+        ELSE NULL 
+    END AS LENGTH, 
+    c.IS_NULLABLE, 
+    CASE 
+        WHEN EXISTS (
+            SELECT 1 
+            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS tc
+            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k 
+                ON tc.TABLE_SCHEMA = k.TABLE_SCHEMA 
+                AND tc.TABLE_NAME = k.TABLE_NAME 
+                AND tc.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+            WHERE tc.TABLE_SCHEMA = c.TABLE_SCHEMA
+              AND tc.TABLE_NAME = c.TABLE_NAME
+              AND k.COLUMN_NAME = c.COLUMN_NAME
+              AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+        ) THEN 'PRIMARY'
+        WHEN EXISTS (
+            SELECT 1 
+            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS tc
+            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k 
+                ON tc.TABLE_SCHEMA = k.TABLE_SCHEMA 
+                AND tc.TABLE_NAME = k.TABLE_NAME 
+                AND tc.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+            WHERE tc.TABLE_SCHEMA = c.TABLE_SCHEMA
+              AND tc.TABLE_NAME = c.TABLE_NAME
+              AND k.COLUMN_NAME = c.COLUMN_NAME
+              AND tc.CONSTRAINT_TYPE = 'UNIQUE'
+        ) THEN 'UNIQUE'
+        WHEN EXISTS (
+            SELECT 1 
+            FROM INFORMATION_SCHEMA.STATISTICS AS i
+            WHERE i.TABLE_SCHEMA = c.TABLE_SCHEMA
+              AND i.TABLE_NAME = c.TABLE_NAME
+              AND i.COLUMN_NAME = c.COLUMN_NAME
+              AND i.INDEX_NAME <> 'PRIMARY'
+        ) THEN 'INDEX'
+        ELSE NULL 
+    END AS COLUMN_KEY
+    FROM INFORMATION_SCHEMA.COLUMNS AS c
+    WHERE c.TABLE_SCHEMA = ?
+    AND c.TABLE_NAME = ?;`,
             params: [schema, table],
         };
     }
