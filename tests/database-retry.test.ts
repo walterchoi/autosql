@@ -3,7 +3,7 @@ import { QueryInput, QueryWithParams } from "../src/config/types";
 jest.setTimeout(10000);
 
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Database Retry Logic Handling Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Database Retry Logic Handling Tests for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(async () => {
@@ -22,10 +22,10 @@ Object.values(DB_CONFIG).forEach((config) => {
                 attemptCount++;
                 if (attemptCount < 3) {
                     const tempError = new Error("Temporary error");
-                    if(config.sql_dialect == 'mysql') {
+                    if(config.sqlDialect == 'mysql') {
                         (tempError as any).code = "ER_LOCK_DEADLOCK"; // Example MySQL temporary error
                     }
-                    else if (config.sql_dialect === 'pgsql') {
+                    else if (config.sqlDialect === 'pgsql') {
                         (tempError as any).code = "40P01"; // PostgreSQL deadlock error
                     }
                     throw tempError;
@@ -43,10 +43,10 @@ Object.values(DB_CONFIG).forEach((config) => {
             jest.spyOn(db as any, 'executeQuery').mockImplementation(async () => {
                 attemptCount++;
                 const permanentError = new Error("Syntax error");
-                if(config.sql_dialect == 'mysql') {
+                if(config.sqlDialect == 'mysql') {
                     (permanentError as any).code = "ER_SYNTAX_ERROR"; // MySQL permanent error
                 }
-                else if (config.sql_dialect === 'pgsql') {
+                else if (config.sqlDialect === 'pgsql') {
                     (permanentError as any).code = "42601"; // PostgreSQL permanent error
                 }
                 throw permanentError;
@@ -70,9 +70,9 @@ Object.values(DB_CONFIG).forEach((config) => {
                     attemptCount++;
                     if (attemptCount < 3) {
                         const tempError = new Error("Deadlock");
-                        if (config.sql_dialect === 'mysql') {
+                        if (config.sqlDialect === 'mysql') {
                             (tempError as any).code = "ER_LOCK_DEADLOCK"; // MySQL temporary error
-                        } else if (config.sql_dialect === 'pgsql') {
+                        } else if (config.sqlDialect === 'pgsql') {
                             (tempError as any).code = "40P01"; // PostgreSQL deadlock error
                         }
                         throw tempError;
@@ -105,9 +105,9 @@ Object.values(DB_CONFIG).forEach((config) => {
                     attemptCount++;
                     const permanentError = new Error("Column not found");
             
-                    if (config.sql_dialect === 'mysql') {
+                    if (config.sqlDialect === 'mysql') {
                         (permanentError as any).code = "ER_BAD_FIELD_ERROR"; // MySQL permanent error
-                    } else if (config.sql_dialect === 'pgsql') {
+                    } else if (config.sqlDialect === 'pgsql') {
                         (permanentError as any).code = "42P01"; // PostgreSQL permanent error
                     }
                     

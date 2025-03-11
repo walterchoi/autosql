@@ -5,12 +5,12 @@ export const pgsqlConfig: DialectConfig = {
   collate: "en_US.UTF-8",
   engine: "",
   charset: "",
-  require_length: ["varchar"],
-  optional_length: ["int", "bigint"],
-  no_length: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "boolean"],
+  requireLength: ["varchar"],
+  optionalLength: ["int", "bigint"],
+  noLength: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double", "binary", "smallint", "boolean"],
   decimals: ["exponent", "double", "decimal"],
   translate: {
-    server_to_local: {
+    serverToLocal: {
       "timestamp without time zone": "datetime",
       "timestamp with time zone": "datetimetz",
       integer: "int",
@@ -19,7 +19,7 @@ export const pgsqlConfig: DialectConfig = {
       "double precision": "double",
       bytea: "binary"
     },
-    local_to_server: {
+    localToServer: {
       "tinyint": "smallint",
       "exponent": "numeric",
       "double": "double precision",
@@ -30,7 +30,7 @@ export const pgsqlConfig: DialectConfig = {
       "longtext": "text"
     }
   },
-  default_translation: {
+  defaultTranslation: {
     "UUID()": "gen_random_uuid()",
     "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP": "CURRENT_TIMESTAMP"
   },

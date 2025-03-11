@@ -1,9 +1,9 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { ColumnDefinition } from "../src/config/types";
+import { ColumnDefinition, MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_table";
 
-const TEST_COLUMNS: { [column: string]: ColumnDefinition }[] = [
+const TEST_COLUMNS: MetadataHeader = 
     {
         id: {
             type: "int",
@@ -11,27 +11,22 @@ const TEST_COLUMNS: { [column: string]: ColumnDefinition }[] = [
             primary: true,
             autoIncrement: true,
             allowNull: false
-        }
-    },
-    {
+        },
         name: {
-            type: "varchar",
-            length: 255,
-            allowNull: false,
-            unique: true
-        }
-    },
-    {
+                type: "varchar",
+                length: 255,
+                allowNull: false,
+                unique: true
+        },
         is_active: {
-            type: "boolean",
-            allowNull: false,
-            default: false
+                type: "boolean",
+                allowNull: false,
+                default: false
         }
-    }
-];
+    };
 
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Create Table Query Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Create Table Query Tests for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(() => {
@@ -64,11 +59,11 @@ Object.values(DB_CONFIG).forEach((config) => {
                     ? createTableQuery.query 
                 : (() => { throw new Error("Unexpected query format"); })();
 
-            if (config.sql_dialect === "mysql") {
+            if (config.sqlDialect === "mysql") {
                 expect(queryStr).toContain("`id` int AUTO_INCREMENT NOT NULL");
                 expect(queryStr).toContain("`name` varchar(255) NOT NULL");
                 expect(queryStr).toContain("`is_active` TINYINT(1) NOT NULL DEFAULT false");
-            } else if (config.sql_dialect === "pgsql") {
+            } else if (config.sqlDialect === "pgsql") {
                 expect(queryStr).toContain("\"id\" SERIAL NOT NULL");
                 expect(queryStr).toContain("\"name\" varchar(255) NOT NULL");
                 expect(queryStr).toContain("\"is_active\" boolean NOT NULL DEFAULT false");
@@ -92,7 +87,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             }
         });
 
-        test(`Check ${config.sql_dialect}-specific query format`, async () => {
+        test(`Check ${config.sqlDialect}-specific query format`, async () => {
             const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
             const createTableQuery = queries[0];
             let queryStr1;
@@ -108,7 +103,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                     ? queries[1].query 
                     : (() => { throw new Error("Unexpected query format"); })();
             }
-            if (config.sql_dialect === "mysql") {
+            if (config.sqlDialect === "mysql") {
                 expect(queryStr).toContain("AUTO_INCREMENT");
                 expect(queryStr).toContain("ENGINE=InnoDB");
                 expect(queryStr).toContain("PRIMARY KEY (`id`)");
@@ -117,7 +112,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 if(queryStr1) {
                     expect(queryStr1).toContain("CREATE INDEX `name_idx` ON `test_table` (`name`);");
                 }
-            } else if (config.sql_dialect === "pgsql") {
+            } else if (config.sqlDialect === "pgsql") {
                 expect(queryStr).toContain("SERIAL");
                 expect(queryStr).toContain("PRIMARY KEY (\"id\")");
                 expect(queryStr).toContain("UNIQUE(\"name\")");
@@ -131,7 +126,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 });
 
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Validate Create Table Query Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Validate Create Table Query Tests for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(async () => {

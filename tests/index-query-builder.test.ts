@@ -1,9 +1,16 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
+import { MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_index_table";
 
+const COLUMNS : MetadataHeader = {
+    id: { type: "int", length: 11, primary: true, allowNull: false },
+    user_uuid: { type: "varchar", length: 36, allowNull: false, unique: true },
+    email: { type: "varchar", length: 255, allowNull: false, unique: true }
+};
+
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Validate Index Queries for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Validate Index Queries for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(async () => {
@@ -11,11 +18,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             await db.establishConnection();
 
             // Create a test table to use in index queries
-            const createTableQuery = db.createTableQuery(TEST_TABLE_NAME, [
-                { id: { type: "int", length: 11, primary: true, allowNull: false } },
-                { user_uuid: { type: "varchar", length: 36, allowNull: false, unique: true } },
-                { email: { type: "varchar", length: 255, allowNull: false, unique: true } },
-            ]);            
+            const createTableQuery = db.createTableQuery(TEST_TABLE_NAME, COLUMNS);            
             
             for (const query of createTableQuery) {
                 await db.runQuery(query);

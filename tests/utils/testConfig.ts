@@ -10,22 +10,24 @@ export const DB_CONFIG: Record<string, DatabaseConfig> = fs.existsSync(CONFIG_PA
     ? (JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8")) as Record<string, DatabaseConfig>)
     : {
           mysql: {
-              sql_dialect: "mysql",
+              sqlDialect: "mysql",
               host: "localhost",
               user: "root",
               password: "root",
               database: "mysql",
               port: 3306,
-              updatePrimaryKey: true
+              updatePrimaryKey: true,
+              addTimestamps: true
           },
           pgsql: {
-              sql_dialect: "pgsql",
+              sqlDialect: "pgsql",
               host: "localhost",
               user: "test_user",
               password: "test_password",
               database: "postgres",
               port: 5432,
-              updatePrimaryKey: true
+              updatePrimaryKey: true,
+              addTimestamps: true
           }
       };
 

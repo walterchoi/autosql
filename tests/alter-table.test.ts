@@ -1,21 +1,21 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { ColumnDefinition } from "../src/config/types";
+import { MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_table";
 
-const OLD_COLUMNS: { [column: string]: ColumnDefinition }[] = [
-    { id: { type: "int", length: 11, primary: true, allowNull: false, autoIncrement: true } },
-    { name: { type: "varchar", length: 50, allowNull: false, unique: true } }
-];
+const OLD_COLUMNS: MetadataHeader = {
+    id: { type: "int", length: 11, primary: true, allowNull: false, autoIncrement: true },
+    name: { type: "varchar", length: 50, allowNull: false, unique: true }
+};
 
-const NEW_COLUMNS: { [column: string]: ColumnDefinition }[] = [
-    { id: { type: "int", length: 11, primary: true, allowNull: false, autoIncrement: true } },
-    { name: { type: "varchar", length: 100, allowNull: false, unique: true } },
-    { email: { type: "varchar", length: 255, allowNull: false } }
-];
+const NEW_COLUMNS: MetadataHeader = {
+    id: { type: "int", length: 11, primary: true, allowNull: false, autoIncrement: true },
+    name: { type: "varchar", length: 100, allowNull: false, unique: true }, // Increased length
+    email: { type: "varchar", length: 255, allowNull: false } // New column added
+};
 
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Alter Table Query Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Alter Table Query Tests for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(() => {
@@ -44,16 +44,16 @@ Object.values(DB_CONFIG).forEach((config) => {
             const firstQuery = queries[0];
             const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
-            if (config.sql_dialect === "mysql") {
+            if (config.sqlDialect === "mysql") {
                 expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255) NOT NULL");
                 expect(alterTableQuery).toContain("MODIFY COLUMN `name` varchar(100) NOT NULL");
-            } else if (config.sql_dialect === "pgsql") {
+            } else if (config.sqlDialect === "pgsql") {
                 expect(alterTableQuery).toContain("ADD COLUMN \"email\" varchar(255) NOT NULL");
                 expect(alterTableQuery).toContain("ALTER COLUMN \"name\" SET DATA TYPE varchar(100)");
             }
         });
 
-        if (config.sql_dialect === "mysql") {
+        if (config.sqlDialect === "mysql") {
             test("Check MySQL-specific query format", async () => {
                 const queries = await db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
                 const firstQuery = queries[0];
@@ -62,7 +62,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 expect(alterTableQuery).toContain("MODIFY COLUMN `name` varchar(100) NOT NULL");
                 expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255) NOT NULL");
             });
-        } else if (config.sql_dialect === "pgsql") {
+        } else if (config.sqlDialect === "pgsql") {
             test("Check PostgreSQL-specific query format", async () => {
                 const queries = await db.alterTableQuery(TEST_TABLE_NAME, OLD_COLUMNS, NEW_COLUMNS);
                 const firstQuery = queries[0];
@@ -76,7 +76,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 });
 
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Validate Create Table Query Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Validate Create Table Query Tests for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(async () => {

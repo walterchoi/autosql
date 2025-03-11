@@ -1,10 +1,10 @@
-import { ColumnDefinition, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
+import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { mysqlConfig } from "../../config/mysqlConfig";
 import { compareHeaders } from '../../../helpers/headers';
 const dialectConfig = mysqlConfig
 
 export class MySQLTableQueryBuilder {
-    static getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[], databaseConfig?: DatabaseConfig): QueryInput[] {
+    static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
         let sqlQueries: QueryInput[] = [];
         const schemaPrefix = databaseConfig?.schema ? `\`${databaseConfig.schema}\`.` : "";
         let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}\`${table}\` (\n`;
@@ -12,21 +12,18 @@ export class MySQLTableQueryBuilder {
         let uniqueKeys: string[] = [];
         let indexes: string[] = [];
     
-        for (const columnObj of headers) {
-            const columnName = Object.keys(columnObj)[0]; // Extract column name
-            const column = columnObj[columnName];
-    
+        for (const [columnName, column] of Object.entries(headers)) {
             if (!column.type) throw new Error(`Missing type for column ${columnName}`);
     
             let columnType = column.type.toLowerCase();
-            if (dialectConfig.translate.local_to_server[columnType]) {
-                columnType = dialectConfig.translate.local_to_server[columnType];
+            if (dialectConfig.translate.localToServer[columnType]) {
+                columnType = dialectConfig.translate.localToServer[columnType];
             }
     
             let columnDef = `\`${columnName}\` ${columnType}`;
     
             // Handle column lengths
-            if (column.length && dialectConfig.require_length.includes(columnType)) {
+            if (column.length && dialectConfig.requireLength.includes(columnType)) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
     
@@ -46,7 +43,7 @@ export class MySQLTableQueryBuilder {
     
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) {
-                const replacement = dialectConfig.default_translation[column.default];
+                const replacement = dialectConfig.defaultTranslation[column.default];
                 columnDef += ` DEFAULT ${replacement ? replacement : column.default}`;
             }
     
@@ -89,27 +86,22 @@ export class MySQLTableQueryBuilder {
         });
     
         // ✅ Handle `ADD COLUMN`
-        changes.addColumns.forEach(columnObj => {
-            const columnName = Object.keys(columnObj)[0];
-            const column = columnObj[columnName];
-    
+        for (const [columnName, column] of Object.entries(changes.addColumns)) {
             let columnDef = `\`${columnName}\` ${column.type}`;
-            if (column.length && !dialectConfig.no_length.includes(column.type || "")) {
+            if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
     
             alterStatements.push(`ADD COLUMN ${columnDef}`);
-        });
+        };
     
         // ✅ Handle `MODIFY COLUMN` - Include `NULL` conditionally
-        changes.modifyColumns.forEach(columnObj => {
-            const columnName = Object.keys(columnObj)[0];
-            const column = columnObj[columnName];
+        for (const [columnName, column] of Object.entries(changes.modifyColumns)) {
 
             let columnDef = `\`${columnName}\` ${column.type}`;
-            if (column.length && !dialectConfig.no_length.includes(column.type || "")) {
+            if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
             
@@ -125,13 +117,13 @@ export class MySQLTableQueryBuilder {
             }
 
             alterStatements.push(`MODIFY COLUMN ${columnDef}`);
-        });
+        };
 
         // ✅ Handle standalone `NULLABLE COLUMNS` not in modifyColumns
         changes.nullableColumns.forEach(columnName => {
-            if (!changes.modifyColumns.some(col => Object.keys(col)[0] === columnName)) {
+            if (!Object.prototype.hasOwnProperty.call(changes.modifyColumns, columnName)) {
                 alterStatements.push(`MODIFY COLUMN \`${columnName}\` DROP NOT NULL`);
-            }
+            }            
         });
         const schemaPrefix = schema ? `\`${schema}\`.` : "";
 
@@ -147,5 +139,28 @@ export class MySQLTableQueryBuilder {
     static getDropTableQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `\`${schema}\`.` : "";
         return {query: `DROP TABLE IF EXISTS ${schemaPrefix}\`${table}\`;`, params: []};
+    }
+
+    static getTableExistsQuery(schema: string, table: string): QueryInput {
+        return {
+            query: "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
+            params: [schema, table],
+        };
+    }
+
+    static getTableMetaDataQuery(schema: string, table: string): QueryInput {
+        return {
+            query: `SELECT COLUMN_NAME, DATA_TYPE, 
+                        CASE 
+                            WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NOT NULL THEN CONCAT(NUMERIC_PRECISION,',',NUMERIC_SCALE)
+                            WHEN NUMERIC_PRECISION IS NOT NULL AND NUMERIC_SCALE IS NULL THEN NUMERIC_PRECISION
+                            WHEN CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN CHARACTER_MAXIMUM_LENGTH 
+                            ELSE NULL 
+                        END AS LENGTH, 
+                        IS_NULLABLE, COLUMN_KEY
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?`,
+            params: [schema, table],
+        };
     }
 }

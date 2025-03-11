@@ -1,7 +1,7 @@
 import { DB_CONFIG, Database, isValidSingleQuery } from "./utils/testConfig";
 
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Query Validation for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Query Validation for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(async () => {

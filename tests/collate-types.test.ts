@@ -1,4 +1,4 @@
-import { collateTypes } from "../src/helpers/types";
+import { collateTypes } from "../src/helpers/columnTypes";
 
 describe("collateTypes function", () => {
     test("collates identical types correctly", async () => {

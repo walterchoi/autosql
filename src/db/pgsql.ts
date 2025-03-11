@@ -1,12 +1,13 @@
 import { Pool, PoolClient } from "pg";
 import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader } from "../config/types";
 import { pgsqlConfig } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
 import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
 import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
+import { AutoSQLHandler } from "./autosql";
 const dialectConfig = pgsqlConfig
 
 export class PostgresDatabase extends Database {
@@ -111,19 +112,21 @@ export class PostgresDatabase extends Database {
         return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS "${schemaName}";`};
     }
 
-    getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    getCreateTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
             return PostgresTableQueryBuilder.getCreateTableQuery(table, headers);
         }
     
-    async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): Promise<QueryInput[]> {
+    async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
-        if (Array.isArray(alterTableChangesOrOldHeaders) && newHeaders) {
-            alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders);
-        } else if (Array.isArray(alterTableChangesOrOldHeaders)) {
-            throw new Error("Missing new headers for ALTER TABLE query");
-        } else {
-            alterTableChanges = alterTableChangesOrOldHeaders;
-        }
+        if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
+                    // If old headers are provided in MetadataHeader format, compare them with newHeaders
+                    if (!newHeaders) {
+                        throw new Error("Missing new headers for ALTER TABLE query");
+                    }
+                    alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders);
+                } else {
+                    alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
+                }
         let indexesToDrop: string[] = [];
 
         // ✅ Only fetch unique indexes if there are columns to remove uniqueness from
@@ -154,6 +157,14 @@ export class PostgresDatabase extends Database {
         return PostgresTableQueryBuilder.getDropTableQuery(table, this.config.schema);
     }
 
+    getTableExistsQuery(schema: string, table: string): QueryInput {
+        return PostgresTableQueryBuilder.getTableExistsQuery(schema, table);
+    }
+
+    getTableMetaDataQuery(schema: string, table: string): QueryInput {
+        return PostgresTableQueryBuilder.getTableMetaDataQuery(schema, table);
+    }
+
     getPrimaryKeysQuery(table: string): QueryInput {
         return PostgresIndexQueryBuilder.getPrimaryKeysQuery(table, this.config.schema);
     }
@@ -176,5 +187,10 @@ export class PostgresDatabase extends Database {
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
         return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
+    }
+
+    async autoSQL(table: string, data: Record<string, any>[]): Promise<InsertResult> {
+        const handler = new AutoSQLHandler(this);
+        return await handler.execute(table, data);
     }
 }

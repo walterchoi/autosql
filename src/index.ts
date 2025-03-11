@@ -1,4 +1,4 @@
-import { predictType, collateTypes } from "./helpers/types";
+import { predictType, collateTypes } from "./helpers/columnTypes";
 import { getMetaData, initializeMetaData } from "./helpers/metadata";
 import { getHeaders } from "./helpers/headers"
 import { predictIndexes } from "./helpers/keys";
@@ -7,7 +7,7 @@ import { insertData, validateDatabase, validateQuery, runSqlQuery } from "./db/d
 import { setSsh } from "./helpers/utilities";
 import { sqlize, sqlizeValue } from "./helpers/utilities";
 import { isObject } from "./helpers/utilities";
-import { exportSqlHelper } from "./db/database";
+import { Database, exportSqlHelper } from "./db/database";
 
 export {
     predictType,

@@ -1,12 +1,13 @@
 import mysql, { Pool, PoolConnection } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader } from "../config/types";
 import { mysqlConfig } from "./config/mysqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareHeaders } from '../helpers/headers';
 import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
 import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
+import { AutoSQLHandler } from "./autosql";
 const dialectConfig = mysqlConfig
 
 export class MySQLDatabase extends Database {
@@ -100,19 +101,22 @@ export class MySQLDatabase extends Database {
         return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS '${schemaName}';`};
     }
 
-    getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
+    getCreateTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
         return MySQLTableQueryBuilder.getCreateTableQuery(table, headers, this.config);
     }
 
-    async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): Promise<QueryInput[]> {
+    async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
-        if (Array.isArray(alterTableChangesOrOldHeaders) && newHeaders) {
+        if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
+            // If old headers are provided in MetadataHeader format, compare them with newHeaders
+            if (!newHeaders) {
+                throw new Error("Missing new headers for ALTER TABLE query");
+            }
             alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders);
-        } else if (Array.isArray(alterTableChangesOrOldHeaders)) {
-            throw new Error("Missing new headers for ALTER TABLE query");
         } else {
-            alterTableChanges = alterTableChangesOrOldHeaders;
+            alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
         }
+        
         let indexesToDrop: string[] = [];
         if (alterTableChanges.noLongerUnique.length > 0) {
             const uniqueIndexes = await this.runQuery(this.getUniqueIndexesQuery(table)) as { indexname: string; columns: string }[];
@@ -137,6 +141,14 @@ export class MySQLDatabase extends Database {
         return MySQLTableQueryBuilder.getDropTableQuery(table, this.config.schema);
     }
 
+    getTableExistsQuery(schema: string, table: string): QueryInput {
+        return MySQLTableQueryBuilder.getTableExistsQuery(schema, table);
+    }
+
+    getTableMetaDataQuery(schema: string, table: string): QueryInput {
+        return MySQLTableQueryBuilder.getTableMetaDataQuery(schema, table);
+    }
+
     getPrimaryKeysQuery(table: string): QueryInput {
         return MySQLIndexQueryBuilder.getPrimaryKeysQuery(table, this.config.schema);
     }
@@ -159,5 +171,10 @@ export class MySQLDatabase extends Database {
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
         return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
+    }
+
+    async autoSQL(table: string, data: Record<string, any>[]): Promise<InsertResult> {
+        const handler = new AutoSQLHandler(this);
+        return await handler.execute(table, data);
     }
 }

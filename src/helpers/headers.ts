@@ -1,94 +1,85 @@
 import { initializeMetaData } from './metadata';
 import { DialectConfig, MetadataHeader, ColumnDefinition, AlterTableChanges } from '../config/types';
-import { collateTypes } from './types';
-import { parseDatabaseLength, mergeColumnLengths } from './utilities';
+import { collateTypes } from './columnTypes';
+import { parseDatabaseLength, mergeColumnLengths, shuffleArray } from './utilities';
 
-export function getHeaders(data: Record<string, any>[]): string[] {
+export function getHeaders(data: Record<string, any>[], sampling?: number, samplingMinimum?: number ): string[] {
     try {
-        const allColumns: string[] = [];
+        if ((sampling !== undefined || samplingMinimum !== undefined) && (sampling === undefined || samplingMinimum === undefined)) {
+            throw new Error("Both sampling percentage and sampling minimum must be provided together.");
+        }
 
-        data.forEach(row => {
-            Object.keys(row).forEach(column => allColumns.push(column));
-        });
+        let sampleData = data;
 
-        return Array.from(new Set(allColumns));
+        // Apply sampling if conditions are met
+        if (sampling !== undefined && samplingMinimum !== undefined && data.length > samplingMinimum) {
+            let sampleSize = Math.round(data.length * sampling);
+            sampleSize = Math.max(sampleSize, samplingMinimum); // Ensure minimum sample size
+
+            sampleData = shuffleArray(data).slice(0, sampleSize); // Shuffle and take sample
+        }
+
+        const columnSet: Set<string> = new Set();
+
+        for (const row of sampleData) {
+            for (const column of Object.keys(row)) {
+                columnSet.add(column);
+            }
+        }
+
+        return [...columnSet]; // Convert Set to array
     } catch (error) {
         throw new Error(`Error in getHeaders: ${error}`);
     }
 }
 
 export function initializeHeaders(validatedConfig: any, data: Record<string, any>[]): MetadataHeader[] {
-    let headers: MetadataHeader[] = validatedConfig.meta_data ?? initializeMetaData(getHeaders(data));
-
-    if (validatedConfig.auto_id && !headers.some((header: MetadataHeader) => Object.keys(header)[0] === "ID")) {
-        headers.push({
-            ID: {
-                type: "int",
-                length: 8,
-                allowNull: false,
-                unique: true,
-                index: true,
-                pseudounique: true,
-                primary: true,
-                autoIncrement: true,
-                default: undefined
-            }
-        });
-    }
-
+    let headers: MetadataHeader[] = validatedConfig.metaData ?? initializeMetaData(getHeaders(data));
     return headers;
 }
 
-export function compareHeaders(oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[], dialectConfig?: DialectConfig): AlterTableChanges {
+export function compareHeaders(oldHeaders: MetadataHeader, newHeaders: MetadataHeader, dialectConfig?: DialectConfig): AlterTableChanges {
     
-    const addColumns: { [column: string]: ColumnDefinition }[] = [];
-    const modifyColumns: { [column: string]: ColumnDefinition }[] = [];
+    const addColumns: MetadataHeader = {};
+    const modifyColumns: MetadataHeader = {};
     const dropColumns: string[] = [];
     const renameColumns: { oldName: string; newName: string }[] = [];
     const nullableColumns: string[] = [];
     const noLongerUnique: string[] = [];
 
-    const oldMap = new Map<string, ColumnDefinition>(
-        oldHeaders.map(header => [Object.keys(header)[0], header[Object.keys(header)[0]]])
-    );
-
-    const newMap = new Map<string, ColumnDefinition>(
-        newHeaders.map(header => [Object.keys(header)[0], header[Object.keys(header)[0]]])
-    );
-
     // ✅ Identify removed columns
-    for (const oldColumnName of oldMap.keys()) {
-        if (!newMap.has(oldColumnName)) {
+    for (const oldColumnName of Object.keys(oldHeaders)) {
+        if (!newHeaders.hasOwnProperty(oldColumnName)) {
             dropColumns.push(oldColumnName);
         }
     }
 
     // ✅ Identify renamed columns
-    for (const oldColumnName of oldMap.keys()) {
-        for (const newColumnName of newMap.keys()) {
-            const oldColumn = oldMap.get(oldColumnName);
-            const newColumn = newMap.get(newColumnName);
+    for (const oldColumnName of Object.keys(oldHeaders)) {
+        for (const newColumnName of Object.keys(newHeaders)) {
+            const oldColumn = oldHeaders[oldColumnName];
+            const newColumn = newHeaders[newColumnName];
 
             // ✅ A rename is detected if:
-            // - The columns do not share the same name
+            // - The column names are different
             // - The type and properties are identical
-            if (oldColumnName !== newColumnName && oldColumn && newColumn && JSON.stringify(oldColumn) === JSON.stringify(newColumn)) {
+            if (oldColumnName !== newColumnName && JSON.stringify(oldColumn) === JSON.stringify(newColumn)) {
                 renameColumns.push({ oldName: oldColumnName, newName: newColumnName });
 
                 // ✅ Remove renamed columns from dropColumns and addColumns lists
                 dropColumns.splice(dropColumns.indexOf(oldColumnName), 1);
-                newMap.delete(newColumnName);
+                delete newHeaders[newColumnName];
             }
         }
     }
 
     // ✅ Identify added & modified columns
-    for (const [columnName, newColumn] of newMap.entries()) {
-        if (!oldMap.has(columnName)) {
+    for (const [columnName, newColumn] of Object.entries(newHeaders)) {
+        if (!oldHeaders.hasOwnProperty(columnName)) {
             // New column - needs to be added
-            addColumns.push({ [columnName]: newColumn });
+            addColumns[columnName] = newColumn;
         } else {
-            const oldColumn = oldMap.get(columnName)!;
+            const oldColumn = oldHeaders[columnName];
             let modified = false;
             let modifiedColumn: ColumnDefinition = { ...oldColumn };
 
@@ -111,7 +102,7 @@ export function compareHeaders(oldHeaders: { [column: string]: ColumnDefinition 
             const newDecimal = newColumn.decimal ?? 0;
             
             // ✅ Remove `length` if the new type is in `no_length`
-            if (dialectConfig?.no_length.includes(modifiedColumn.type || newColumn.type || oldColumn.type || "varchar")) {
+            if (dialectConfig?.noLength.includes(modifiedColumn.type || newColumn.type || oldColumn.type || "varchar")) {
                 delete modifiedColumn.length;
                 delete modifiedColumn.decimal;
             } else {
@@ -166,10 +157,17 @@ export function compareHeaders(oldHeaders: { [column: string]: ColumnDefinition 
             }
 
             if (modified) {
-                modifyColumns.push({ [columnName]: modifiedColumn });
+                modifyColumns[columnName] = modifiedColumn;
             }
         }
     }
 
-    return { addColumns, modifyColumns, dropColumns, renameColumns, nullableColumns, noLongerUnique };
+    return {
+        addColumns,
+        modifyColumns,
+        dropColumns,
+        renameColumns,
+        nullableColumns,
+        noLongerUnique,
+    };
 }

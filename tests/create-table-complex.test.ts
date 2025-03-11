@@ -1,105 +1,81 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { ColumnDefinition, QueryWithParams } from "../src/config/types";
+import { ColumnDefinition, QueryWithParams, MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "users";
 
-const TEST_COLUMNS: { [column: string]: ColumnDefinition }[] = [
-    {
-        user_id: {
-            type: "int",
-            length: 11,
-            primary: true,
-            autoIncrement: true,
-            allowNull: false
-        }
+const TEST_COLUMNS: MetadataHeader = {
+    user_id: {
+        type: "int",
+        length: 11,
+        primary: true,
+        autoIncrement: true,
+        allowNull: false
     },
-    {
-        user_uuid: {
-            type: "varchar",
-            length: 36,
-            allowNull: false,
-            unique: true,
-            default: "UUID()"
-        }
+    user_uuid: {
+        type: "varchar",
+        length: 36,
+        allowNull: false,
+        unique: true,
+        default: "UUID()"
     },
-    {
-        username: {
-            type: "varchar",
-            length: 50,
-            allowNull: false,
-            unique: true
-        }
+    username: {
+        type: "varchar",
+        length: 50,
+        allowNull: false,
+        unique: true
     },
-    {
-        email: {
-            type: "varchar",
-            length: 255,
-            allowNull: false,
-            unique: true,
-            index: true
-        }
+    email: {
+        type: "varchar",
+        length: 255,
+        allowNull: false,
+        unique: true,
+        index: true
     },
-    {
-        password_hash: {
-            type: "varchar",
-            length: 255,
-            allowNull: false
-        }
+    password_hash: {
+        type: "varchar",
+        length: 255,
+        allowNull: false
     },
-    {
-        bio: {
-            type: "text",
-            allowNull: true
-        }
+    bio: {
+        type: "text",
+        allowNull: true
     },
-    {
-        age: {
-            type: "int",
-            length: 3,
-            allowNull: true,
-            default: 18,
-        }
+    age: {
+        type: "int",
+        length: 3,
+        allowNull: true,
+        default: 18
     },
-    {
-        is_active: {
-            type: "boolean",
-            allowNull: false,
-            default: true
-        }
+    is_active: {
+        type: "boolean",
+        allowNull: false,
+        default: true
     },
-    {
-        account_balance: {
-            type: "decimal",
-            length: 12,
-            decimal: 2,
-            allowNull: false,
-            default: 0.00
-        }
+    account_balance: {
+        type: "decimal",
+        length: 12,
+        decimal: 2,
+        allowNull: false,
+        default: 0.00
     },
-    {
-        user_metadata: {
-            type: "json",
-            allowNull: true
-        }
+    user_metadata: {
+        type: "json",
+        allowNull: true
     },
-    {
-        created_at: {
-            type: "datetime",
-            allowNull: false,
-            default: "CURRENT_TIMESTAMP"
-        }
+    created_at: {
+        type: "datetime",
+        allowNull: false,
+        default: "CURRENT_TIMESTAMP"
     },
-    {
-        updated_at: {
-            type: "datetime",
-            allowNull: false,
-            default: "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
-        }
+    updated_at: {
+        type: "datetime",
+        allowNull: false,
+        default: "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
     }
-];
+};
 
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Complex Create Table Query Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Complex Create Table Query Tests for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(() => {
@@ -127,7 +103,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 ? createTableQuery[0].query 
             : (() => { throw new Error("Unexpected query format"); })();
 
-            if (config.sql_dialect === "mysql") {
+            if (config.sqlDialect === "mysql") {
                 expect(queryStr).toContain("`user_id` int AUTO_INCREMENT NOT NULL");
                 expect(queryStr).toContain("`user_uuid` varchar(36) NOT NULL DEFAULT (UUID())");
                 expect(queryStr).toContain("`username` varchar(50) NOT NULL");
@@ -140,7 +116,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 expect(queryStr).toContain("`user_metadata` json");
                 expect(queryStr).toContain("`created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP");
                 expect(queryStr).toContain("`updated_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
-            } else if (config.sql_dialect === "pgsql") {
+            } else if (config.sqlDialect === "pgsql") {
                 expect(queryStr).toContain("\"user_id\" SERIAL NOT NULL");
                 expect(queryStr).toContain("\"user_uuid\" varchar(36) NOT NULL DEFAULT gen_random_uuid()");
                 expect(queryStr).toContain("\"username\" varchar(50) NOT NULL");
@@ -188,7 +164,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                     ? firstQuery.query 
                     : (() => { throw new Error("Unexpected query format"); })();
         
-            if (config.sql_dialect === "mysql") {
+            if (config.sqlDialect === "mysql") {
                 expect(queryStr).toContain("ENGINE=InnoDB");
                 expect(queryStr).toContain("PRIMARY KEY (`user_id`)");
                 expect(queryStr).toContain("UNIQUE(`user_uuid`)");
@@ -201,7 +177,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                     );
                     expect(indexQueries).toContainEqual(expect.stringMatching(/CREATE INDEX `email_idx` ON `users` \(`email`\);/));
                 }
-            } else if (config.sql_dialect === "pgsql") {
+            } else if (config.sqlDialect === "pgsql") {
                 expect(queryStr).toContain("PRIMARY KEY (\"user_id\")");
                 expect(queryStr).toContain("UNIQUE(\"user_uuid\")");
                 expect(queryStr).toContain("UNIQUE(\"username\")");
@@ -219,7 +195,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 });
 
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Validate Create Table Query Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Validate Create Table Query Tests for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(async () => {
@@ -241,7 +217,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 : "query" in query
                     ? query.query 
                 : (() => { throw new Error("Unexpected query format"); })();
-                if (config.sql_dialect === "pgsql" && queryStr.toLowerCase().startsWith("create index")) {
+                if (config.sqlDialect === "pgsql" && queryStr.toLowerCase().startsWith("create index")) {
                     console.log("Skipping index validation:", queryStr);
                     continue;
                 }

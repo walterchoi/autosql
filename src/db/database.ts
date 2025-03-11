@@ -1,16 +1,22 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './utils/validateQuery';
-import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges } from '../config/types';
+import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges, InsertResult, MetadataHeader } from '../config/types';
+import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
 
 // Abstract database class to define common methods.
 export abstract class Database {
     protected connection: Pool | PgPool | null = null;
     protected config: DatabaseConfig;
+    startDate : Date = new Date();
     protected abstract getPermanentErrors(): Promise<string[]>;
 
     constructor(config: DatabaseConfig) {
-        this.config = config;
+        this.config = validateConfig(config);
+    }
+
+    public getConfig() {
+        return this.config;
     }
 
     static create(config: DatabaseConfig): Database {
@@ -19,7 +25,7 @@ export abstract class Database {
             pgsql: PostgresDatabase
         };
 
-        const dialect = config.sql_dialect?.toLowerCase();
+        const dialect = config.sqlDialect?.toLowerCase();
         if (!DIALECTS[dialect]) {
             throw new Error(`Unsupported SQL dialect: ${dialect}`);
         }
@@ -28,16 +34,16 @@ export abstract class Database {
     }
 
     public getDialect() {
-        return this.config.sql_dialect
+        return this.config.sqlDialect
     }
 
     public abstract getDialectConfig(): DialectConfig;
 
-    abstract establishDatabaseConnection(): Promise<void>;
-    abstract testQuery(queryOrParams: QueryInput): Promise<any>;
+    public abstract establishDatabaseConnection(): Promise<void>;
+    public abstract testQuery(queryOrParams: QueryInput): Promise<any>;
     protected abstract executeQuery(queryOrParams: QueryInput): Promise<any>;
 
-    async establishConnection(): Promise<void> {
+    public async establishConnection(): Promise<void> {
         let attempts = 0;
         const maxAttempts = 3;
 
@@ -64,7 +70,7 @@ export abstract class Database {
         throw new Error("Database connection failed after multiple attempts.");
     }
     
-    async runQuery(queryOrParams: QueryInput): Promise<any> {
+    public async runQuery(queryOrParams: QueryInput): Promise<any> {
         let attempts = 0;
         const maxAttempts = 3;
         let _error;
@@ -99,7 +105,7 @@ export abstract class Database {
     }
 
     // Test database connection.
-    async testConnection(): Promise<boolean> {
+    public async testConnection(): Promise<boolean> {
         try {
             const result = await this.runQuery({ query: "SELECT 1 AS solution;"});
             return !!result;
@@ -110,7 +116,7 @@ export abstract class Database {
     }
 
     // Check if schema(s) exist.
-    async checkSchemaExists(schemaName: string | string[]): Promise<Record<string, boolean>> {
+    public async checkSchemaExists(schemaName: string | string[]): Promise<Record<string, boolean>> {
         try {
             const QueryInput = this.getCheckSchemaQuery(schemaName);
             const result = await this.runQuery(QueryInput);
@@ -128,7 +134,7 @@ export abstract class Database {
         }
     }
 
-    async createSchema(schemaName: string): Promise<Record<string, boolean>> {
+    public async createSchema(schemaName: string): Promise<Record<string, boolean>> {
         try {
             const QueryInput = this.getCreateSchemaQuery(schemaName);
             const result = await this.runQuery(QueryInput);
@@ -138,15 +144,15 @@ export abstract class Database {
         }
     }
 
-    createTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[] {
-        if (!table || !headers || headers.length === 0) {
-          throw new Error("Invalid table configuration: table name and headers are required.");
+    public createTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
+        if (!table || !headers || Object.keys(headers).length === 0) {
+            throw new Error("Invalid table configuration: table name and headers are required.");
         }
     
         return this.getCreateTableQuery(table, headers);
     }
 
-    async alterTableQuery(table: string, oldHeaders: { [column: string]: ColumnDefinition }[], newHeaders: { [column: string]: ColumnDefinition }[]): Promise<QueryInput[]> {
+    public async alterTableQuery(table: string, oldHeaders: MetadataHeader, newHeaders: MetadataHeader): Promise<QueryInput[]> {
         if (!table || !oldHeaders || !newHeaders) {
             throw new Error("Invalid table configuration: table name and headers are required.");
         }
@@ -154,7 +160,7 @@ export abstract class Database {
         return await this.getAlterTableQuery(table, oldHeaders, newHeaders);
     }
 
-    dropTableQuery(table: string): QueryInput {
+    public dropTableQuery(table: string): QueryInput {
         if (!table) {
             throw new Error("Invalid table configuration: table name is required.");
         }
@@ -164,21 +170,21 @@ export abstract class Database {
     
 
     // Begin transaction.
-    async startTransaction(): Promise<void> {
+    public async startTransaction(): Promise<void> {
         await this.executeQuery("START TRANSACTION;");
     }
 
     // Commit transaction.
-    async commit(): Promise<void> {
+    public async commit(): Promise<void> {
         await this.executeQuery("COMMIT;");
     }
 
     // Rollback transaction.
-    async rollback(): Promise<void> {
+    public async rollback(): Promise<void> {
         await this.executeQuery("ROLLBACK;");
     }
 
-    async closeConnection(): Promise<{ success: boolean; error?: string }> {
+    public async closeConnection(): Promise<{ success: boolean; error?: string }> {
         if (!this.connection)  return { success: true };
 
         try {
@@ -193,7 +199,7 @@ export abstract class Database {
         }
     }
 
-    async runTransaction(queriesOrStrings: QueryInput[]): Promise<{ success: boolean; results?: any[]; error?: string }> {
+    public async runTransaction(queriesOrStrings: QueryInput[]): Promise<{ success: boolean; results?: any[]; error?: string }> {
         if (!this.connection) {
             await this.establishConnection();
         }
@@ -259,18 +265,38 @@ export abstract class Database {
             return { success: false, error: error.message };
         }
     }
+
+    public async getTableMetaData(schema: string, table: string): Promise<Record<string, ColumnDefinition> | null> {
+        try {
+            if (!this.connection) throw new Error("Database connection not established.");
     
-    abstract getCreateSchemaQuery(schemaName: string): QueryInput;
-    abstract getCheckSchemaQuery(schemaName: string | string[]): QueryInput;
-    abstract getCreateTableQuery(table: string, headers: { [column: string]: ColumnDefinition }[]): QueryInput[]
-    abstract getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | { [column: string]: ColumnDefinition }[], newHeaders?: { [column: string]: ColumnDefinition }[]): Promise<QueryInput[]>;
-    abstract getDropTableQuery(table: string): QueryInput;
-    abstract getPrimaryKeysQuery(table: string): QueryInput;
-    abstract getForeignKeyConstraintsQuery(table: string): QueryInput;
-    abstract getViewDependenciesQuery(table: string): QueryInput;
-    abstract getDropPrimaryKeyQuery(table: string): QueryInput;
-    abstract getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput;
-    abstract getUniqueIndexesQuery(table: string, column_name?: string): QueryInput;
+            const existsQueryInput = this.getTableExistsQuery(schema, table);
+            const exists = await this.runQuery(existsQueryInput);
+            if (!exists) return null;
+
+            const MetaQueryInput = this.getTableMetaDataQuery(schema, table);
+            const result = await this.runQuery(MetaQueryInput);
+            return parseDatabaseMetaData(result);
+        } catch (error) {
+            console.error("Error fetching table metadata:", error);
+            return null;
+        }
+    }
+    
+    public abstract getCreateSchemaQuery(schemaName: string): QueryInput;
+    public abstract getCheckSchemaQuery(schemaName: string | string[]): QueryInput;
+    public abstract getCreateTableQuery(table: string, headers: MetadataHeader): QueryInput[]
+    public abstract getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]>;
+    public abstract getDropTableQuery(table: string): QueryInput;
+    public abstract getPrimaryKeysQuery(table: string): QueryInput;
+    public abstract getForeignKeyConstraintsQuery(table: string): QueryInput;
+    public abstract getViewDependenciesQuery(table: string): QueryInput;
+    public abstract getDropPrimaryKeyQuery(table: string): QueryInput;
+    public abstract getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput;
+    public abstract getUniqueIndexesQuery(table: string, column_name?: string): QueryInput;
+    public abstract autoSQL(table: string, data: Record<string, any>[]): Promise<InsertResult>;
+    public abstract getTableExistsQuery(schema: string, table: string): QueryInput;
+    public abstract getTableMetaDataQuery(schema: string, table: string): QueryInput;
 }
 
 import { MySQLDatabase } from "./mysql";

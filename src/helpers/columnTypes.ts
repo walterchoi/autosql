@@ -1,9 +1,9 @@
-import { regexPatterns } from "./regex";
-import { groupings } from "./groupings";
-import { normalizeNumber } from "./utilities";
+import { regexPatterns } from "../config/regex";
+import { groupings } from "../config/groupings";
+import { normalizeNumber, setToArray } from "./utilities";
 
 // Using regex, when provided a data point, predict what data type this will be
-export async function predictType(data: any): Promise<string | null> {
+export function predictType(data: any): string | null {
     try {
         if(data === undefined || data === null) {
             return null
@@ -113,14 +113,18 @@ export async function predictType(data: any): Promise<string | null> {
     }
 }
 
-export function collateTypes(types: (string | null)[]): string {
+export function collateTypes(typeSetOrArray: Set<string | null> | (string | null)[]): string {
     try {
-        if (!types || types.length === 0) {
+        if (!typeSetOrArray || (typeSetOrArray instanceof Set ? typeSetOrArray.size === 0 : typeSetOrArray.length === 0)) {
             throw new Error("No data types provided for collation");
         }
-
-        // Remove null values
-        types = types.filter((t): t is string => t !== null);
+        let types: string[]
+        // Convert set to array and filter out nulls
+        if (typeSetOrArray instanceof Set) {
+            types = setToArray(typeSetOrArray).filter((t): t is string => t !== null);
+        } else {
+            types = typeSetOrArray.filter((t): t is string => t !== null);
+        }
 
         if (types.length === 0) {
             return "varchar"; // Default fallback if all inputs were null
@@ -134,7 +138,7 @@ export function collateTypes(types: (string | null)[]): string {
 
         let overallType: string | null = null;
 
-        for (const currentType of types) {
+        for (const currentType of uniqueTypes) {
             if (!overallType) {
                 overallType = currentType;
                 continue;

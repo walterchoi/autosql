@@ -1,69 +1,40 @@
 import { defaults } from "../config/defaults";
+import { DatabaseConfig, ColumnDefinition } from "../config/types";
 export function isObject(val: any): boolean {
     return val !== null && typeof val === "object";
 }
 
 export function shuffleArray<T>(array: T[]): T[] {
-    const shuffled = [...array];
-    for (let i = shuffled.length - 1; i > 0; i--) {
+    for (let i = array.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
-        [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        [array[i], array[j]] = [array[j], array[i]];
     }
-    return shuffled;
+    return array;
 }
 
-export function validateConfig(config: { [key: string]: any }): { [key: string]: any } {
+export function validateConfig(config: DatabaseConfig): DatabaseConfig {
     try {
-        if (!config.sql_dialect) {
-            throw new Error(
-                JSON.stringify({
-                    err: "no sql dialect",
-                    step: "get_meta_data",
-                    description: "invalid configuration was provided to get_meta_data step",
-                    resolution: "please provide a sql_dialect (such as pgsql, mysql) to use as part of the configuration object"
-                })
-            );
+        if (!config.sqlDialect) {
+            throw new Error("Please provide a sqlDialect (such as pgsql, mysql) as part of the configuration object.");
         }
 
-        // Extract input config values, using defaults when not provided
-        const {
-            minimum_unique = defaults.minimum_unique,
-            maximum_unique_length = defaults.maximum_unique_length,
-            max_non_text_length = defaults.max_non_text_length,
-            pseudo_unique = defaults.pseudo_unique,
-            primary = defaults.primary,
-            auto_indexing = defaults.auto_indexing,
-            auto_id = defaults.auto_id,
-            sampling = defaults.sampling,
-            sampling_minimum = defaults.sampling_minimum
-        } = config;
-
-        // Validate conflicting configuration settings
-        if (primary && auto_id && JSON.stringify(primary) !== JSON.stringify(["ID"])) {
-            throw new Error(
-                JSON.stringify({
-                    err: "primary key and auto_id was specified",
-                    step: "get_meta_data",
-                    description: "invalid configuration was provided to get_meta_data step",
-                    resolution: "please only use ONE of primary OR auto_id configuration for this step, not both"
-                })
-            );
-        }
-
-        return {
-            sql_dialect: config.sql_dialect, // Required field
-            minimum_unique,
-            maximum_unique_length,
-            max_non_text_length,
-            pseudo_unique,
-            primary,
-            auto_indexing,
-            auto_id,
-            sampling,
-            sampling_minimum
+        // Define default values
+        const defaultConfig: DatabaseConfig = {
+            sqlDialect: config.sqlDialect, // Keep required field
+            minimumUnique: defaults.minimumUnique,
+            maximumUniqueLength: defaults.maximumUniqueLength,
+            maxNonTextLength: defaults.maxNonTextLength,
+            pseudoUnique: defaults.pseudoUnique,
+            autoIndexing: defaults.autoIndexing,
+            sampling: defaults.sampling,
+            samplingMinimum: defaults.samplingMinimum,
+            metaData: config.metaData || {}, // Ensuring headers remain intact
         };
+
+        // Merge provided config with defaults
+        return { ...defaultConfig, ...config };
     } catch (error) {
-        throw new Error(`Error in validateConfig: ${error}`);
+        throw error;
     }
 }
 
@@ -236,4 +207,26 @@ export function parseDatabaseLength(lengthStr?: string): { length?: number; deci
     return parts.length === 2
         ? { length: parts[0], decimal: parts[1] }
         : { length: parts[0] };
+}
+
+export function setToArray<T>(inputSet: Set<T>): T[] {
+    return [...inputSet]; // Spread operator converts Set to an array
+}
+
+export function parseDatabaseMetaData(rows: any[]): Record<string, ColumnDefinition> {
+    const metadata: Record<string, ColumnDefinition> = {};
+    rows.forEach((row: any) => {
+        metadata[row.COLUMN_NAME] = {
+            type: row.DATA_TYPE,
+            length: row.LENGTH ? Number(row.LENGTH) : undefined,
+            allowNull: row.IS_NULLABLE === "YES",
+            unique: row.COLUMN_KEY === "UNIQUE",
+            primary: row.COLUMN_KEY === "PRIMARY",
+            index: row.COLUMN_KEY === "INDEX",
+            autoIncrement: row.EXTRA && row.EXTRA.includes("auto_increment"),
+            decimal: row.LENGTH && row.LENGTH.includes(",") ? Number(row.LENGTH.split(",")[1]) : 0,
+        };
+    });
+
+    return metadata;
 }

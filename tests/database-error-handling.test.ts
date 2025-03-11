@@ -1,7 +1,7 @@
 import { DB_CONFIG, Database, isValidSingleQuery } from "./utils/testConfig";
     
 Object.values(DB_CONFIG).forEach((config) => {
-    describe(`Database Error Handling Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+    describe(`Database Error Handling Tests for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
 
         beforeAll(async () => {
@@ -36,7 +36,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 fail("Expected query to throw an error");
             } catch (error) {
                 expect(error).toBeDefined();
-                console.log(`Caught ${config.sql_dialect.toUpperCase()} Syntax Error:`, error instanceof Error ? error.message : String(error));
+                console.log(`Caught ${config.sqlDialect.toUpperCase()} Syntax Error:`, error instanceof Error ? error.message : String(error));
             }
         });
 
@@ -47,7 +47,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 fail("Expected query to throw an error");
             } catch (error) {
                 expect(error).toBeDefined();
-                console.log(`Caught ${config.sql_dialect.toUpperCase()} Data Type Error:`, error instanceof Error ? error.message : String(error));
+                console.log(`Caught ${config.sqlDialect.toUpperCase()} Data Type Error:`, error instanceof Error ? error.message : String(error));
             }
         });
 
@@ -58,7 +58,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 fail("Expected query to throw an error");
             } catch (error) {
                 expect(error).toBeDefined();
-                console.log(`Caught ${config.sql_dialect.toUpperCase()} Table Not Found Error:`, error instanceof Error ? error.message : String(error));
+                console.log(`Caught ${config.sqlDialect.toUpperCase()} Table Not Found Error:`, error instanceof Error ? error.message : String(error));
             }
         });
 
@@ -70,11 +70,11 @@ Object.values(DB_CONFIG).forEach((config) => {
             ]);
 
             expect(result.success).toBe(false);
-            console.log(`Rollback Test (${config.sql_dialect.toUpperCase()}):`, result.error);
+            console.log(`Rollback Test (${config.sqlDialect.toUpperCase()}):`, result.error);
         });
 
         // ✅ Database Transaction Handling
-        describe(`Database Transaction Handling for ${config.sql_dialect.toUpperCase()}`, () => {
+        describe(`Database Transaction Handling for ${config.sqlDialect.toUpperCase()}`, () => {
             test("Successful transaction", async () => {
                 const result = await db.runTransaction([
                     "INSERT INTO test_schema.test_table (id, name) VALUES (2, 'Bob');",
@@ -91,7 +91,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 ]);
 
                 expect(result.success).toBe(false);
-                console.log(`Rollback Test (${config.sql_dialect.toUpperCase()}):`, result.error);
+                console.log(`Rollback Test (${config.sqlDialect.toUpperCase()}):`, result.error);
             });
         });
     });

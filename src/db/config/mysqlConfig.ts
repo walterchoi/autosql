@@ -5,25 +5,25 @@ export const mysqlConfig: DialectConfig = {
   charset: "utf8mb4",
   collate: "utf8mb4_unicode_ci",
   encoding: "",
-  require_length: ["varchar", "binary", "decimal"],
-  optional_length: ["boolean", "tinyint", "smallint", "int", "bigint"],
-  no_length: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double"],
+  requireLength: ["varchar", "binary", "decimal"],
+  optionalLength: ["boolean", "tinyint", "smallint", "int", "bigint"],
+  noLength: ["date", "time", "datetime", "datetimetz", "json", "text", "mediumtext", "longtext", "exponent", "double"],
   decimals: ["exponent", "double", "decimal"],
   translate: {
-    server_to_local: {
+    serverToLocal: {
       timestamp: "datetimetz",
       tinyint: "boolean",
       numeric: "decimal",
       "double precision": "double"
     },
-    local_to_server: {
+    localToServer: {
       boolean: "tinyint",
       exponent: "double",
       double: "double precision",
       datetimetz: "timestamp"
     }
   },
-  default_translation: {
+  defaultTranslation: {
     "UUID()": "(UUID())",
     "TRUE": "1",
     "FALSE": "0"

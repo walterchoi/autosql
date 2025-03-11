@@ -1,7 +1,7 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
     
 Object.values(DB_CONFIG).forEach((config) => {
-        describe(`Database Tests for ${config.sql_dialect.toUpperCase()}`, () => {
+        describe(`Database Tests for ${config.sqlDialect.toUpperCase()}`, () => {
             let db: Database;
     
             beforeAll(async () => {
