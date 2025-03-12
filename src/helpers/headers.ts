@@ -38,14 +38,19 @@ export function initializeHeaders(validatedConfig: any, data: Record<string, any
     return headers;
 }
 
-export function compareHeaders(oldHeaders: MetadataHeader, newHeaders: MetadataHeader, dialectConfig?: DialectConfig): AlterTableChanges {
-    
+export function compareHeaders(oldHeadersOriginal: MetadataHeader, newHeadersOriginal: MetadataHeader, dialectConfig?: DialectConfig): AlterTableChanges {
+    const newHeaders : MetadataHeader = JSON.parse(JSON.stringify(newHeadersOriginal));
+    const oldHeaders : MetadataHeader = JSON.parse(JSON.stringify(oldHeadersOriginal));
     const addColumns: MetadataHeader = {};
     const modifyColumns: MetadataHeader = {};
     const dropColumns: string[] = [];
     const renameColumns: { oldName: string; newName: string }[] = [];
     const nullableColumns: string[] = [];
     const noLongerUnique: string[] = [];
+    let oldPrimaryKeys: string[] = [];
+    let newPrimaryKeys: string[] = [];
+    let primaryKeyChanges: string[] = [];
+    let renamedPrimaryKeys: { oldName: string; newName: string }[] = [];
 
     // ✅ Identify removed columns
     for (const oldColumnName of Object.keys(oldHeaders)) {
@@ -60,13 +65,13 @@ export function compareHeaders(oldHeaders: MetadataHeader, newHeaders: MetadataH
             const oldColumn = oldHeaders[oldColumnName];
             const newColumn = newHeaders[newColumnName];
 
-            // ✅ A rename is detected if:
-            // - The column names are different
-            // - The type and properties are identical
             if (oldColumnName !== newColumnName && JSON.stringify(oldColumn) === JSON.stringify(newColumn)) {
                 renameColumns.push({ oldName: oldColumnName, newName: newColumnName });
 
-                // ✅ Remove renamed columns from dropColumns and addColumns lists
+                if (oldColumn.primary && newColumn.primary) {
+                    renamedPrimaryKeys.push({ oldName: oldColumnName, newName: newColumnName });
+                }
+
                 dropColumns.splice(dropColumns.indexOf(oldColumnName), 1);
                 delete newHeaders[newColumnName];
             }
@@ -162,6 +167,37 @@ export function compareHeaders(oldHeaders: MetadataHeader, newHeaders: MetadataH
         }
     }
 
+    for (const columnName of Object.keys(oldHeaders)) {
+        if (oldHeaders[columnName].primary) {
+            oldPrimaryKeys.push(columnName);
+        }
+    }
+    for (const columnName of Object.keys(newHeaders)) {
+        if (newHeaders[columnName].primary) {
+            newPrimaryKeys.push(columnName);
+        }
+    }
+
+    // ✅ Identify true primary key changes (excluding length-only modifications)
+    const structuralPrimaryKeyChanges = oldPrimaryKeys.filter(pk => !newPrimaryKeys.includes(pk))
+    .concat(newPrimaryKeys.filter(pk => !oldPrimaryKeys.includes(pk)));
+
+    // ✅ Only update primaryKeyChanges if there's an actual key change
+    if (structuralPrimaryKeyChanges.length > 0 || renamedPrimaryKeys.length > 0) {
+    primaryKeyChanges = [...new Set([...oldPrimaryKeys, ...newPrimaryKeys])];
+
+        for (const { oldName, newName } of renamedPrimaryKeys) {
+            if (primaryKeyChanges.includes(oldName)) {
+                primaryKeyChanges.push(newName); // ✅ Add new key
+            }
+        }
+
+        // ✅ Remove old names of renamed primary keys from the final key list
+        for (const { oldName } of renamedPrimaryKeys) {
+            primaryKeyChanges = primaryKeyChanges.filter(pk => pk !== oldName);
+        }
+    }
+
     return {
         addColumns,
         modifyColumns,
@@ -169,5 +205,6 @@ export function compareHeaders(oldHeaders: MetadataHeader, newHeaders: MetadataH
         renameColumns,
         nullableColumns,
         noLongerUnique,
+        primaryKeyChanges,
     };
 }

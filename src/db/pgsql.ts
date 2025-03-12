@@ -67,6 +67,7 @@ export class PostgresDatabase extends Database {
     
             return { success: true };
         } catch (error) {
+            if(client) await client.query("ROLLBACK;");
             console.error("PostgreSQL testQuery failed:", error);
             throw error;
         } finally {
@@ -90,11 +91,12 @@ export class PostgresDatabase extends Database {
             const result = await client.query(query, params);
             return result.rows;
         } catch (error) {
+            if(client && error) await client.query("ROLLBACK;");
             throw error;
         } finally {
             if (client) client.release();
         }
-    }    
+    }
 
     getCreateSchemaQuery(schemaName: string): QueryInput {
         return { query: `CREATE SCHEMA IF NOT EXISTS "${schemaName}";`};
@@ -118,39 +120,59 @@ export class PostgresDatabase extends Database {
     
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
+        const alterPrimaryKey = this.config.updatePrimaryKey ?? false;
+
         if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
                     // If old headers are provided in MetadataHeader format, compare them with newHeaders
                     if (!newHeaders) {
                         throw new Error("Missing new headers for ALTER TABLE query");
                     }
-                    alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders);
+                    console.log('comparing headers')
+                    console.log(alterTableChangesOrOldHeaders)
+                    console.log(newHeaders)
+                    alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig());
+                    console.log(alterTableChanges)
                 } else {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }
-        let indexesToDrop: string[] = [];
+        const queries: QueryInput[] = [];
+        const schemaPrefix = this.config.schema ? `"${this.config.schema}".` : "";
+
+        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
+            queries.push(this.getDropPrimaryKeyQuery(table));
+            queries.push({ query: "COMMIT;", params: [] });
+            queries.push({ query: "BEGIN;", params: [] });
+        }
 
         // ✅ Only fetch unique indexes if there are columns to remove uniqueness from
+        let indexesToDrop: string[] = [];
         if (alterTableChanges.noLongerUnique.length > 0) {
             const uniqueIndexes = await this.runQuery(this.getUniqueIndexesQuery(table)) as { indexname: string; columns: string }[];
 
             indexesToDrop = uniqueIndexes
                 .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
                 .map(({ indexname }) => `DROP INDEX IF EXISTS "${indexname}"`);
+
+            if (indexesToDrop.length > 0) {
+                queries.push({
+                    query: indexesToDrop.join("; ") + ";",
+                    params: []
+                });
+            }
         }
 
-        // ✅ Get actual ALTER TABLE queries
+        // Get actual ALTER TABLE queries
         const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema);
+        queries.push(...alterQueries);
 
-        // ✅ Append DROP INDEX statements if needed
-        if (indexesToDrop.length > 0) {
-            const schemaPrefix = this.config.schema ? `"${this.config.schema}".` : "";
-            alterQueries.unshift({
-                query: `ALTER TABLE ${schemaPrefix}"${table}" ${indexesToDrop.join(", ")};`,
-                params: []
-            });
-        }        
+        // Add New Primary Key (if changed and allowed)
+        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
+            queries.push({ query: "COMMIT;", params: [] });
+            queries.push({ query: "BEGIN;", params: [] });
+            queries.push(this.getAddPrimaryKeyQuery(table, alterTableChanges.primaryKeyChanges));
+        }
 
-        return alterQueries;
+        return queries;
     }
 
     getDropTableQuery(table: string): QueryInput {

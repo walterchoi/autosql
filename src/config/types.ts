@@ -37,6 +37,7 @@ export interface AlterTableChanges {
   renameColumns: { oldName: string; newName: string }[];
   nullableColumns: string[];
   noLongerUnique: string[];
+  primaryKeyChanges: string[];
 }
   
 export interface DatabaseConfig {

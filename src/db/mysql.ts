@@ -55,6 +55,7 @@ export class MySQLDatabase extends Database {
     
             return { success: true };
         } catch (error: any) {
+            if(client) await client.query("ROLLBACK;");
             console.error("MySQL testQuery failed:", error);
             throw error;
         } finally {
@@ -79,6 +80,7 @@ export class MySQLDatabase extends Database {
             const [rows] = await client.query(query, params);
             return rows;
         } catch (error) {
+            if(client) await client.query("ROLLBACK;");
             throw error;
         } finally {
             if (client) client.release();
@@ -107,16 +109,24 @@ export class MySQLDatabase extends Database {
 
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
+        const alterPrimaryKey = this.config.updatePrimaryKey ?? false;
         if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
             // If old headers are provided in MetadataHeader format, compare them with newHeaders
             if (!newHeaders) {
                 throw new Error("Missing new headers for ALTER TABLE query");
             }
-            alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders);
+            alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig());
         } else {
             alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
         }
+        console.log(alterTableChanges)
+        const queries: QueryInput[] = [];
+        const schemaPrefix = this.config.schema ? `\`${this.config.schema}\`.` : "";
         
+        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
+            queries.push(this.getDropPrimaryKeyQuery(table));
+        }
+
         let indexesToDrop: string[] = [];
         if (alterTableChanges.noLongerUnique.length > 0) {
             const uniqueIndexes = await this.runQuery(this.getUniqueIndexesQuery(table)) as { indexname: string; columns: string }[];
@@ -124,17 +134,21 @@ export class MySQLDatabase extends Database {
             indexesToDrop = uniqueIndexes
                 .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
                 .map(({ indexname }) => `DROP INDEX \`${indexname}\``);
-        }
-        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema);
-        if (indexesToDrop.length > 0) {
-            const schemaPrefix = this.config.schema ? `\`${this.config.schema}\`.` : ""; // Add schema if provided
 
-            alterQueries.unshift({ 
-                query: `ALTER TABLE ${schemaPrefix}\`${table}\` ${indexesToDrop.join(", ")};`, 
-                params: [] 
-            });
+            if (indexesToDrop.length > 0) {
+                queries.push({
+                    query: `ALTER TABLE ${schemaPrefix}\`${table}\` ${indexesToDrop.join(", ")};`,
+                    params: []
+                });
+            }
         }
-        return alterQueries;
+
+        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema);
+        queries.push(...alterQueries);
+        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
+            queries.push(this.getAddPrimaryKeyQuery(table, alterTableChanges.primaryKeyChanges));
+        }
+        return queries;
     }
 
     getDropTableQuery(table: string): QueryInput {

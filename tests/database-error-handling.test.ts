@@ -20,11 +20,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         });
 
         afterAll(async () => {
-            try {
-                await db.runQuery(`DROP TABLE IF EXISTS test_schema.database_error_handling_test_table;`);
-            } catch (error) {
-                
-            }
+            await db.runQuery(`DROP TABLE IF EXISTS test_schema.database_error_handling_test_table;`);
             const closeResult = await db.closeConnection();
             expect(closeResult.success).toBe(true);
         });

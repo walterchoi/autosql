@@ -171,3 +171,103 @@ Object.values(DB_CONFIG).forEach((config) => {
         });
     });
 });
+
+Object.values(DB_CONFIG).forEach((config) => {
+    describe(`Primary Key Handling Tests for ${config.sqlDialect.toUpperCase()}`, () => {
+        let db: Database;
+        let dialectConfig: DialectConfig;
+
+        beforeAll(() => {
+            db = Database.create(config);
+            dialectConfig = db.getDialectConfig();
+        });
+
+        test("Detects added primary key correctly", () => {
+            const oldHeaders: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false }
+            };
+
+            const newHeaders: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true }
+            };
+
+            const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+            expect(result.primaryKeyChanges).toEqual(["id"]);
+        });
+
+        test("Detects removed primary key but retains a primary key if needed", () => {
+            const oldHeaders: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true }
+            };
+
+            const newHeaders: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false } // Primary key removed
+            };
+
+            const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+            expect(result.primaryKeyChanges).toEqual(["id"]); // Ensures `id` is still primary
+        });
+
+        test("Detects renamed primary key and updates accordingly", () => {
+            const oldHeaders: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true }
+            };
+
+            const newHeaders: MetadataHeader = {
+                uuid: { type: "int", length: 11, allowNull: false, primary: true }
+            };
+
+            const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+            expect(result.primaryKeyChanges).toEqual(["uuid"]);
+            expect(result.renameColumns).toEqual([{ oldName: "id", newName: "uuid" }]);
+        });
+
+        test("Handles transition from single-column primary key to composite primary key", () => {
+            const oldHeaders: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true }
+            };
+
+            const newHeaders: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false },
+                email: { type: "varchar", length: 255, allowNull: false, primary: true }
+            };
+
+            const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+            expect(result.primaryKeyChanges).toEqual(["id", "email"]);
+        });
+
+        test("Handles transition from composite primary key to a single-column primary key", () => {
+            const oldHeaders: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true },
+                email: { type: "varchar", length: 255, allowNull: false, primary: true }
+            };
+
+            const newHeaders: MetadataHeader = {
+                email: { type: "varchar", length: 255, allowNull: false, primary: true }
+            };
+
+            const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+            expect(result.primaryKeyChanges).toEqual(["id", "email"]);
+        });
+
+        test("Handles renamed primary keys", () => {
+            const oldHeaders: MetadataHeader = {
+                id: { type: "int", length: 11, primary: true, allowNull: false },
+                name: { type: "varchar", length: 100, allowNull: false, unique: true },
+                created_at: { type: "datetime", allowNull: false },
+                email: { type: "varchar", length: 255, allowNull: false, unique: true }
+            };
+            
+            const newHeaders: MetadataHeader = {
+                uuid: { type: "int", length: 11, primary: true, allowNull: false },
+                name: { type: "varchar", length: 100, allowNull: false, unique: true },
+                created_at: { type: "datetime", allowNull: false },
+                email: { type: "varchar", length: 255, allowNull: false, unique: true }
+            };
+
+            const result = compareHeaders(oldHeaders, newHeaders, dialectConfig);
+            expect(result.primaryKeyChanges).toEqual(["uuid"]);
+            expect(result.renameColumns).toEqual([{ oldName: "id", newName: "uuid" }]);
+        })
+    });
+});
