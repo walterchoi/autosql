@@ -12,7 +12,8 @@ const dialectConfig = mysqlConfig
 
 export class MySQLDatabase extends Database {
     constructor(config: DatabaseConfig) {
-        super(config); // Ensure constructor calls `super()`
+        super(config);
+        this.autoSQL = new AutoSQLHandler(this);
     }
 
     async establishDatabaseConnection(): Promise<void> {
@@ -185,10 +186,5 @@ export class MySQLDatabase extends Database {
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
         return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
-    }
-
-    async autoSQL(table: string, data: Record<string, any>[]): Promise<InsertResult> {
-        const handler = new AutoSQLHandler(this);
-        return await handler.execute(table, data);
     }
 }

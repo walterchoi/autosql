@@ -1,5 +1,5 @@
-import { defaults } from "../config/defaults";
-import { DatabaseConfig, MetadataHeader, DialectConfig } from "../config/types";
+import { defaults, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE } from "../config/defaults";
+import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects } from "../config/types";
 export function isObject(val: any): boolean {
     return val !== null && typeof val === "object";
 }
@@ -280,3 +280,109 @@ export function isCombinationUnique(data: Record<string, any>[], columns: string
 
     return true;
 }
+
+export function tableChangesExist(alterTableChanges: AlterTableChanges): boolean {
+    if (
+        Object.keys(alterTableChanges.addColumns).length > 0 ||
+        Object.keys(alterTableChanges.modifyColumns).length > 0 ||
+        alterTableChanges.dropColumns.length > 0 ||
+        alterTableChanges.renameColumns.length > 0 ||
+        alterTableChanges.nullableColumns.length > 0 ||
+        alterTableChanges.noLongerUnique.length > 0 ||
+        alterTableChanges.primaryKeyChanges.length > 0
+    ) {
+        return true
+    } else {
+        return false
+    }
+}
+
+export function isMetaDataHeader(input: any): input is MetadataHeader {
+    if (typeof input !== "object" || input === null || Array.isArray(input)) {
+        return false; // ❌ Must be a non-null object
+    }
+
+    for (const key in input) {
+        if (typeof key !== "string") return false; // ❌ Keys must be strings
+
+        const column = input[key];
+
+        if (
+            typeof column !== "object" || column === null ||
+            (!("type" in column) || typeof column.type !== "string") // ✅ "type" is required and must be a string
+        ) {
+            return false;
+        }
+
+        // ✅ Optional fields must match expected types
+        if (
+            ("length" in column && typeof column.length !== "number") ||
+            ("allowNull" in column && typeof column.allowNull !== "boolean") ||
+            ("unique" in column && typeof column.unique !== "boolean") ||
+            ("index" in column && typeof column.index !== "boolean") ||
+            ("pseudounique" in column && typeof column.pseudounique !== "boolean") ||
+            ("primary" in column && typeof column.primary !== "boolean") ||
+            ("autoIncrement" in column && typeof column.autoIncrement !== "boolean") ||
+            ("decimal" in column && typeof column.decimal !== "number") ||
+            ("default" in column && column.default === undefined) // `default` can be anything except `undefined`
+        ) {
+            return false;
+        }
+    }
+
+    return true; // ✅ Passed all checks
+}
+
+export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supportedDialects): { rowSize: number; exceedsLimit: boolean } {
+    let totalSize = 0;
+  
+    for (const columnName in mergedMetaData) {
+      const column = mergedMetaData[columnName];
+      const type = column.type?.toLowerCase() || "varchar";
+  
+      let columnSize = 0;
+  
+      if (["boolean", "binary", "tinyint"].includes(type)) {
+        columnSize = 1;
+      } else if (["smallint"].includes(type)) {
+        columnSize = 2;
+      } else if (["int", "numeric"].includes(type)) {
+        columnSize = 4;
+      } else if (["bigint"].includes(type)) {
+        columnSize = 8;
+      } else if (["decimal", "double", "exponent"].includes(type)) {
+        columnSize = column.decimal ? Math.ceil(column.decimal / 2) + 1 : DEFAULT_LENGTHS.decimal;
+      } else if (["varchar"].includes(type)) {
+        columnSize = column.length ?? DEFAULT_LENGTHS.varchar;
+      } else if (["text", "mediumtext", "longtext", "json"].includes(type)) {
+        columnSize = DEFAULT_LENGTHS[type as keyof typeof DEFAULT_LENGTHS] ?? 4; // Only store pointer size
+      } else if (["date"].includes(type)) {
+        columnSize = 3;
+      } else if (["time"].includes(type)) {
+        columnSize = 3;
+      } else if (["datetime", "datetimetz"].includes(type)) {
+        columnSize = 8;
+      }
+  
+      if (column.allowNull) {
+        columnSize += 1; // Add 1 byte for NULL flag
+      }
+  
+      if (column.primary || column.unique || column.index) {
+        columnSize += 8; // Approximate index storage
+      }
+  
+      totalSize += columnSize;
+    }
+  
+    // Add row overhead (~20 bytes for metadata, depends on storage engine)
+    const rowOverhead = 20;
+    totalSize += rowOverhead;
+  
+    let maxRowSize
+    if(dbType === 'mysql') { maxRowSize = MYSQL_MAX_ROW_SIZE }
+    else if (dbType === 'pgsql') { maxRowSize = POSTGRES_MAX_ROW_SIZE }
+    else { maxRowSize = POSTGRES_MAX_ROW_SIZE }
+
+    return { rowSize: totalSize, exceedsLimit: totalSize > maxRowSize };
+  }

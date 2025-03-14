@@ -118,6 +118,12 @@ export interface InsertResult {
   affectedRows: number 
 }
 
+export interface QueryResult {
+    success: boolean;
+    results?: any[];
+    error?: string;
+}
+
 export interface metaDataInterim {
   [key: string]: {
     uniqueSet: Set<any>;

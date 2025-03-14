@@ -12,7 +12,8 @@ const dialectConfig = pgsqlConfig
 
 export class PostgresDatabase extends Database {
     constructor(config: DatabaseConfig) {
-        super(config); // Ensure constructor calls `super()`
+        super(config);
+        this.autoSQL = new AutoSQLHandler(this);
     }
 
     async establishDatabaseConnection(): Promise<void> {
@@ -206,10 +207,5 @@ export class PostgresDatabase extends Database {
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
         return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
-    }
-
-    async autoSQL(table: string, data: Record<string, any>[]): Promise<InsertResult> {
-        const handler = new AutoSQLHandler(this);
-        return await handler.execute(table, data);
     }
 }

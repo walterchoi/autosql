@@ -3,11 +3,13 @@ import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges, InsertResult, MetadataHeader } from '../config/types';
 import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
+import { AutoSQLHandler } from "./autosql";
 
 // Abstract database class to define common methods.
 export abstract class Database {
     protected connection: Pool | PgPool | null = null;
     protected config: DatabaseConfig;
+    public autoSQL!: AutoSQLHandler;
     startDate : Date = new Date();
     protected abstract getPermanentErrors(): Promise<string[]>;
 
@@ -17,6 +19,17 @@ export abstract class Database {
 
     public getConfig() {
         return this.config;
+    }
+
+    public updateTableMetadata(table: string, metaData: MetadataHeader, type: "metaData" | "existingMetaData" = "metaData"): void {
+        if (!this.config[type]) {
+            this.config[type] = {};
+        }
+
+        this.config[type][table] = {
+            ...this.config[type][table],
+            ...metaData
+        };
     }
 
     static create(config: DatabaseConfig): Database {
@@ -294,7 +307,6 @@ export abstract class Database {
     public abstract getDropPrimaryKeyQuery(table: string): QueryInput;
     public abstract getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput;
     public abstract getUniqueIndexesQuery(table: string, column_name?: string): QueryInput;
-    public abstract autoSQL(table: string, data: Record<string, any>[]): Promise<InsertResult>;
     public abstract getTableExistsQuery(schema: string, table: string): QueryInput;
     public abstract getTableMetaDataQuery(schema: string, table: string): QueryInput;
 }
