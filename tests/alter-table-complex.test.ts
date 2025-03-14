@@ -76,7 +76,6 @@ Object.values(DB_CONFIG).forEach((config) => {
         test("Generate and execute ALTER TABLE query - Modify primary key (if enabled)", async () => {
             if (!config.updatePrimaryKey) return; // Skip if auto primary key updates are disabled
         
-            console.log("MODIFIED_COLUMNS_2 before calling alterTableQuery:", MODIFIED_COLUMNS_2);
             const queries = await db.alterTableQuery(TEST_TABLE_NAME, MODIFIED_COLUMNS_1, MODIFIED_COLUMNS_2);
             expect(Array.isArray(queries)).toBe(true);
             expect(queries.length).toBeGreaterThan(0);
