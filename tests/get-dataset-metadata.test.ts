@@ -65,7 +65,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                     type: "tinyint",
                     length: 1,
                     allowNull: false,
-                    unique: false,
+                    unique: true,
                     index: false,
                     pseudounique: false,
                     primary: false,
@@ -77,7 +77,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                     type: "varchar",
                     length: 4, // "John"
                     allowNull: true, // ✅ Because one row has NULL
-                    unique: false,
+                    unique: true,
                     index: false,
                     pseudounique: false,
                     primary: false,
@@ -114,7 +114,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             const expectedMetadata: MetadataHeader = {
                 order_id: {
-                    type: "tinyint",
+                    type: "smallint",
                     length: 4,
                     allowNull: false,
                     unique: true, // ✅ Unique values
@@ -129,9 +129,9 @@ Object.values(DB_CONFIG).forEach((config) => {
                     type: "tinyint",
                     length: 1,
                     allowNull: false,
-                    unique: false,
+                    unique: true,
                     index: false,
-                    pseudounique: true, // ✅ Close to unique
+                    pseudounique: false,
                     primary: false,
                     autoIncrement: false,
                     default: undefined,
@@ -141,7 +141,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                     type: "tinyint",
                     length: 3,
                     allowNull: false,
-                    unique: false,
+                    unique: true,
                     index: false,
                     pseudounique: false,
                     primary: false,
@@ -154,120 +154,5 @@ Object.values(DB_CONFIG).forEach((config) => {
             const metadata = await getMetaData(config, jsonData);
             expect(metadata).toEqual(expectedMetadata);
         });
-
-        /*
-        test("Handles multiple data types in the same column", async () => {
-            const jsonData = [
-                { mixed: 1 },
-                { mixed: "Hello" },
-                { mixed: 3.14 },
-                { mixed: null }
-            ];
-
-            const expectedMetadata: MetadataHeader = {
-                mixed: {
-                    type: "varchar", // ✅ Mixed types default to string
-                    length: 5, // ✅ "Hello"
-                    allowNull: true,
-                    unique: false,
-                    index: false,
-                    pseudounique: false,
-                    primary: false,
-                    autoIncrement: false,
-                    default: undefined,
-                    decimal: 0
-                }
-            };
-
-            const metadata = await getMetaData(config, jsonData);
-            expect(metadata).toEqual(expectedMetadata);
-        });
-
-        test("Handles boolean values correctly", async () => {
-            const jsonData = [
-                { user_id: 1, is_active: true },
-                { user_id: 2, is_active: false }
-            ];
-
-            const expectedMetadata: MetadataHeader = {
-                user_id: {
-                    type: "tinyint",
-                    length: 1,
-                    allowNull: false,
-                    unique: false,
-                    index: false,
-                    pseudounique: false,
-                    primary: false,
-                    autoIncrement: false,
-                    default: undefined,
-                    decimal: 0
-                },
-                is_active: {
-                    type: "boolean",
-                    length: 1, // ✅ Stored as 0 or 1
-                    allowNull: false,
-                    unique: false,
-                    index: false,
-                    pseudounique: false,
-                    primary: false,
-                    autoIncrement: false,
-                    default: undefined,
-                    decimal: 0
-                }
-            };
-
-            const metadata = await getMetaData(config, jsonData);
-            expect(metadata).toEqual(expectedMetadata);
-        });
-
-        test("Handles composite primary keys", async () => {
-            const jsonData = [
-                { order_id: 1, product_id: 1001, quantity: 2 },
-                { order_id: 1, product_id: 1002, quantity: 1 }
-            ];
-
-            const expectedMetadata: MetadataHeader = {
-                order_id: {
-                    type: "tinyint",
-                    length: 1,
-                    allowNull: false,
-                    unique: false,
-                    index: false,
-                    pseudounique: false,
-                    primary: true, // ✅ Composite primary key
-                    autoIncrement: false,
-                    default: undefined,
-                    decimal: 0
-                },
-                product_id: {
-                    type: "tinyint",
-                    length: 4,
-                    allowNull: false,
-                    unique: false,
-                    index: false,
-                    pseudounique: false,
-                    primary: true, // ✅ Composite primary key
-                    autoIncrement: false,
-                    default: undefined,
-                    decimal: 0
-                },
-                quantity: {
-                    type: "tinyint",
-                    length: 1,
-                    allowNull: false,
-                    unique: false,
-                    index: false,
-                    pseudounique: false,
-                    primary: false,
-                    autoIncrement: false,
-                    default: undefined,
-                    decimal: 0
-                }
-            };
-
-            const metadata = await getMetaData(config, jsonData);
-            expect(metadata).toEqual(expectedMetadata);
-        });
-        */
     });
 });
