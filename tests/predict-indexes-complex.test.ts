@@ -116,6 +116,5 @@ describe("predictIndexes function", () => {
         expect(result.purchase_date.primary).toBeUndefined(); // ✅ Required to form a unique composite key
         expect(result.refund_date.primary).toBeUndefined(); // ✅ Should not be primary
         expect(result.shipment_date.primary).toBe(true); // ✅ Should not be primary
-    });    
-    
+    });     
 });
