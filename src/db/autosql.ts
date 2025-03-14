@@ -1,7 +1,8 @@
 import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
-import { InsertResult } from "../config/types";
-import { getMetaData } from "../helpers/metadata";
+import { InsertResult, MetadataHeader, AlterTableChanges } from "../config/types";
+import { getMetaData, compareMetaData } from "../helpers/metadata";
+import { parseDatabaseMetaData } from "../helpers/utilities";
 
 export class AutoSQLHandler {
     private db: MySQLDatabase | PostgresDatabase;
@@ -12,8 +13,15 @@ export class AutoSQLHandler {
 
     async execute(table: string, data: Record<string, any>[]): Promise<InsertResult> {
         const currentMetaDataQuery = this.db.getTableMetaDataQuery(this.db.getConfig().schema || this.db.getConfig().database || "", table)
-        const currentMetaData = this.db.runQuery(currentMetaDataQuery);
-        const newMetaData = getMetaData(this.db.getConfig(), data);
+        const currentMetaDataResults = await this.db.runQuery(currentMetaDataQuery);
+        const currentMetaData = parseDatabaseMetaData(currentMetaDataResults, this.db.getDialectConfig())
+        const newMetaData = await getMetaData(this.db.getConfig(), data);
+        let mergedMetaData: AlterTableChanges;
+        if(currentMetaData) {
+            mergedMetaData = compareMetaData(currentMetaData, newMetaData, this.db.getDialectConfig())
+        } else {
+            
+        }
         
         const start = this.db.startDate;
         const affectedRows = 0

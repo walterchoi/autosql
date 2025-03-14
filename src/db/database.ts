@@ -266,7 +266,7 @@ export abstract class Database {
         }
     }
 
-    public async getTableMetaData(schema: string, table: string): Promise<Record<string, ColumnDefinition> | null> {
+    public async getTableMetaData(schema: string, table: string): Promise<MetadataHeader | null> {
         try {
             if (!this.connection) throw new Error("Database connection not established.");
     

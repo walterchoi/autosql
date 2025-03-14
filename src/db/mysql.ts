@@ -4,7 +4,7 @@ import { mysqlPermanentErrors } from './permanentErrors/mysql';
 import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader } from "../config/types";
 import { mysqlConfig } from "./config/mysqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
-import { compareHeaders } from '../helpers/headers';
+import { compareMetaData } from '../helpers/metadata';
 import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
 import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
 import { AutoSQLHandler } from "./autosql";
@@ -115,7 +115,7 @@ export class MySQLDatabase extends Database {
             if (!newHeaders) {
                 throw new Error("Missing new headers for ALTER TABLE query");
             }
-            alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig());
+            alterTableChanges = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig());
         } else {
             alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
         }

@@ -1,5 +1,5 @@
 import { defaults } from "../config/defaults";
-import { DatabaseConfig, ColumnDefinition, DialectConfig } from "../config/types";
+import { DatabaseConfig, MetadataHeader, DialectConfig } from "../config/types";
 export function isObject(val: any): boolean {
     return val !== null && typeof val === "object";
 }
@@ -216,8 +216,8 @@ export function parseDatabaseLength(lengthStr?: string): { length?: number; deci
     return { length, decimal };
 }
 
-export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig): Record<string, ColumnDefinition> | null {
-    const metadata: Record<string, ColumnDefinition> = {};
+export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig): MetadataHeader | null {
+    const metadata: MetadataHeader = {};
 
     rows.forEach((row: any) => {
         // Normalize column keys to lowercase

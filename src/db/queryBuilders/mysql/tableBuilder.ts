@@ -1,6 +1,6 @@
 import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { mysqlConfig } from "../../config/mysqlConfig";
-import { compareHeaders } from '../../../helpers/headers';
+import { compareMetaData } from '../../../helpers/metadata';
 const dialectConfig = mysqlConfig
 
 export class MySQLTableQueryBuilder {

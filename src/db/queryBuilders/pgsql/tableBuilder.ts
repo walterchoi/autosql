@@ -1,6 +1,6 @@
 import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { pgsqlConfig } from "../../config/pgsqlConfig";
-import { compareHeaders } from '../../../helpers/headers';
+import { compareMetaData } from '../../../helpers/metadata';
 const dialectConfig = pgsqlConfig
 
 export class PostgresTableQueryBuilder {
@@ -66,8 +66,8 @@ export class PostgresTableQueryBuilder {
     
         return sqlQueries;
     }    
-    // ✅ Get changes using compareHeaders()
-    //const { addColumns, modifyColumns } = compareHeaders(oldHeaders, newHeaders, pgsqlConfig);
+    // ✅ Get changes using compareMetaData()
+    //const { addColumns, modifyColumns } = compareMetaData(oldHeaders, newHeaders, pgsqlConfig);
 
     static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string): QueryInput[] {
         let queries: QueryInput[] = [];

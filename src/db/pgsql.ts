@@ -4,7 +4,7 @@ import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
 import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader } from "../config/types";
 import { pgsqlConfig } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
-import { compareHeaders } from '../helpers/headers';
+import { compareMetaData } from '../helpers/metadata';
 import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
 import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
 import { AutoSQLHandler } from "./autosql";
@@ -127,7 +127,7 @@ export class PostgresDatabase extends Database {
                     if (!newHeaders) {
                         throw new Error("Missing new headers for ALTER TABLE query");
                     }
-                    alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig());
+                    alterTableChanges = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig());
                 } else {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }
