@@ -127,11 +127,7 @@ export class PostgresDatabase extends Database {
                     if (!newHeaders) {
                         throw new Error("Missing new headers for ALTER TABLE query");
                     }
-                    console.log('comparing headers')
-                    console.log(alterTableChangesOrOldHeaders)
-                    console.log(newHeaders)
                     alterTableChanges = compareHeaders(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig());
-                    console.log(alterTableChanges)
                 } else {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }

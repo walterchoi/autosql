@@ -119,7 +119,6 @@ export class MySQLDatabase extends Database {
         } else {
             alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
         }
-        console.log(alterTableChanges)
         const queries: QueryInput[] = [];
         const schemaPrefix = this.config.schema ? `\`${this.config.schema}\`.` : "";
         
