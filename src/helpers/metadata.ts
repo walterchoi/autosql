@@ -210,8 +210,8 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
             throw new Error(`Unsupported SQL dialect: ${sqlDialect}`);
         }
         
-        const metaData = await getDataHeaders(data, validatedConfig)
-        
+        const headers = await getDataHeaders(data, validatedConfig)
+        const metaData = predictIndexes(headers, undefined, undefined, data)
         return metaData;
         
     } catch (error) {

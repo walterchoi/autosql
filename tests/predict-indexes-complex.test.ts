@@ -4,13 +4,11 @@ import { MetadataHeader } from "../src/config/types";
 describe("predictIndexes function", () => {
     
     test("ensures composite primary key is only set when necessary", () => {
-        const config = {
-            meta_data: {
-                order_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
-                product_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
-                created_at: { type: "datetime", length: 10 }
-            } as MetadataHeader
-        };
+        const meta_data: MetadataHeader = {
+            order_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
+            product_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
+            created_at: { type: "datetime", length: 10 }
+        }
         const data : Record<string, any>[] = [
             { order_id: 1, product_id: 101, created_at: "2024-03-01 12:00:00" },
             { order_id: 2, product_id: 102, created_at: "2024-03-02 12:00:00" },
@@ -24,7 +22,7 @@ describe("predictIndexes function", () => {
             { order_id: 6, product_id: 103, created_at: "2024-03-08 12:00:00" }, // Duplicate product_id                
         ]
     
-        const result = predictIndexes(config, undefined, data);
+        const result = predictIndexes(meta_data, undefined, undefined, data);
     
         expect(result.order_id.primary).toBe(true); // ✅ Composite PK needed
         expect(result.product_id.primary).toBe(true); // ✅ Composite PK needed
@@ -32,13 +30,11 @@ describe("predictIndexes function", () => {
     });    
 
     test("handles pseudo-unique columns with no combination that allows a unique key", () => {
-        const config = {
-            meta_data: {
-                page_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
-                user_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
-                page_view: { type: "int", allowNull: false, length: 11 }
-            } as MetadataHeader
-        };
+        const meta_data: MetadataHeader = {
+            page_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
+            user_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
+            page_view: { type: "int", allowNull: false, length: 11 }
+        }
         const data : Record<string, any>[] = [
             { page_id: 1001, user_id: 1, page_view: 5 },
             { page_id: 1002, user_id: 1, page_view: 5 },
@@ -51,20 +47,18 @@ describe("predictIndexes function", () => {
             { page_id: 1009, user_id: 6, page_view: 18 },
             { page_id: 1010, user_id: 6, page_view: 9 }
         ]
-        const result = predictIndexes(config, undefined, data);
+        const result = predictIndexes(meta_data, undefined, undefined, data);
         expect(result.page_id.primary).toBeUndefined(); // ✅ No primary key set
         expect(result.user_id.primary).toBeUndefined(); // ✅ No primary key set
         expect(result.page_view.primary).toBeUndefined(); // ✅ No primary key set
     });
     
     test("uses a date column to create a unique composite key", () => {
-        const config = {
-            meta_data: {
-                event_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
-                user_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
-                event_date: { type: "datetime", allowNull: false, length: 10 }
-            } as MetadataHeader            
-        };
+        const meta_data: MetadataHeader = {
+            event_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
+            user_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
+            event_date: { type: "datetime", allowNull: false, length: 10 }
+        }
         const data: Record<string, any>[] = [
             { event_id: 2001, user_id: 1, event_date: "2024-03-01" },
             { event_id: 2001, user_id: 1, event_date: "2024-03-02" }, // Duplicate event_id
@@ -78,7 +72,7 @@ describe("predictIndexes function", () => {
             { event_id: 2006, user_id: 8, event_date: "2024-03-07" }
         ]
     
-        const result = predictIndexes(config, undefined, data);
+        const result = predictIndexes(meta_data, undefined, undefined, data);
     
         expect(result.event_id.primary).toBe(true); // ✅ Composite PK formed
         expect(result.user_id.primary).toBe(true); // ✅ Composite PK formed
@@ -87,15 +81,13 @@ describe("predictIndexes function", () => {
     
     
     test("handles multiple date columns and selects the correct one for uniqueness", () => {
-        const config = {
-            meta_data: {
-                transaction_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
-                user_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
-                purchase_date: { type: "datetime", allowNull: false, length: 10 },
-                refund_date: { type: "datetime", allowNull: true, length: 10 },
-                shipment_date: { type: "datetime", allowNull: false, length: 10 } // ✅ New date column
-            } as MetadataHeader,
-        };
+        const meta_data: MetadataHeader = {
+            transaction_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
+            user_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
+            purchase_date: { type: "datetime", allowNull: false, length: 10 },
+            refund_date: { type: "datetime", allowNull: true, length: 10 },
+            shipment_date: { type: "datetime", allowNull: false, length: 10 } // ✅ New date column
+        }
     
         const data: Record<string, any>[] = [
             { transaction_id: 3001, user_id: 1, purchase_date: "2024-03-01", refund_date: null, shipment_date: "2024-03-02" },
@@ -110,7 +102,7 @@ describe("predictIndexes function", () => {
             { transaction_id: 3006, user_id: 8, purchase_date: "2024-03-06", refund_date: null, shipment_date: "2024-03-07" }
         ];
     
-        const result = predictIndexes(config, undefined, data);
+        const result = predictIndexes(meta_data, undefined, undefined, data);
         expect(result.transaction_id.primary).toBe(true); // ✅ Composite PK
         expect(result.user_id.primary).toBe(true); // ✅ Composite PK
         expect(result.purchase_date.primary).toBeUndefined(); // ✅ Required to form a unique composite key

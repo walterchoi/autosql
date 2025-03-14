@@ -3,10 +3,10 @@ import { MetadataHeader } from "../config/types";
 import { groupings } from "../config/groupings";
 import { generateCombinations, isCombinationUnique } from "../helpers/utilities";
 
-export function predictIndexes(config: { meta_data: MetadataHeader; maxKeyLength?: number }, primaryKey?: string[], data?: Record<string, any>[]): MetadataHeader {
+export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: number, primaryKey?: string[], data?: Record<string, any>[]): MetadataHeader {
     try {
-        const headers: MetadataHeader = JSON.parse(JSON.stringify(config.meta_data)); // Deep copy to avoid mutation
-        const maxKeyLength = config.maxKeyLength || defaults.maxKeyLength;
+        const headers: MetadataHeader = JSON.parse(JSON.stringify(meta_data)); // Deep copy to avoid mutation
+        const maxKeyLength = maxKeyLengthInput || defaults.maxKeyLength;
         let primaryKeyFound = false;
 
         let potentialPrimaryKeys: string[] = [];
