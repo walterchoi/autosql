@@ -29,6 +29,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             sampling: defaults.sampling,
             samplingMinimum: defaults.samplingMinimum,
             metaData: config.metaData || {}, // Ensuring headers remain intact
+            maxKeyLength: defaults.maxKeyLength
         };
 
         // Merge provided config with defaults

@@ -70,6 +70,7 @@ export interface DatabaseConfig {
       pseudoUnique?: number;
       autoIndexing?: boolean;
       decimalMaxLength?: number;
+      maxKeyLength?: number;
 
       sampling?: number;
       samplingMinimum?: number;

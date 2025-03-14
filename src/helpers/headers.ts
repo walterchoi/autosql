@@ -1,42 +1,5 @@
-import { initializeMetaData } from './metadata';
 import { DialectConfig, MetadataHeader, ColumnDefinition, AlterTableChanges } from '../config/types';
 import { collateTypes } from './columnTypes';
-import { parseDatabaseLength, mergeColumnLengths, shuffleArray } from './utilities';
-
-export function getHeaders(data: Record<string, any>[], sampling?: number, samplingMinimum?: number ): string[] {
-    try {
-        if ((sampling !== undefined || samplingMinimum !== undefined) && (sampling === undefined || samplingMinimum === undefined)) {
-            throw new Error("Both sampling percentage and sampling minimum must be provided together.");
-        }
-
-        let sampleData = data;
-
-        // Apply sampling if conditions are met
-        if (sampling !== undefined && samplingMinimum !== undefined && data.length > samplingMinimum) {
-            let sampleSize = Math.round(data.length * sampling);
-            sampleSize = Math.max(sampleSize, samplingMinimum); // Ensure minimum sample size
-
-            sampleData = shuffleArray(data).slice(0, sampleSize); // Shuffle and take sample
-        }
-
-        const columnSet: Set<string> = new Set();
-
-        for (const row of sampleData) {
-            for (const column of Object.keys(row)) {
-                columnSet.add(column);
-            }
-        }
-
-        return [...columnSet]; // Convert Set to array
-    } catch (error) {
-        throw new Error(`Error in getHeaders: ${error}`);
-    }
-}
-
-export function initializeHeaders(validatedConfig: any, data: Record<string, any>[]): MetadataHeader[] {
-    let headers: MetadataHeader[] = validatedConfig.metaData ?? initializeMetaData(getHeaders(data));
-    return headers;
-}
 
 export function compareHeaders(oldHeadersOriginal: MetadataHeader, newHeadersOriginal: MetadataHeader, dialectConfig?: DialectConfig): AlterTableChanges {
     const newHeaders : MetadataHeader = JSON.parse(JSON.stringify(newHeadersOriginal));

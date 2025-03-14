@@ -211,7 +211,13 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
         }
         
         const headers = await getDataHeaders(data, validatedConfig)
-        const metaData = predictIndexes(headers, undefined, undefined, data)
+        let metaData : MetadataHeader
+        if(validatedConfig.autoIndexing) {
+            metaData = predictIndexes(headers, validatedConfig.maxKeyLength, validatedConfig.primaryKey, data)
+        } else {
+            metaData = headers
+        }
+        
         return metaData;
         
     } catch (error) {
