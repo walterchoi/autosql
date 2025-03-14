@@ -13,7 +13,8 @@ export class AutoSQLHandler {
     async execute(table: string, data: Record<string, any>[]): Promise<InsertResult> {
         const currentMetaDataQuery = this.db.getTableMetaDataQuery(this.db.getConfig().schema || this.db.getConfig().database || "", table)
         const currentMetaData = this.db.runQuery(currentMetaDataQuery);
-        const newMetaData = getMetaData(this.db.getConfig(), data)
+        const newMetaData = getMetaData(this.db.getConfig(), data);
+        
         const start = this.db.startDate;
         const affectedRows = 0
         const end = new Date;

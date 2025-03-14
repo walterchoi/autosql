@@ -53,10 +53,11 @@ export function calculateColumnLength(column: any, dataPoint: string, sqlLookupT
     }
 }
 
-export function normalizeNumber(input: string, thousandsIndicatorOverride?: string, decimalIndicatorOverride?: string): string | null {
+export function normalizeNumber(input: any, thousandsIndicatorOverride?: string, decimalIndicatorOverride?: string): string | null {
     if ((thousandsIndicatorOverride && !decimalIndicatorOverride) || (!thousandsIndicatorOverride && decimalIndicatorOverride)) {
         throw new Error("Both 'thousandsIndicatorOverride' and 'decimalIndicatorOverride' must be provided together.");
     }
+    let inputStr = String(input)
     let overridden: Boolean = false
     if(thousandsIndicatorOverride && decimalIndicatorOverride) {
         const THOUSANDS_INDICATORS = [",", "#*#*", "%*%*"];
@@ -67,53 +68,53 @@ export function normalizeNumber(input: string, thousandsIndicatorOverride?: stri
         const unusedDecimal = DECIMAL_INDICATORS.filter(ind => ind !== usedThousands && ind !== usedDecimal)[0];
         overridden = true
         // Temporarily replace thousands and decimal indicators with placeholders
-        let tempInput = input.replaceAll(usedThousands, unusedThousands);
-        tempInput = tempInput.replaceAll(usedDecimal, unusedDecimal);
+        let tempinputStr = inputStr.replaceAll(usedThousands, unusedThousands);
+        tempinputStr = tempinputStr.replaceAll(usedDecimal, unusedDecimal);
 
         // Replace placeholders with final characters (comma for thousands, dot for decimal)
-        tempInput = tempInput.replaceAll(unusedThousands, ",").replaceAll(unusedDecimal, ".");
+        tempinputStr = tempinputStr.replaceAll(unusedThousands, ",").replaceAll(unusedDecimal, ".");
 
-        input = tempInput;
+        inputStr = tempinputStr;
     }
 
     // 🚨 Ensure `-` appears only at the start
-    if (input.includes("-") && input.indexOf("-") !== 0) return null;
+    if (inputStr.includes("-") && inputStr.indexOf("-") !== 0) return null;
 
-    const isNegative = input.startsWith("-");
-    if (isNegative) input = input.slice(1); // Remove `-` temporarily for processing
+    const isNegative = inputStr.startsWith("-");
+    if (isNegative) inputStr = inputStr.slice(1); // Remove `-` temporarily for processing
 
-    if (!input || /[^0-9., `']/.test(input)) return null; // Reject if non-numeric characters exist. Allowing ` and ' as part of the Swiss number format
+    if (!inputStr || /[^0-9., `']/.test(inputStr)) return null; // Reject if non-numeric characters exist. Allowing ` and ' as part of the Swiss number format
 
-    const dotCount = (input.match(/\./g) || []).length;
-    let commaCount = (input.match(/,/g) || []).length;
+    const dotCount = (inputStr.match(/\./g) || []).length;
+    let commaCount = (inputStr.match(/,/g) || []).length;
 
     // 🔍 Detect and normalize Swiss format if no commas are present but apostrophes exist
-    if (commaCount === 0 && input.includes("'")) {
-        input = input.replace(/'/g, ","); // ✅ Convert apostrophes to commas
-        commaCount = (input.match(/,/g) || []).length;
+    if (commaCount === 0 && inputStr.includes("'")) {
+        inputStr = inputStr.replace(/'/g, ","); // ✅ Convert apostrophes to commas
+        commaCount = (inputStr.match(/,/g) || []).length;
     }
-    if (commaCount === 0 && input.includes("`")) {
-        input = input.replace(/`/g, ","); 
-        commaCount = (input.match(/,/g) || []).length;
+    if (commaCount === 0 && inputStr.includes("`")) {
+        inputStr = inputStr.replace(/`/g, ","); 
+        commaCount = (inputStr.match(/,/g) || []).length;
     }
 
-    input = input.replace(/ /g, "");
+    inputStr = inputStr.replace(/ /g, "");
 
     // 🚨 Reject cases
     if (
-        !/\d/.test(input) || // No digits present
+        !/\d/.test(inputStr) || // No digits present
         (dotCount > 1 && commaCount > 1) || // Too many of both
-        input.includes(".,") || input.includes(",.") || // Misplaced combinations
-        /\d[.,]{2,}\d/.test(input) // Double separators like "1..234"
+        inputStr.includes(".,") || inputStr.includes(",.") || // Misplaced combinations
+        /\d[.,]{2,}\d/.test(inputStr) // Double separators like "1..234"
     ) {
         return null;
     }
 
     // 🚨 Check incorrect ordering of separators
-    const firstComma = input.indexOf(",");
-    const lastComma = input.lastIndexOf(",")
-    const firstDot = input.indexOf(".");
-    const lastDot = input.lastIndexOf(".")
+    const firstComma = inputStr.indexOf(",");
+    const lastComma = inputStr.lastIndexOf(",")
+    const firstDot = inputStr.indexOf(".");
+    const lastDot = inputStr.lastIndexOf(".")
 
     if (firstComma !== -1 && firstDot !== -1 && // Both exist
         (
@@ -149,7 +150,7 @@ export function normalizeNumber(input: string, thousandsIndicatorOverride?: stri
         decimalIndicator = dotCount === 1 ? "." : ",";
     }
 
-    const decimalSplit = input.split(decimalIndicator);
+    const decimalSplit = inputStr.split(decimalIndicator);
     
     if (decimalSplit.length > 2) return null; // More than one decimal, invalid
 
@@ -250,4 +251,31 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
     });
 
     return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+
+export function generateCombinations<T>(array: T[], length: number): T[][] {
+    if (length === 1) return array.map(el => [el]);
+    const combinations: T[][] = [];
+
+    for (let i = 0; i < array.length; i++) {
+        const smallerCombinations = generateCombinations(array.slice(i + 1), length - 1);
+        for (const smaller of smallerCombinations) {
+            combinations.push([array[i], ...smaller]);
+        }
+    }
+
+    return combinations;
+}
+
+export function isCombinationUnique(data: Record<string, any>[], columns: string[]): boolean {
+    const seenValues = new Set<string>();
+
+    for (const row of data) {
+        const key = columns.map(col => row[col]).join("|");
+        if (seenValues.has(key)) return false;
+        seenValues.add(key);
+    }
+
+    return true;
 }

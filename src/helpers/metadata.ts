@@ -90,7 +90,6 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 metaDataInterim[column].nullCount++;
                 continue;
             }
-
             const type = predictType(value)
             if(!type) continue;
             
@@ -108,7 +107,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
 
-                metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal + 3);
+                metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal);
             } else {
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, String(value).length);
             }
@@ -145,10 +144,11 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 const decimalLen = valueStr.includes(".") ? valueStr.split(".")[1].length : 0;
                 const integerLen = valueStr.split(".")[0].length;
 
+
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
 
-                metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal + 3);
+                metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal);
             } else {
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, String(value).length);
             }

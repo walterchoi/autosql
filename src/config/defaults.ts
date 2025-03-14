@@ -1,8 +1,8 @@
 export const defaults = {
-    minimumUnique: 50,
+    minimumUnique: 10,
     maximumUniqueLength: 64,
     maxNonTextLength: 256,
-    pseudoUnique: 0.95,
+    pseudoUnique: 0.90,
     sampling: 0,
     samplingMinimum: 100,
     maxKeyLength: 255,
