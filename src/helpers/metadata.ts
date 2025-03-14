@@ -225,7 +225,7 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
     }
 }
 
-export function compareMetaData(oldHeadersOriginal: MetadataHeader, newHeadersOriginal: MetadataHeader, dialectConfig?: DialectConfig): AlterTableChanges {
+export function compareMetaData(oldHeadersOriginal: MetadataHeader, newHeadersOriginal: MetadataHeader, dialectConfig?: DialectConfig): { changes: AlterTableChanges; updatedMetaData: MetadataHeader } {
     const newHeaders : MetadataHeader = JSON.parse(JSON.stringify(newHeadersOriginal));
     const oldHeaders : MetadataHeader = JSON.parse(JSON.stringify(oldHeadersOriginal));
     const addColumns: MetadataHeader = {};
@@ -385,13 +385,37 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader, newHeadersOr
         }
     }
 
+    const updatedMetaData: MetadataHeader = {
+        ...oldHeaders,
+        ...addColumns
+    };
+    
+    // ✅ Apply modifications
+    for (const col in modifyColumns) {
+        updatedMetaData[col] = modifyColumns[col];
+    }
+
+    // ✅ Remove dropped columns
+    for (const col of dropColumns) {
+        delete updatedMetaData[col];
+    }
+
+    // ✅ Apply renames
+    for (const { oldName, newName } of renameColumns) {
+        updatedMetaData[newName] = updatedMetaData[oldName];
+        delete updatedMetaData[oldName];
+    }
+
     return {
-        addColumns,
-        modifyColumns,
-        dropColumns,
-        renameColumns,
-        nullableColumns,
-        noLongerUnique,
-        primaryKeyChanges,
+        changes: {
+            addColumns,
+            modifyColumns,
+            dropColumns,
+            renameColumns,
+            nullableColumns,
+            noLongerUnique,
+            primaryKeyChanges,
+        },
+        updatedMetaData
     };
 }

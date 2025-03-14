@@ -120,6 +120,7 @@ export class PostgresDatabase extends Database {
     
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
+        let updatedMetaData: MetadataHeader
         const alterPrimaryKey = this.config.updatePrimaryKey ?? false;
 
         if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
@@ -127,7 +128,7 @@ export class PostgresDatabase extends Database {
                     if (!newHeaders) {
                         throw new Error("Missing new headers for ALTER TABLE query");
                     }
-                    alterTableChanges = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig());
+                    ({ changes: alterTableChanges, updatedMetaData }  = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig()));
                 } else {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }

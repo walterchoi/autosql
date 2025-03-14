@@ -13,7 +13,7 @@ describe("compareMetaData", () => {
             new_col: { type: "varchar", length: 100, allowNull: true }
         };
 
-        const result = compareMetaData(oldHeaders, newHeaders);
+        const { changes: result } = compareMetaData(oldHeaders, newHeaders);
         expect(result.addColumns).toEqual({ new_col: { type: "varchar", length: 100, allowNull: true } });
         expect(result.modifyColumns).toEqual({});
     });
@@ -25,7 +25,7 @@ describe("compareMetaData", () => {
 
         const newHeaders: MetadataHeader = {};
 
-        const result = compareMetaData(oldHeaders, newHeaders);
+        const { changes: result } = compareMetaData(oldHeaders, newHeaders);
         expect(result.dropColumns).toEqual(["old_col"]);
     });
 
@@ -38,7 +38,7 @@ describe("compareMetaData", () => {
             new_name: { type: "varchar", length: 100, allowNull: true }
         };
 
-        const result = compareMetaData(oldHeaders, newHeaders);
+        const { changes: result } = compareMetaData(oldHeaders, newHeaders);
         expect(result.renameColumns).toEqual([{ oldName: "old_name", newName: "new_name" }]);
     });
 
@@ -51,7 +51,7 @@ describe("compareMetaData", () => {
             age: { type: "int", allowNull: false }
         };
 
-        const result = compareMetaData(oldHeaders, newHeaders);
+        const { changes: result } = compareMetaData(oldHeaders, newHeaders);
         expect(result.modifyColumns).toEqual({ age: { type: "int", allowNull: false } });
     });
 
@@ -64,7 +64,7 @@ describe("compareMetaData", () => {
             name: { type: "varchar", length: 100, allowNull: false }
         };
 
-        const result = compareMetaData(oldHeaders, newHeaders);
+        const { changes: result } = compareMetaData(oldHeaders, newHeaders);
         expect(result.modifyColumns).toEqual({ name: { type: "varchar", length: 100, allowNull: false } });
     });
 
@@ -77,7 +77,7 @@ describe("compareMetaData", () => {
             email: { type: "varchar", length: 255, allowNull: true }
         };
 
-        const result = compareMetaData(oldHeaders, newHeaders);
+        const { changes: result } = compareMetaData(oldHeaders, newHeaders);
         expect(result.nullableColumns).toEqual(["email"]);
     });
 
@@ -90,7 +90,7 @@ describe("compareMetaData", () => {
             username: { type: "varchar", length: 100, unique: false, allowNull: false }
         };
 
-        const result = compareMetaData(oldHeaders, newHeaders);
+        const { changes: result } = compareMetaData(oldHeaders, newHeaders);
         expect(result.noLongerUnique).toEqual(["username"]);
     });
 
@@ -103,7 +103,7 @@ describe("compareMetaData", () => {
             price: { type: "int", length: 10 }
         };
 
-        const result = compareMetaData(oldHeaders, newHeaders);
+        const { changes: result } = compareMetaData(oldHeaders, newHeaders);
         expect(result.modifyColumns).toEqual({ price: { type: "int", length: 10 } });
     });
 });
@@ -127,7 +127,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 amount: { type: "decimal", length: 15, decimal: 2 }
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.modifyColumns).toEqual({ amount: { type: "decimal", length: 17, decimal: 4 } });
         });
 
@@ -140,7 +140,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 description: { type: "text" }
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.modifyColumns).toEqual({ description: { type: "text" } });
         });
 
@@ -153,7 +153,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 email: { type: "varchar", length: 255, allowNull: true }
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.nullableColumns).toEqual(["email"]);
         });
 
@@ -166,7 +166,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 username: { type: "varchar", length: 100, unique: false, allowNull: false }
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.noLongerUnique).toEqual(["username"]);
         });
     });
@@ -191,7 +191,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 id: { type: "int", length: 11, allowNull: false, primary: true }
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.primaryKeyChanges).toEqual(["id"]);
         });
 
@@ -204,7 +204,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 id: { type: "int", length: 11, allowNull: false } // Primary key removed
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.primaryKeyChanges).toEqual(["id"]); // Ensures `id` is still primary
         });
 
@@ -217,7 +217,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 uuid: { type: "int", length: 11, allowNull: false, primary: true }
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.primaryKeyChanges).toEqual(["uuid"]);
             expect(result.renameColumns).toEqual([{ oldName: "id", newName: "uuid" }]);
         });
@@ -232,7 +232,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 email: { type: "varchar", length: 255, allowNull: false, primary: true }
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.primaryKeyChanges).toEqual(["id", "email"]);
         });
 
@@ -246,7 +246,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 email: { type: "varchar", length: 255, allowNull: false, primary: true }
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.primaryKeyChanges).toEqual(["id", "email"]);
         });
 
@@ -265,7 +265,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 email: { type: "varchar", length: 255, allowNull: false, unique: true }
             };
 
-            const result = compareMetaData(oldHeaders, newHeaders, dialectConfig);
+            const { changes: result } = compareMetaData(oldHeaders, newHeaders, dialectConfig);
             expect(result.primaryKeyChanges).toEqual(["uuid"]);
             expect(result.renameColumns).toEqual([{ oldName: "id", newName: "uuid" }]);
         })

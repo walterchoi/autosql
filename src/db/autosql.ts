@@ -1,6 +1,6 @@
 import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
-import { InsertResult, MetadataHeader, AlterTableChanges } from "../config/types";
+import { InsertResult, MetadataHeader, AlterTableChanges, metaDataInterim } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
 import { parseDatabaseMetaData } from "../helpers/utilities";
 
@@ -17,8 +17,12 @@ export class AutoSQLHandler {
         const currentMetaData = parseDatabaseMetaData(currentMetaDataResults, this.db.getDialectConfig())
         const newMetaData = await getMetaData(this.db.getConfig(), data);
         let mergedMetaData: AlterTableChanges;
+        let updatedMetaData: MetadataHeader
         if(currentMetaData) {
-            mergedMetaData = compareMetaData(currentMetaData, newMetaData, this.db.getDialectConfig())
+            ({ changes: mergedMetaData, updatedMetaData } = compareMetaData(currentMetaData, newMetaData, this.db.getDialectConfig()))
+            if(mergedMetaData) {
+                
+            }
         } else {
             
         }
