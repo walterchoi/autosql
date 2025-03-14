@@ -75,8 +75,10 @@ export function predictIndexes(config: { meta_data: MetadataHeader; maxKeyLength
             // ✅ If no unique column exists, try pseudo-unique combinations using data
             let foundUniqueCombination = false;
             const pseudoUniqueColumns = Object.keys(headers).filter(col => headers[col].pseudounique);
-            const dateColumns = Object.keys(headers).filter(col => groupings.dateGroup.includes(headers[col].type ?? ""));
-
+            const dateColumns = Object.keys(headers).filter(
+                col => groupings.dateGroup.includes(headers[col].type ?? "") && headers[col].allowNull !== true
+            );
+            
             if (!selectedPrimaryKey && data && data.length > 0) {
                 // Find the smallest set of pseudo-unique columns that together are unique
                 for (let i = 1; i <= pseudoUniqueColumns.length; i++) {

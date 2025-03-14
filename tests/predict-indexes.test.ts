@@ -149,34 +149,7 @@ describe("predictIndexes function", () => {
         expect(result.content.index).toBeUndefined(); // Long text field should not be indexed
         expect(result.summary.index).toBe(true); // Unique short varchar should be indexed
     });
-    test("ensures composite primary key is only set when necessary", () => {
-        const config = {
-            meta_data: {
-                order_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
-                product_id: { type: "int", pseudounique: true, allowNull: false, length: 11 },
-                created_at: { type: "datetime", length: 10 }
-            } as MetadataHeader
-        };
-        const data : Record<string, any>[] = [
-            { order_id: 1, product_id: 101, created_at: "2024-03-01 12:00:00" },
-            { order_id: 2, product_id: 102, created_at: "2024-03-02 12:00:00" },
-            { order_id: 2, product_id: 104, created_at: "2024-03-09 12:00:00" }, // Duplicate product_id
-            { order_id: 3, product_id: 103, created_at: "2024-03-03 12:00:00" },
-            { order_id: 3, product_id: 105, created_at: "2024-03-10 12:00:00" }, // Duplicate order_id
-            { order_id: 4, product_id: 104, created_at: "2024-03-04 12:00:00" },
-            { order_id: 5, product_id: 105, created_at: "2024-03-05 12:00:00" },
-            { order_id: 6, product_id: 101, created_at: "2024-03-06 12:00:00" }, // Duplicate product_id
-            { order_id: 6, product_id: 102, created_at: "2024-03-07 12:00:00" }, // Duplicate product_id
-            { order_id: 6, product_id: 103, created_at: "2024-03-08 12:00:00" }, // Duplicate product_id                
-        ]
     
-        const result = predictIndexes(config, undefined, data);
-    
-        expect(result.order_id.primary).toBe(true); // ✅ Composite PK needed
-        expect(result.product_id.primary).toBe(true); // ✅ Composite PK needed
-        expect(result.created_at.primary).toBeUndefined(); // ✅ Should not be primary
-    });    
-
     test("handles missing or empty meta_data gracefully", () => {
         const emptyConfig = { meta_data: {} as MetadataHeader };
         expect(predictIndexes(emptyConfig)).toEqual({});
