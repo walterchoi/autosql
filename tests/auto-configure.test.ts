@@ -39,7 +39,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             const dropQueryResults = await db.runQuery(dropQuery)
             await db.closeConnection();
         });
-
+        
         test("Fails when no metadata and no data are provided", async () => {
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
             const dropQueryResults = await db.runQuery(dropQuery)
@@ -70,51 +70,75 @@ Object.values(DB_CONFIG).forEach((config) => {
                 db.getConfig().schema || db.getConfig().database || "",
                 TEST_TABLE_NAME
             );
-            const tableExistsResult = await db.runQuery(checkTableExistsQuery);            
+            const tableExistsResult = await db.runQuery(checkTableExistsQuery);
             const tableExists = Boolean(Number(tableExistsResult[0]?.count || 0));
             expect(tableExists).toBe(true);
         });
-        
-        /*
+
         test("Creates table when it does not exist and metadata is provided", async () => {
-            await db.runQuery(`DROP TABLE IF EXISTS ${TEST_TABLE_NAME};`); // Ensure table doesn't exist
-
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, INITIAL_METADATA, INITIAL_METADATA, []);
-
+            const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
+            const dropQueryResults = await db.runQuery(dropQuery)
+        
+            // ✅ Provide sample data to ensure valid execution
+            const sampleData = [{ id: 1, name: "Alice" }];
+        
+            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, null, INITIAL_METADATA);
+        
             expect(result.success).toBe(true);
             console.log(`Test Result [${config.sqlDialect}]: Creates table with provided metadata:`, result);
+        
+            // ✅ Check if table was actually created
+            const checkTableExistsQuery = db.getTableExistsQuery(
+                db.getConfig().schema || db.getConfig().database || "",
+                TEST_TABLE_NAME
+            );
+            const tableExistsResult = await db.runQuery(checkTableExistsQuery);
+            const tableExists = Boolean(Number(tableExistsResult[0]?.count || 0));
+        
+            expect(tableExists).toBe(true);
         });
-
+        
         test("Returns success when table exists and no changes are needed", async () => {
-            // Ensure the table exists first
+            const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
+            const dropQueryResults = await db.runQuery(dropQuery)
+            // ✅ Ensure the table exists first
             await db.runQuery(`CREATE TABLE IF NOT EXISTS ${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
-
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, INITIAL_METADATA, INITIAL_METADATA, []);
-
+        
+            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, [], INITIAL_METADATA, INITIAL_METADATA);
+        
             expect(result.success).toBe(true);
-            expect(result.results).toEqual([]); // No changes should be applied
+            expect(result.results).toEqual([]); // ✅ No changes should be applied
             console.log(`Test Result [${config.sqlDialect}]: Table exists, no changes needed:`, result);
         });
-
+        
         test("Alters table when metadata changes are detected", async () => {
-            // Ensure table exists with initial metadata
-            await db.runQuery(`CREATE TABLE IF NOT EXISTS ${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
-
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, INITIAL_METADATA, UPDATED_METADATA, []);
-
+            const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
+            const dropQueryResults = await db.runQuery(dropQuery)
+            // ✅ Ensure table exists with initial metadata
+            await db.runQuery(`CREATE TABLE IF NOT EXISTS ${db.getConfig().schema || db.getConfig().database}.${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
+        
+            // ✅ Provide sample data (though not required for alteration)
+            const sampleData = [{ id: 1, name: "Alice", email: "alice@example.com" }];
+        
+            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, INITIAL_METADATA);
+        
             expect(result.success).toBe(true);
             console.log(`Test Result [${config.sqlDialect}]: Table altered when metadata changes:`, result);
         });
-
+        
         test("Alters table when precomputed table changes are provided", async () => {
-            // Ensure table exists
-            await db.runQuery(`CREATE TABLE IF NOT EXISTS ${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
-
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, ALTER_TABLE_CHANGES, UPDATED_METADATA, []);
-
+            const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
+            const dropQueryResults = await db.runQuery(dropQuery)
+            // ✅ Ensure table exists
+            await db.runQuery(`CREATE TABLE IF NOT EXISTS ${db.getConfig().schema || db.getConfig().database}.${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
+        
+            // ✅ Provide sample data (though not required for precomputed changes)
+            const sampleData = [{ id: 1, name: "Alice", email: "alice@example.com" }];
+        
+            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, ALTER_TABLE_CHANGES, UPDATED_METADATA);
+        
             expect(result.success).toBe(true);
             console.log(`Test Result [${config.sqlDialect}]: Table altered using precomputed changes:`, result);
-        });
-        */
+        }); 
     });
 });

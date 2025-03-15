@@ -324,7 +324,7 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader, newHeadersOr
             }
 
             // ✅ Only set modified flag if the length or decimal has changed
-            if(modifiedColumn.length !== oldColumn.length || modifiedColumn.decimal !== newColumn.decimal) {
+            if(modifiedColumn.length && oldColumn.length && modifiedColumn.length > oldColumn.length) {
                 modified = true;
             }
 
@@ -346,8 +346,7 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader, newHeadersOr
     }
 
     // ✅ Identify true primary key changes (excluding length-only modifications)
-    const structuralPrimaryKeyChanges = oldPrimaryKeys.filter(pk => !newPrimaryKeys.includes(pk))
-    .concat(newPrimaryKeys.filter(pk => !oldPrimaryKeys.includes(pk)));
+    const structuralPrimaryKeyChanges = newPrimaryKeys.filter(pk => !oldPrimaryKeys.includes(pk));
 
     // ✅ Only update primaryKeyChanges if there's an actual key change
     if (structuralPrimaryKeyChanges.length > 0 || renamedPrimaryKeys.length > 0) {

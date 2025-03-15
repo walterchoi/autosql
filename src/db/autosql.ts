@@ -3,7 +3,7 @@ import { PostgresDatabase } from "./pgsql";
 import { Database } from "./database";
 import { InsertResult, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
-import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize } from "../helpers/utilities";
+import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat } from "../helpers/utilities";
 import { ensureTimestamps } from "../helpers/timestamps";
 
 export class AutoSQLHandler {
@@ -75,11 +75,11 @@ export class AutoSQLHandler {
         }
     }    
 
-    async autoConfigureTable(table: string, data: Record<string, any>[], currentMetaDataOrTableChanges?: MetadataHeader | AlterTableChanges | null, newMetaData?: MetadataHeader | null): Promise<QueryResult> {
+    async autoConfigureTable(table: string, data?: Record<string, any>[] | null, currentMetaDataOrTableChanges?: MetadataHeader | AlterTableChanges | null, newMetaData?: MetadataHeader | null): Promise<QueryResult> {
         try {
             console.log(`⚡ [autoConfigureTable] Running for table: ${table}`);
 
-            if (!currentMetaDataOrTableChanges && data.length === 0) {
+            if (!currentMetaDataOrTableChanges && data?.length === 0) {
                 // ❌ Cannot configure table '${table}': No existing metadata and no data provided to infer structure.
                 throw new Error(`No existing metadata and no data provided to infer structure.`);
             }
@@ -87,6 +87,7 @@ export class AutoSQLHandler {
             let updatedMetadata: MetadataHeader | undefined | null = newMetaData;
             let tableExists: boolean | undefined = undefined;
             if(!newMetaData) {
+                if(!data || !isValidDataFormat(data)) {throw new Error('Invalid data format: Expected a non-empty array of objects.')}
                 newMetaData = await getMetaData(this.db.getConfig(), data);
                 updatedMetadata = newMetaData
                 this.db.updateTableMetadata(table, newMetaData, "metaData");
