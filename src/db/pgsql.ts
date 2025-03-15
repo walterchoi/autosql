@@ -208,4 +208,8 @@ export class PostgresDatabase extends Database {
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
         return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
     }
+
+    getSplitTablesQuery(table: string): QueryInput {
+        return PostgresTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
+    }
 }

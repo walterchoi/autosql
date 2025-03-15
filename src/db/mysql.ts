@@ -187,4 +187,8 @@ export class MySQLDatabase extends Database {
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
         return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
     }
+
+    getSplitTablesQuery(table: string): QueryInput {
+        return MySQLTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
+    }
 }

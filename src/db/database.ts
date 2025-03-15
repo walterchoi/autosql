@@ -313,6 +313,7 @@ export abstract class Database {
     public abstract getUniqueIndexesQuery(table: string, column_name?: string): QueryInput;
     public abstract getTableExistsQuery(schema: string, table: string): QueryInput;
     public abstract getTableMetaDataQuery(schema: string, table: string): QueryInput;
+    public abstract getSplitTablesQuery(table: string): QueryInput;
 }
 
 import { MySQLDatabase } from "./mysql";

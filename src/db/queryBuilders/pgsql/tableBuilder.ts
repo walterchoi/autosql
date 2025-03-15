@@ -208,4 +208,20 @@ export class PostgresTableQueryBuilder {
             params: [schema, table],
         };
     }
+
+    static getSplitTablesQuery(table: string, schema?: string): QueryInput {
+        return {
+            query: `SELECT 
+                c.table_name, 
+                a.column_name, 
+                a.data_type
+            FROM information_schema.tables c
+            JOIN information_schema.columns a ON c.table_name = a.table_name
+            WHERE c.table_name LIKE '${table}__part_%'
+              AND c.table_name ~ '^${table}__part_[0-9]+$'
+              ${schema ? `AND c.table_schema = '${schema}'` : ""}
+            ORDER BY c.table_name, a.ordinal_position;`,
+            params: []
+        }
+    }
 }

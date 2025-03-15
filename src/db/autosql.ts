@@ -191,11 +191,12 @@ export class AutoSQLHandler {
             }
             mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData)
 
-            const { rowSize, exceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
-
-            if(exceedsLimit && this.db.getConfig().autoSplit) {
+            if(this.db.getConfig().autoSplit) {
+                const { rowSize, exceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
                 // Split the table structure
+                if(exceedsLimit) {
 
+                }
             }
 
             const configuredTables = await this.autoConfigureTable(table, data, changes || currentMetaData, mergedMetaData)

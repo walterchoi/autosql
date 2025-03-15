@@ -203,4 +203,20 @@ export class MySQLTableQueryBuilder {
             params: [schema, table],
         };
     }
+
+    static getSplitTablesQuery(table: string, schema?: string): QueryInput {
+        return {
+            query: `SELECT 
+                t.table_name, 
+                c.column_name, 
+                c.data_type
+            FROM information_schema.tables t
+            JOIN information_schema.columns c ON t.table_name = c.table_name
+            WHERE t.table_name LIKE '${table}__part_%'
+                AND t.table_name REGEXP '^${table}__part_[0-9]+$'
+                ${schema ? `AND t.table_schema = '${schema}'` : ""}
+            ORDER BY t.table_name, c.ordinal_position;`,
+            params: []
+        }
+    }
 }
