@@ -84,6 +84,8 @@ export interface DatabaseConfig {
       safeMode?: boolean;
       deleteColumns?: boolean;
       waitForApproval?: boolean;
+
+      autoSplit?: boolean;
 }
 
 export type QueryInput = string | QueryWithParams;

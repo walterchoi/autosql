@@ -14,7 +14,8 @@ export const defaults = {
     safeMode: true,
     deleteColumns: false,
     waitForApproval: false,
-    decimalMaxLength: 10
+    decimalMaxLength: 10,
+    autoSplit: false
 }
 
 export const MYSQL_MAX_ROW_SIZE = 16 * 1024; // 16KB

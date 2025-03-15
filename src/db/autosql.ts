@@ -92,6 +92,10 @@ export class AutoSQLHandler {
 
             const { rowSize, exceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
 
+            if(exceedsLimit && this.db.getConfig().autoSplit) {
+                // Split the table structure
+            }
+
             const configuredTables = await this.autoConfigureTable(table, changes || currentMetaData, mergedMetaData, data)
             const start = this.db.startDate;
             const affectedRows = 0
