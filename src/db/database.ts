@@ -32,6 +32,10 @@ export abstract class Database {
         };
     }
 
+    public updateSchema(schema: string): void {
+        this.config.schema = schema;
+    }
+
     static create(config: DatabaseConfig): Database {
         const DIALECTS: Record<string, new (config: DatabaseConfig) => Database> = {
             mysql: MySQLDatabase,
