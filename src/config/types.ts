@@ -9,6 +9,8 @@ export interface ColumnDefinition {
   autoIncrement?: boolean;
   default?: any;
   decimal?: number;
+  calculated?: boolean;
+  updatedCalculated?: boolean;
 }
 
 export type MetadataHeader = Record<string, ColumnDefinition>;

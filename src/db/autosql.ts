@@ -4,6 +4,7 @@ import { Database } from "./database";
 import { InsertResult, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
 import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize } from "../helpers/utilities";
+import { ensureTimestamps } from "../helpers/timestamps";
 
 export class AutoSQLHandler {
     private db: Database;
@@ -87,9 +88,10 @@ export class AutoSQLHandler {
             } else {
                 mergedMetaData = newMetaData
             }
+            mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData)
 
             const { rowSize, exceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
-            
+
             const configuredTables = await this.autoConfigureTable(table, changes || currentMetaData, mergedMetaData, data)
             const start = this.db.startDate;
             const affectedRows = 0

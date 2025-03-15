@@ -163,26 +163,6 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     return metaData
 }
 
-export function finalizeMetadata(headers: any[], validatedConfig: any, sqlLookupTable: any) {
-    for (const header of headers) {
-        const headerName = Object.keys(header)[0];
-        const column = header[headerName];
-
-        if (column.unique && column.length > validatedConfig.maximum_unique_length) {
-            column.unique = false;
-        }
-
-        if (column.length > validatedConfig.max_non_text_length) {
-            column.type = column.length < 6553 ? "varchar"
-                : column.length < 65535 ? "text"
-                : column.length < 16777215 ? "mediumtext"
-                : "longtext";
-        }
-    }
-
-    return validatedConfig.auto_indexing ? predictIndexes(validatedConfig, validatedConfig.primary) : headers;
-}
-
 export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, data: Record<string, any>[]) : Promise<MetadataHeader> {
     try {
         let validatedConfig: DatabaseConfig;
