@@ -172,6 +172,14 @@ export class AutoSQLHandler {
     
         return { currentMetaData, tableExists };
     }
+
+    async splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader): Promise<{table: string, data: Record<string, any>[], metaData: MetadataHeader}[]> {
+        const splitQuery = this.db.getSplitTablesQuery(table);
+        const currentSplitResults = this.db.runQuery(splitQuery);
+        // Split table metadata into multiple:
+        // { table: name, data: Record<string, any>[], metaData: MetadataHeader}[]?
+        return [{ table, data, metaData}]
+    }
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string): Promise<InsertResult> {
         try {

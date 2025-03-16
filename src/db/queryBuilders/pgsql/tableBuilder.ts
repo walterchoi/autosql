@@ -66,9 +66,7 @@ export class PostgresTableQueryBuilder {
         }
     
         return sqlQueries;
-    }    
-    // ✅ Get changes using compareMetaData()
-    //const { addColumns, modifyColumns } = compareMetaData(oldHeaders, newHeaders, pgsqlConfig);
+    }
 
     static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string, databaseConfig?: DatabaseConfig): QueryInput[] {
         let queries: QueryInput[] = [];
