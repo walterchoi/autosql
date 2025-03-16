@@ -130,6 +130,7 @@ export class PostgresDatabase extends Database {
                         throw new Error("Missing new headers for ALTER TABLE query");
                     }
                     ({ changes: alterTableChanges, updatedMetaData }  = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig()));
+                    this.updateTableMetadata(table, updatedMetaData, "metaData")
                 } else {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }
@@ -160,7 +161,7 @@ export class PostgresDatabase extends Database {
         }
 
         // Get actual ALTER TABLE queries
-        const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema);
+        const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema, this.getConfig());
         queries.push(...alterQueries);
 
         // Add New Primary Key (if changed and allowed)

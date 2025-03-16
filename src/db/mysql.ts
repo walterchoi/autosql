@@ -118,6 +118,7 @@ export class MySQLDatabase extends Database {
                 throw new Error("Missing new headers for ALTER TABLE query");
             }
             ({ changes: alterTableChanges, updatedMetaData }  = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig()));
+            this.updateTableMetadata(table, updatedMetaData, "metaData")
         } else {
             alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
         }
@@ -144,7 +145,7 @@ export class MySQLDatabase extends Database {
             }
         }
 
-        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema);
+        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema, this.getConfig());
         queries.push(...alterQueries);
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getAddPrimaryKeyQuery(table, alterTableChanges.primaryKeyChanges));

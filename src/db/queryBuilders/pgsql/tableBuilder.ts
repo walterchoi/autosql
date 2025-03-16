@@ -1,6 +1,7 @@
 import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
+import { getUsingClause } from "./alterTableTypeConversion";
 const dialectConfig = pgsqlConfig
 
 export class PostgresTableQueryBuilder {
@@ -69,7 +70,7 @@ export class PostgresTableQueryBuilder {
     // ✅ Get changes using compareMetaData()
     //const { addColumns, modifyColumns } = compareMetaData(oldHeaders, newHeaders, pgsqlConfig);
 
-    static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string): QueryInput[] {
+    static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string, databaseConfig?: DatabaseConfig): QueryInput[] {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
@@ -86,7 +87,12 @@ export class PostgresTableQueryBuilder {
         // ✅ Handle `ADD COLUMN`
         for (const [columnName, column] of Object.entries(changes.addColumns)) {
     
-            let columnDef = `"${columnName}" ${column.type}`;
+            if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
+            let columnType = column.type.toLowerCase()
+            if (dialectConfig.translate.localToServer[columnType]) {
+                columnType = dialectConfig.translate.localToServer[columnType];
+            }
+            let columnDef = `"${columnName}" ${columnType}`;
             if (column.length && !pgsqlConfig.noLength.includes(column.type ?? "")) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
@@ -106,12 +112,21 @@ export class PostgresTableQueryBuilder {
             }
     
             if (column.type) {
-                let columnDef = `SET DATA TYPE ${column.type}`;
+                let columnType = column.type.toLowerCase()
+                if (dialectConfig.translate.localToServer[columnType]) {
+                    columnType = dialectConfig.translate.localToServer[columnType];
+                }
+                let columnDef = `SET DATA TYPE ${columnType}`;
                 if (column.length && !pgsqlConfig.noLength.includes(column.type ?? "")) {
                     columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
                 }
+                if (column.previousType && column.previousType !== column.type) {
+                    const usingExpr = getUsingClause(columnName, column.previousType, column.type);
+                    if (usingExpr) columnDef += ` USING ${usingExpr}`;
+                }
                 alterColumnMap[columnName].push(columnDef);
             }
+
             if (column.allowNull || changes.nullableColumns.includes(columnName)) {
                 alterColumnMap[columnName].push(`DROP NOT NULL`);
             }
@@ -140,7 +155,7 @@ export class PostgresTableQueryBuilder {
         }
     
         return queries;
-    }    
+    }
 
     static getDropTableQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `"${schema}".` : "";

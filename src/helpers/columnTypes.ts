@@ -247,7 +247,7 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
 }
 
 export async function updateColumnType(column: any, dataPoint: string) {
-    const detectedType = await predictType(dataPoint);
+    const detectedType = predictType(dataPoint);
     if (!detectedType) {
         column.allowNull = true;
         return;

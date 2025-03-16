@@ -1,6 +1,7 @@
 import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { mysqlConfig } from "../../config/mysqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
+import { getUsingClause } from "./alterTableTypeConversion";
 const dialectConfig = mysqlConfig
 
 export class MySQLTableQueryBuilder {
@@ -71,7 +72,7 @@ export class MySQLTableQueryBuilder {
         return sqlQueries;
     }
 
-    static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string): QueryInput[] {
+    static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string, databaseConfig?: DatabaseConfig): QueryInput[] {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
@@ -82,12 +83,25 @@ export class MySQLTableQueryBuilder {
     
         // ✅ Handle `RENAME COLUMN`
         changes.renameColumns.forEach(({ oldName, newName }) => {
-            alterStatements.push(`CHANGE COLUMN \`${oldName}\` \`${newName}\` varchar(255) NOT NULL`); // Default type assumption
+            const columnType = databaseConfig?.metaData?.[table]?.[newName]?.type || databaseConfig?.metaData?.[table]?.[oldName]?.type || 'varchar'
+            const columnLength = databaseConfig?.metaData?.[table]?.[newName]?.length || databaseConfig?.metaData?.[table]?.[oldName]?.length || 1
+            const columnDecimal = databaseConfig?.metaData?.[table]?.[newName]?.decimal || databaseConfig?.metaData?.[table]?.[oldName]?.decimal || 0
+            const columnNullable : boolean = databaseConfig?.metaData?.[table]?.[newName]?.allowNull || databaseConfig?.metaData?.[table]?.[oldName]?.allowNull || false
+            let columnLengthSQL: string = '';
+            if (columnLength && !dialectConfig.noLength.includes(columnType || "")) {
+                columnLengthSQL += `(${columnLength}${columnDecimal ? `,${columnDecimal}` : ""})`;
+            }
+            alterStatements.push(`CHANGE COLUMN \`${oldName}\` \`${newName}\` ${columnType}${columnLengthSQL} ${columnNullable ? 'NULL' : 'NOT NULL'}`);
         });
     
         // ✅ Handle `ADD COLUMN`
         for (const [columnName, column] of Object.entries(changes.addColumns)) {
-            let columnDef = `\`${columnName}\` ${column.type}`;
+            if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
+            let columnType = column.type.toLowerCase()
+            if (dialectConfig.translate.localToServer[columnType]) {
+                columnType = dialectConfig.translate.localToServer[columnType];
+            }
+            let columnDef = `\`${columnName}\` ${columnType}`;
             if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
@@ -99,8 +113,12 @@ export class MySQLTableQueryBuilder {
     
         // ✅ Handle `MODIFY COLUMN` - Include `NULL` conditionally
         for (const [columnName, column] of Object.entries(changes.modifyColumns)) {
-
-            let columnDef = `\`${columnName}\` ${column.type}`;
+            if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
+            let columnType = column.type.toLowerCase()
+            if (dialectConfig.translate.localToServer[columnType]) {
+                columnType = dialectConfig.translate.localToServer[columnType];
+            }
+            let columnDef = `\`${columnName}\` ${columnType}`;
             if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
                 columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
             }
@@ -114,6 +132,13 @@ export class MySQLTableQueryBuilder {
 
             if (column.default !== undefined) {
                 columnDef += ` DEFAULT '${column.default}'`;
+            }
+
+            if (column.previousType && column.previousType !== column.type) {
+                const updateQuery = getUsingClause(columnName, column.previousType, column.type, table);
+                if (updateQuery) {
+                    queries.push({ query: updateQuery, params: [] });
+                }
             }
 
             alterStatements.push(`MODIFY COLUMN ${columnDef}`);

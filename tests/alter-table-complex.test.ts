@@ -86,7 +86,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         
             if (config.sqlDialect === "mysql") {
                 expect(queryStrings).toContain('ALTER TABLE `test_schema`.`alter_table_complex_test_table` DROP PRIMARY KEY;');
-                expect(queryStrings).toContain('ALTER TABLE `test_schema`.`alter_table_complex_test_table` CHANGE COLUMN `id` `uuid` varchar(255) NOT NULL;');
+                expect(queryStrings).toContain('ALTER TABLE `test_schema`.`alter_table_complex_test_table` CHANGE COLUMN `id` `uuid` int(11) NOT NULL;');
                 expect(queryStrings).toContain('ALTER TABLE `test_schema`.`alter_table_complex_test_table` ADD PRIMARY KEY (`uuid`);');
             } else if (config.sqlDialect === "pgsql") {
                 expect(queryStrings).toContain('ALTER TABLE "test_schema"."alter_table_complex_test_table" DROP CONSTRAINT "alter_table_complex_test_table_pkey";');

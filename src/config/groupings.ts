@@ -6,3 +6,11 @@ export const groupings = {
     "dateGroup": ["date", "time", "datetime", "datetimetz"],
     "keysGroup": ["tinyint", "smallint", "int", "varchar"]
 }
+
+export const isNumeric = (type: string) => ["tinyint", "smallint", "int", "bigint", "numeric", "decimal", "double", "exponent"].includes(type);
+export const isInteger = (type: string) => ["tinyint", "smallint", "int", "bigint"].includes(type);
+export const isFloating = (type: string) => ["numeric", "decimal", "double", "exponent"].includes(type);
+export const isText = (type: string) => ["varchar", "text", "mediumtext", "longtext", "json"].includes(type);
+export const isBoolean = (type: string) => type === "boolean";
+export const isDate = (type: string) => ["date", "datetime", "datetimetz"].includes(type);
+export const isTime = (type: string) => type === "time";

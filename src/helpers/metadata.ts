@@ -264,7 +264,11 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader, newHeadersOr
             if (recommendedType !== oldType) {
                 console.warn(`🔄 Converting ${columnName}: ${oldType} → ${recommendedType}`);
                 modifiedColumn.type = recommendedType;
+                modifiedColumn.previousType = oldType;
                 modified = true;
+            } else {
+                modifiedColumn.type = recommendedType;
+                modifiedColumn.previousType = oldType;
             }
 
             // ✅ Merge column lengths safely

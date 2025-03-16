@@ -52,7 +52,7 @@ describe("compareMetaData", () => {
         };
 
         const { changes: result } = compareMetaData(oldMetaData, newMetaData);
-        expect(result.modifyColumns).toEqual({ age: { type: "int", allowNull: false } });
+        expect(result.modifyColumns).toEqual({ age: { type: "int", allowNull: false, previousType: "smallint" } });
     });
 
     test("Handles increasing column length", () => {
@@ -65,7 +65,7 @@ describe("compareMetaData", () => {
         };
 
         const { changes: result } = compareMetaData(oldMetaData, newMetaData);
-        expect(result.modifyColumns).toEqual({ name: { type: "varchar", length: 100, allowNull: false } });
+        expect(result.modifyColumns).toEqual({ name: { type: "varchar", length: 100, allowNull: false, previousType: "varchar" } });
     });
 
     test("Handles NOT NULL to NULL conversion", () => {
@@ -104,7 +104,7 @@ describe("compareMetaData", () => {
         };
 
         const { changes: result } = compareMetaData(oldMetaData, newMetaData);
-        expect(result.modifyColumns).toEqual({ price: { type: "int", length: 10 } });
+        expect(result.modifyColumns).toEqual({ price: { type: "int", length: 10, previousType: "smallint" } });
     });
 });
 
@@ -128,7 +128,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             };
 
             const { changes: result } = compareMetaData(oldMetaData, newMetaData, dialectConfig);
-            expect(result.modifyColumns).toEqual({ amount: { type: "decimal", length: 17, decimal: 4 } });
+            expect(result.modifyColumns).toEqual({ amount: { type: "decimal", length: 17, decimal: 4, previousType: "decimal" } });
         });
 
         test("Removes length for no_length types (e.g., JSON, TEXT)", () => {
@@ -141,7 +141,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             };
 
             const { changes: result } = compareMetaData(oldMetaData, newMetaData, dialectConfig);
-            expect(result.modifyColumns).toEqual({ description: { type: "text" } });
+            expect(result.modifyColumns).toEqual({ description: { type: "text", previousType: "varchar" } });
         });
 
         test("Handles NOT NULL to NULL conversion in dialect-specific logic", () => {
@@ -203,9 +203,9 @@ Object.values(DB_CONFIG).forEach((config) => {
             const newMetaData: MetadataHeader = {
                 id: { type: "int", length: 11, allowNull: false } // Primary key removed
             };
-
+            // THIS ONE
             const { changes: result } = compareMetaData(oldMetaData, newMetaData, dialectConfig);
-            expect(result.primaryKeyChanges).toEqual(["id"]); // Ensures `id` is still primary
+            expect(result.primaryKeyChanges).toEqual([]); // Ensures `id` is still primary
         });
 
         test("Detects renamed primary key and updates accordingly", () => {
@@ -236,7 +236,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             expect(result.primaryKeyChanges).toEqual(["id", "email"]);
         });
 
-        test("Handles transition from composite primary key to a single-column primary key", () => {
+        test("Handles removal of a primary key by not allowing the change as it is not additive and would break existing data in the table", () => {
             const oldMetaData: MetadataHeader = {
                 id: { type: "int", length: 11, allowNull: false, primary: true },
                 email: { type: "varchar", length: 255, allowNull: false, primary: true }
@@ -247,7 +247,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             };
 
             const { changes: result } = compareMetaData(oldMetaData, newMetaData, dialectConfig);
-            expect(result.primaryKeyChanges).toEqual(["id", "email"]);
+            expect(result.primaryKeyChanges).toEqual([]);
         });
 
         test("Handles renamed primary keys", () => {

@@ -11,6 +11,7 @@ export interface ColumnDefinition {
   decimal?: number;
   calculated?: boolean;
   updatedCalculated?: boolean;
+  previousType?: string;
 }
 
 export type MetadataHeader = Record<string, ColumnDefinition>;
