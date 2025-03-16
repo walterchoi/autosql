@@ -1,8 +1,9 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './utils/validateQuery';
-import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges, InsertResult, MetadataHeader } from '../config/types';
+import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges, InsertResult, MetadataHeader, QueryResult } from '../config/types';
 import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
+import { maxQueryAttempts } from "../config/defaults";
 import { AutoSQLHandler } from "./autosql";
 
 // Abstract database class to define common methods.
@@ -87,38 +88,52 @@ export abstract class Database {
         throw new Error("Database connection failed after multiple attempts.");
     }
     
-    public async runQuery(queryOrParams: QueryInput): Promise<any> {
+    public async runQuery(queryOrParams: QueryInput): Promise<QueryResult> {
+        const results: any[] = [];
+        const maxAttempts = maxQueryAttempts || 3;
         let attempts = 0;
-        const maxAttempts = 3;
-        let _error;
-    
-        const QueryInput =
-            typeof queryOrParams === "string"
-                ? { query: queryOrParams, params: [] }
-                : queryOrParams;
-    
+        let _error: any;
+        const start = new Date();
+        let end: Date;
+        let affectedRows: number | undefined = undefined;
+
+        const QueryInput: QueryInput = typeof queryOrParams === "string" ? { query: queryOrParams, params: [] } : queryOrParams;
+
         if (!isValidSingleQuery(QueryInput.query)) {
-            throw new Error("Multiple SQL statements detected. Use transactions instead.");
+            return { start, end: new Date(), duration: 0, success: false, error: "Multiple SQL statements detected. Use transactions instead." };
         }
-    
-        while (attempts < maxAttempts && !_error) {
+
+        while (attempts < maxAttempts) {
             try {
-                return await this.executeQuery(QueryInput);
+                const { rows, affectedRows: rowsAffected } = await this.executeQuery(QueryInput);
+                affectedRows = rowsAffected || 0;
+                end = new Date();
+                return {
+                    start,
+                    end,
+                    duration: end.getTime() - start.getTime(),
+                    affectedRows,
+                    success: true,
+                    results: rows
+                };
             } catch (error: any) {
                 const permanentErrors = await this.getPermanentErrors();
                 if (permanentErrors.includes(error.code)) {
-                    _error = error;
+                    end = new Date();
+                    return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error.message };
                 }
     
                 attempts++;
                 if (attempts < maxAttempts) {
-                    await new Promise((res) => setTimeout(res, 1000));
+                    await new Promise(res => setTimeout(res, 1000)); // Wait before retry
                 } else {
                     _error = error;
                 }
             }
         }
-        throw _error;
+    
+        end = new Date();
+        return { start, end, duration: end.getTime() - start.getTime(), success: false, error: _error?.message };
     }
 
     // Test database connection.
@@ -137,19 +152,25 @@ export abstract class Database {
         try {
             const QueryInput = this.getCheckSchemaQuery(schemaName);
             const result = await this.runQuery(QueryInput);
-
+    
+            if (!result.success || !result.results) {
+                throw new Error(`Failed to check schema existence: ${result.error}`);
+            }
+    
+            const resultsArray = result.results;
+    
             if (Array.isArray(schemaName)) {
                 return schemaName.reduce((acc, db) => {
-                    acc[db] = result[0][db] === 1;
+                    acc[db] = resultsArray[0]?.[db] === 1;
                     return acc;
                 }, {} as Record<string, boolean>);
             }
-
-            return { [schemaName]: result[0][schemaName] === 1 };
+    
+            return { [schemaName]: resultsArray[0]?.[schemaName] === 1 };
         } catch (error) {
             return { [schemaName.toString()]: false };
         }
-    }
+    }    
 
     public async createSchema(schemaName: string): Promise<Record<string, boolean>> {
         try {
@@ -216,14 +237,17 @@ export abstract class Database {
         }
     }
 
-    public async runTransaction(queriesOrStrings: QueryInput[]): Promise<{ success: boolean; results?: any[]; error?: string }> {
+    public async runTransaction(queriesOrStrings: QueryInput[]): Promise<QueryResult> {
         if (!this.connection) {
             await this.establishConnection();
         }
     
         let results: any[] = [];
-        let attempts: number;
-        const maxAttempts = 3;
+        const maxAttempts = maxQueryAttempts || 3;
+        let _error: any;
+        const start = new Date();
+        let end: Date;
+        let totalAffectedRows = 0;
     
         // Convert string queries into QueryInput
         const queries = queriesOrStrings.map(query =>
@@ -232,54 +256,56 @@ export abstract class Database {
     
         try {
             await this.startTransaction();
-            let _error;
     
             for (const QueryInput of queries) {
-                const query = QueryInput.query;
-                const params = QueryInput.params || [];
-    
-                if (!isValidSingleQuery(query)) {
-                    _error = "Each query in the transaction must be a single statement.";
-                    throw new Error(_error);
-                }
-    
-                attempts = 0;
-                if (_error) {
-                    console.log(`Not running query: ${query}`);
-                    console.log(`Due to error: ${_error}`);
-                }
-    
-                while (attempts < maxAttempts && !_error) {
+                let attempts = 0;
+                while (attempts < maxAttempts) {
                     try {
-                        const result = await this.executeQuery(QueryInput);
-                        results.push(result);
-                        break;
+                        const { rows, affectedRows: rowsAffected } = await this.executeQuery(QueryInput);
+                        results = results.concat(rows);
+                        if (rowsAffected) totalAffectedRows += rowsAffected;
+                        break; // Exit retry loop on success
                     } catch (error: any) {
                         attempts++;
     
                         const permanentErrors = await this.getPermanentErrors();
                         if (permanentErrors.includes(error.code)) {
-                            _error = error;
+                            throw error; // Stop retrying for permanent errors
                         }
     
                         if (attempts >= maxAttempts) {
                             _error = error;
+                        } else {
+                            await new Promise(res => setTimeout(res, 1000)); // Wait before retry
                         }
-    
-                        await new Promise((res) => setTimeout(res, 1000));
                     }
+                }
+    
+                if (_error) {
+                    throw _error;
                 }
             }
     
-            if (_error) {
-                throw _error;
-            }
-    
             await this.commit();
-            return { success: true, results };
+            end = new Date();
+            return {
+                start,
+                end,
+                duration: end.getTime() - start.getTime(),
+                affectedRows: totalAffectedRows,
+                success: true,
+                results
+            };
         } catch (error: any) {
             await this.rollback();
-            return { success: false, error: error.message };
+            end = new Date();
+            return {
+                start,
+                end,
+                duration: end.getTime() - start.getTime(),
+                success: false,
+                error: error.message
+            };
         }
     }
 
@@ -293,7 +319,10 @@ export abstract class Database {
 
             const MetaQueryInput = this.getTableMetaDataQuery(schema, table);
             const result = await this.runQuery(MetaQueryInput);
-            return parseDatabaseMetaData(result, this.getDialectConfig());
+            if (!result.success || !result.results) {
+                throw new Error(`Failed to fetch metadata: ${result.error}`);
+            }
+            return parseDatabaseMetaData(result.results, this.getDialectConfig());
         } catch (error) {
             console.error("Error fetching table metadata:", error);
             return null;

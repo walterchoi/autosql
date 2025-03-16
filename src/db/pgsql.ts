@@ -78,7 +78,7 @@ export class PostgresDatabase extends Database {
 
     protected async executeQuery(query: string): Promise<any>;
     protected async executeQuery(QueryInput: QueryInput): Promise<any>;
-    protected async executeQuery(queryOrParams: QueryInput): Promise<any> {
+    protected async executeQuery(queryOrParams: QueryInput): Promise<{ rows: any; affectedRows?: number }> {
         if (!this.connection) {
             await this.establishConnection();
         }
@@ -90,14 +90,15 @@ export class PostgresDatabase extends Database {
         try {
             client = await (this.connection as Pool).connect();
             const result = await client.query(query, params);
-            return result.rows;
+    
+            return { rows: result.rows, affectedRows: result.rowCount ?? undefined };
         } catch (error) {
-            if(client && error) await client.query("ROLLBACK;");
+            if (client) await client.query("ROLLBACK;");
             throw error;
         } finally {
             if (client) client.release();
         }
-    }
+    }    
 
     getCreateSchemaQuery(schemaName: string): QueryInput {
         return { query: `CREATE SCHEMA IF NOT EXISTS "${schemaName}";`};
@@ -146,20 +147,26 @@ export class PostgresDatabase extends Database {
         // ✅ Only fetch unique indexes if there are columns to remove uniqueness from
         let indexesToDrop: string[] = [];
         if (alterTableChanges.noLongerUnique.length > 0) {
-            const uniqueIndexes = await this.runQuery(this.getUniqueIndexesQuery(table)) as { indexname: string; columns: string }[];
-
+            // Extract the results from the QueryResult response
+            const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
+        
+            if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {
+                throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error}`);
+            }
+        
+            const uniqueIndexes = uniqueIndexesResult.results as { indexname: string; columns: string }[];
+        
             indexesToDrop = uniqueIndexes
                 .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
                 .map(({ indexname }) => `DROP INDEX IF EXISTS "${indexname}"`);
-
-            if (indexesToDrop.length > 0) {
-                queries.push({
-                    query: indexesToDrop.join("; ") + ";",
-                    params: []
-                });
-            }
+        
+                if (indexesToDrop.length > 0) {
+                    queries.push({
+                        query: indexesToDrop.join("; ") + ";",
+                        params: []
+                    });
+                }
         }
-
         // Get actual ALTER TABLE queries
         const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema, this.getConfig());
         queries.push(...alterQueries);

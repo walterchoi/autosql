@@ -47,7 +47,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, [], null, INITIAL_METADATA);
         
             expect(result.success).toBe(false);
-            expect(result.error).toContain(`Error in autoConfigureTable: Error: No existing metadata and no data provided to infer structure.`);
+            expect(result.error).toContain(`No existing metadata and no data provided to infer structure.`);
         });
 
         test("Creates table when it does not exist and no metadata provided", async () => {
@@ -71,8 +71,8 @@ Object.values(DB_CONFIG).forEach((config) => {
                 TEST_TABLE_NAME
             );
             const tableExistsResult = await db.runQuery(checkTableExistsQuery);
-            const tableExists = Boolean(Number(tableExistsResult[0]?.count || 0));
-            expect(tableExists).toBe(true);
+            expect(tableExistsResult!.results!.length).toBe(1);
+            expect(Boolean(Number(tableExistsResult!.results![0].count))).toBe(true);
         });
 
         test("Creates table when it does not exist and metadata is provided", async () => {
@@ -93,9 +93,8 @@ Object.values(DB_CONFIG).forEach((config) => {
                 TEST_TABLE_NAME
             );
             const tableExistsResult = await db.runQuery(checkTableExistsQuery);
-            const tableExists = Boolean(Number(tableExistsResult[0]?.count || 0));
-        
-            expect(tableExists).toBe(true);
+            expect(tableExistsResult!.results!.length).toBe(1);
+            expect(Boolean(Number(tableExistsResult!.results![0].count))).toBe(true);
         });
         
         test("Returns success when table exists and no changes are needed", async () => {

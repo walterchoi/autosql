@@ -1,4 +1,4 @@
-import mysql, { Pool, PoolConnection } from "mysql2/promise";
+import mysql, { Pool, PoolConnection, ResultSetHeader, FieldPacket } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
 import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader } from "../config/types";
@@ -66,22 +66,25 @@ export class MySQLDatabase extends Database {
 
     protected async executeQuery(query: string): Promise<any>;
     protected async executeQuery(QueryInput: QueryInput): Promise<any>;
-    protected async executeQuery(queryOrParams: QueryInput): Promise<any> {
+    protected async executeQuery(queryOrParams: QueryInput): Promise<{ rows: any; affectedRows?: number }> {
         if (!this.connection) {
             await this.establishConnection();
         }
     
         let client: PoolConnection | null = null;
-    
         const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
         const params = typeof queryOrParams === "string" ? [] : queryOrParams.params || [];
     
         try {
             client = await (this.connection as Pool).getConnection();
-            const [rows] = await client.query(query, params);
-            return rows;
+            const [rows, metadata] = await client.query(query, params) as [any, ResultSetHeader | FieldPacket[]];
+    
+            // Ensure metadata exists and has affectedRows (for INSERT, UPDATE, DELETE)
+            const affectedRows = metadata && "affectedRows" in metadata ? (metadata as ResultSetHeader).affectedRows : undefined;
+    
+            return { rows, affectedRows };
         } catch (error) {
-            if(client) await client.query("ROLLBACK;");
+            if (client) await client.query("ROLLBACK;");
             throw error;
         } finally {
             if (client) client.release();
@@ -131,12 +134,18 @@ export class MySQLDatabase extends Database {
 
         let indexesToDrop: string[] = [];
         if (alterTableChanges.noLongerUnique.length > 0) {
-            const uniqueIndexes = await this.runQuery(this.getUniqueIndexesQuery(table)) as { indexname: string; columns: string }[];
-    
+            const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
+        
+            if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {
+                throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error}`);
+            }
+        
+            const uniqueIndexes = uniqueIndexesResult.results as { indexname: string; columns: string }[];
+        
             indexesToDrop = uniqueIndexes
                 .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
                 .map(({ indexname }) => `DROP INDEX \`${indexname}\``);
-
+        
             if (indexesToDrop.length > 0) {
                 queries.push({
                     query: `ALTER TABLE ${schemaPrefix}\`${table}\` ${indexesToDrop.join(", ")};`,
@@ -144,7 +153,7 @@ export class MySQLDatabase extends Database {
                 });
             }
         }
-
+        
         const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema, this.getConfig());
         queries.push(...alterQueries);
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {

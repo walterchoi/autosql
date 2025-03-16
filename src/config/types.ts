@@ -124,6 +124,10 @@ export interface InsertResult {
 }
 
 export interface QueryResult {
+    start: Date; 
+    end: Date; 
+    duration: number;
+    affectedRows?: number 
     success: boolean;
     results?: any[];
     error?: string;

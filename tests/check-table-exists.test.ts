@@ -33,10 +33,10 @@ Object.values(DB_CONFIG).forEach((config) => {
             const result = await db.runQuery(checkTableExistsQuery);
 
             // ✅ Expect result to show that table exists
-            expect(result.length).toBe(1);
-            expect(Boolean(Number(result[0].count))).toBe(true);
+            expect(result!.results!.length).toBe(1);
+            expect(Boolean(Number(result!.results![0].count))).toBe(true);
         });
-
+        
         test("Check table existence when table does NOT exist", async () => {
             const NON_EXISTENT_TABLE = "non_existent_table_test";
 
@@ -48,8 +48,8 @@ Object.values(DB_CONFIG).forEach((config) => {
             const result = await db.runQuery(checkTableExistsQuery);
 
             // ✅ Expect result to be empty (table does not exist)
-            expect(result.length).toBe(1);
-            expect(Boolean(Number(result[0].count))).toBe(false);
+            expect(result!.results!.length).toBe(1);
+            expect(Boolean(Number(result!.results![0].count))).toBe(false);
         });
     });
 });

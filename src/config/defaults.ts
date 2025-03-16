@@ -18,6 +18,8 @@ export const defaults = {
     autoSplit: false
 }
 
+export const maxQueryAttempts = 3;
+
 export const MYSQL_MAX_ROW_SIZE = 16 * 1024; // 16KB
 export const POSTGRES_MAX_ROW_SIZE = 8 * 1024; // 8KB
 export const DEFAULT_LENGTHS = {

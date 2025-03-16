@@ -19,6 +19,9 @@ export class AutoSQLHandler {
             if (tableExists === undefined) {
                 const checkTableExistsQuery = this.db.getTableExistsQuery(this.db.getConfig().schema || this.db.getConfig().database || "", table);
                 const checkTableExists = await this.db.runQuery(checkTableExistsQuery);
+                if (!checkTableExists.success || !checkTableExists.results) {
+                    throw new Error(`Failed to check schema existence: ${checkTableExists.error}`);
+                }
                 tableExists = Boolean(Number(checkTableExists?.results[0]?.count));
             }
     
@@ -30,17 +33,10 @@ export class AutoSQLHandler {
             const createQuery = this.db.getCreateTableQuery(table, newMetaData);
             const createTable = await this.db.runTransaction(createQuery);
     
-            return {
-                success: createTable.success,
-                results: createTable.results,
-                error: createTable.error
-            };
+            return createTable;
     
         } catch (error) {
-            return {
-                success: false,
-                error: `Error in autoCreateTable: ${error}`
-            };
+            throw error
         }
     }    
     
@@ -50,6 +46,9 @@ export class AutoSQLHandler {
             if (tableExists === undefined) {
                 const checkTableExistsQuery = this.db.getTableExistsQuery(this.db.getConfig().schema || this.db.getConfig().database || "", table);
                 const checkTableExists = await this.db.runQuery(checkTableExistsQuery);
+                if (!checkTableExists.success || !checkTableExists.results) {
+                    throw new Error(`Failed to check schema existence: ${checkTableExists.error}`);
+                }
                 tableExists = Boolean(Number(checkTableExists?.results[0]?.count));
             }
     
@@ -61,17 +60,10 @@ export class AutoSQLHandler {
             const alterQuery = await this.db.getAlterTableQuery(table, tableChanges);
             const alterTable = await this.db.runTransaction(alterQuery);
     
-            return {
-                success: alterTable.success,
-                results: alterTable.results,
-                error: alterTable.error
-            };
+            return alterTable
     
         } catch (error) {
-            return {
-                success: false,
-                error: `Error in autoAlterTable: ${error}`
-            };
+            throw error
         }
     }    
 
@@ -135,16 +127,34 @@ export class AutoSQLHandler {
             // ✅ If table exists but no changes, return success
             if (!tableChanges || !tableChangesExist(tableChanges)) {
                 console.log(`✅ Table exists, no changes detected. Skipping ALTER TABLE.`);
-                return { success: true, results: [] };
+                const start = this.db.startDate;
+                const end = new Date();
+                const affectedRows = 0;
+                const rows: any[] = []
+                return {
+                    start,
+                    end,
+                    duration: end.getTime() - start.getTime(),
+                    affectedRows,
+                    success: true,
+                    results: rows
+                };
             }
     
             // ✅ If table exists and changes exist, alter it
             console.log(`✏️ Altering table: ${table} with changes:`, tableChanges);
             return await this.autoAlterTable(table, tableChanges, true);
         } catch (error) {
+            const start = this.db.startDate;
+            const end = new Date();
+            const affectedRows = 0;
             return {
+                start,
+                end,
+                duration: end.getTime() - start.getTime(),
+                affectedRows,
                 success: false,
-                error: `Error in autoConfigureTable: ${error}`
+                error: error instanceof Error ? error.message : String(error)
             };
         }
     }
@@ -163,7 +173,10 @@ export class AutoSQLHandler {
                 table
             );
             const currentMetaDataResults = await this.db.runQuery(currentMetaDataQuery);
-            currentMetaData = parseDatabaseMetaData(currentMetaDataResults, this.db.getDialectConfig());
+            if(!currentMetaDataResults || !currentMetaDataResults.success || !currentMetaDataResults.results) {
+                throw new Error(`Failed to retrieve existing meta data for table ${table}`);
+            }
+            currentMetaData = parseDatabaseMetaData(currentMetaDataResults.results, this.db.getDialectConfig());
     
             if (currentMetaData) {
                 this.db.updateTableMetadata(table, currentMetaData, "existingMetaData");
@@ -181,7 +194,7 @@ export class AutoSQLHandler {
         return [{ table, data, metaData}]
     }
     
-    async autoSQL(table: string, data: Record<string, any>[], schema?: string): Promise<InsertResult> {
+    async autoSQL(table: string, data: Record<string, any>[], schema?: string): Promise<QueryResult> {
         try {
             if(schema) { this.db.updateSchema(schema) }
             const { currentMetaData } = await this.fetchTableMetadata(table)
@@ -214,11 +227,23 @@ export class AutoSQLHandler {
             return {
                 start,
                 end,
+                success: true,
                 duration: end.getTime() - start.getTime(),
                 affectedRows
             };
-        } catch (error) {
-            throw error
-        } 
+        } catch (error: any) {
+            const start = this.db.startDate;
+            const end = new Date();
+            const affectedRows = 0;
+        
+            return {
+                start,
+                end,
+                duration: end.getTime() - start.getTime(),
+                affectedRows,
+                success: false,
+                error: error instanceof Error ? error.message : String(error) // Ensure error is a string
+            };
+        }
     }
 }
