@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { MetadataHeader } from "../src/config/types";
+import { MetadataHeader, QueryResult } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_index_table";
 
@@ -58,7 +58,8 @@ Object.values(DB_CONFIG).forEach((config) => {
         
             const checkPrimaryKey = db.getPrimaryKeysQuery(TEST_TABLE_NAME);
             const result = await db.runQuery(checkPrimaryKey);
-            expect(result.length).toBe(0); // Table should no longer have a primary key
+            expect(result.success).toBe(true);
+            expect(result.results?.length).toBe(0); // Table should no longer have a primary key
         });
         
         test("Generate valid ADD PRIMARY KEY query", async () => {
@@ -66,12 +67,10 @@ Object.values(DB_CONFIG).forEach((config) => {
             await expect(db.runQuery(query)).resolves.not.toThrow();
         
             const checkPrimaryKey = db.getPrimaryKeysQuery(TEST_TABLE_NAME);
-            const result: { column_name?: string, COLUMN_NAME?: string }[] = await db.runQuery(checkPrimaryKey);
-        
-            console.log(result); // Debugging to verify column structure
+            const result: QueryResult = await db.runQuery(checkPrimaryKey);
         
             expect(
-                result.some((pk) => {
+                result!.results!.some((pk) => {
                     const columnName = pk.column_name || pk.COLUMN_NAME; // Handle MySQL and PostgreSQL
                     return columnName?.toLowerCase() === "user_uuid";
                 })

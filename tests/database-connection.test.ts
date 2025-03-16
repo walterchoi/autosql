@@ -38,7 +38,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             test("Run a basic query", async () => {
                 const result = await db.runQuery("SELECT 1 AS test;");
-                expect(result[0].test).toBe(1);
+                expect(result!.results![0].test).toBe(1);
             });    
 
         });
