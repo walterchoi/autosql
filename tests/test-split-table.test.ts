@@ -4,6 +4,35 @@ import { MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_split_table";
 
+const newMetaData : MetadataHeader = {
+    id: {
+        type: "int",
+        primary: true,
+        allowNull: false
+    },
+    name: {
+        type: "varchar",
+        allowNull: false,
+        length: 255
+    },
+    email: {
+        type: "varchar",
+        length: 255
+    },
+    phone: {
+        type: "varchar",
+        length: 20
+    },
+    address: {
+        type: "varchar",
+        length: 255
+    },
+    leads: {
+        type: "smallint",
+        allowNull: true
+    }
+}
+
 Object.values(DB_CONFIG).forEach((config) => {
     describe(`getSplitTablesQuery Tests for ${config.sqlDialect.toUpperCase()}`, () => {
         let db: Database;
@@ -71,23 +100,35 @@ Object.values(DB_CONFIG).forEach((config) => {
                 ])
             );
 
-            if(currentSplitResults.results) {
-                const normalizedResults = parseDatabaseMetaData(currentSplitResults!.results, db.getDialectConfig()) || {}
-                const groupedByTable = Object.entries(normalizedResults).reduce((acc, [columnName, columnDef]) => {
-                    if (!columnDef.tableName) return acc; // Skip if there's no table name
-                
-                    const tableName = columnDef.tableName;
-                
-                    if (!acc[tableName]) acc[tableName] = {}; // Initialize table entry
-                
-                    acc[tableName][columnName] = columnDef; // Add column metadata under the table name
-                
-                    return acc;
-                }, {} as Record<string, MetadataHeader>);
-                console.log(normalizedResults)
-                console.log(groupedByTable)
+            let normalizedResults = parseDatabaseMetaData(currentSplitResults!.results || [], db.getDialectConfig()) || {};
+            if (!Object.keys(normalizedResults).some(key => typeof normalizedResults[key] === "object" && !Array.isArray(normalizedResults[key]))) {
+                normalizedResults = { defaultTable: normalizedResults as MetadataHeader };
             }
 
+            const primaryKeys: string[] = [];
+            const newColumns: MetadataHeader = {}
+            const newGroupedByTable = Object.entries(newMetaData).reduce((acc, [columnName, columnDef]) => {
+                const matchingTables = Object.keys(normalizedResults).filter(table =>
+                    Object.prototype.hasOwnProperty.call(normalizedResults[table], columnName)
+                );
+                if (matchingTables.length > 0) {
+                    matchingTables.forEach(tableName => {
+                        if (!acc[tableName]) acc[tableName] = {};
+                        acc[tableName][columnName] = columnDef;   
+                    });
+                    if (columnDef.primary) {
+                        primaryKeys.push(columnName);
+                    }
+                } else {
+                    newColumns[columnName] = columnDef
+                }
+
+                return acc;
+            }, {} as Record<string, MetadataHeader>);
+
+            console.log(newGroupedByTable)
+            console.log(primaryKeys)
+            console.log(newColumns)
         });
 
         test("Returns no results when no split tables exist", async () => {

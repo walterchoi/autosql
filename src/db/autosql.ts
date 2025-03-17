@@ -207,6 +207,18 @@ export class AutoSQLHandler {
             const currentSplitResults = await this.db.runQuery(splitQuery);
             if(!currentSplitResults || !currentSplitResults.success || !currentSplitResults.results) { throw new Error(currentSplitResults.error || `Error while retrieving existing split table information for: ${table}`)}
             const currentSplit = currentSplitResults.results
+            const normalizedResults = parseDatabaseMetaData(currentSplitResults!.results, this.db.getDialectConfig()) || {}
+            const groupedByTable = Object.entries(normalizedResults).reduce((acc, [columnName, columnDef]) => {
+                if (!columnDef.tableName) return acc; // Skip if there's no table name
+            
+                const tableName = columnDef.tableName;
+            
+                if (!acc[tableName]) acc[tableName] = {}; // Initialize table entry
+            
+                acc[tableName][columnName] = columnDef; // Add column metadata under the table name
+            
+                return acc;
+            }, {} as Record<string, MetadataHeader>);
             // Split table metadata into multiple:
             // { table: name, data: Record<string, any>[], metaData: MetadataHeader}[]?
             return [{ table, data, metaData}]

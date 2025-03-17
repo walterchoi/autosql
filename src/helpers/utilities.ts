@@ -270,7 +270,6 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
             autoIncrement: autoIncrement,
             decimal: lengthInfo.decimal ?? undefined,
             default: normalizedRow["column_default"],
-            tableName: hasTableName ? tableName : undefined, // Store only if relevant
         };
     });
 
@@ -424,17 +423,29 @@ export const normalizeKeysArray = (data: Record<string, any>[]): Record<string, 
 
 export function organiseSplitTable(newMetaData: MetadataHeader, currentMetaData: Record<string, any>[], dialectConfig?: DialectConfig) {
     // First iterate through current Meta Data
-    const normalizedMetaData = parseDatabaseMetaData(currentMetaData, dialectConfig) || {};
-    const groupedByTable = Object.values(normalizedMetaData).reduce((acc, columnDef) => {
-        if (!columnDef.tableName) return acc; // Skip if there's no table name
-    
-        if (!acc[columnDef.tableName]) acc[columnDef.tableName] = {}; // Initialize table entry
-    
-        acc[columnDef.tableName] = {
-            ...acc[columnDef.tableName],
-            [columnDef.tableName]: columnDef // Add column metadata under the table name
-        };
-    
+    let normalizedMetaData = parseDatabaseMetaData(currentMetaData, dialectConfig) || {};
+    if (!Object.keys(normalizedMetaData).some(key => typeof normalizedMetaData[key] === "object" && !Array.isArray(normalizedMetaData[key]))) {
+        normalizedMetaData = { defaultTable: normalizedMetaData as MetadataHeader };
+    }
+
+    const primaryKeys: string[] = [];
+    const newColumns: MetadataHeader = {}
+    const newGroupedByTable = Object.entries(newMetaData).reduce((acc, [columnName, columnDef]) => {
+        const matchingTables = Object.keys(normalizedMetaData).filter(table =>
+            Object.prototype.hasOwnProperty.call(normalizedMetaData[table], columnName)
+        );
+        if (matchingTables.length > 0) {
+            matchingTables.forEach(tableName => {
+                if (!acc[tableName]) acc[tableName] = {};
+                acc[tableName][columnName] = columnDef;   
+            });
+            if (columnDef.primary) {
+                primaryKeys.push(columnName);
+            }
+        } else {
+            newColumns[columnName] = columnDef
+        }
+
         return acc;
     }, {} as Record<string, MetadataHeader>);
 }
