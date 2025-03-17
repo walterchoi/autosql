@@ -316,13 +316,22 @@ export abstract class Database {
             const existsQueryInput = this.getTableExistsQuery(schema, table);
             const exists = await this.runQuery(existsQueryInput);
             if (!exists) return null;
-
+    
             const MetaQueryInput = this.getTableMetaDataQuery(schema, table);
             const result = await this.runQuery(MetaQueryInput);
             if (!result.success || !result.results) {
                 throw new Error(`Failed to fetch metadata: ${result.error}`);
             }
-            return parseDatabaseMetaData(result.results, this.getDialectConfig());
+    
+            const parsedMetadata = parseDatabaseMetaData(result.results, this.getDialectConfig());
+    
+            // Ensure return type is always MetadataHeader | null
+            if (!parsedMetadata) return null;
+            if (typeof parsedMetadata === "object" && !Array.isArray(parsedMetadata)) {
+                return parsedMetadata as MetadataHeader; // Single table case
+            }
+    
+            throw new Error("Unexpected metadata format: Multiple tables returned for a single-table query.");
         } catch (error) {
             console.error("Error fetching table metadata:", error);
             return null;

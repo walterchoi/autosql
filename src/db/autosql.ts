@@ -159,11 +159,15 @@ export class AutoSQLHandler {
         }
     }
 
-    async fetchTableMetadata(table: string): Promise<{ currentMetaData: MetadataHeader | null; tableExists: boolean;}> {
+    async fetchTableMetadata(table: string): Promise<{ currentMetaData: MetadataHeader | null; tableExists: boolean; }> {
         // ✅ Check if the table exists
-        const checkTableExistsQuery = this.db.getTableExistsQuery(this.db.getConfig().schema || this.db.getConfig().database || "", table);
+        const checkTableExistsQuery = this.db.getTableExistsQuery(
+            this.db.getConfig().schema || this.db.getConfig().database || "", 
+            table
+        );
         const checkTableExists = await this.db.runQuery(checkTableExistsQuery);
         const tableExists = Boolean(Number(checkTableExists?.results?.[0]?.count || 0));
+    
         let currentMetaData: MetadataHeader | null = null;
         
         if (tableExists) {
@@ -173,10 +177,21 @@ export class AutoSQLHandler {
                 table
             );
             const currentMetaDataResults = await this.db.runQuery(currentMetaDataQuery);
-            if(!currentMetaDataResults || !currentMetaDataResults.success || !currentMetaDataResults.results) {
+    
+            if (!currentMetaDataResults || !currentMetaDataResults.success || !currentMetaDataResults.results) {
                 throw new Error(`Failed to retrieve existing meta data for table ${table}`);
             }
-            currentMetaData = parseDatabaseMetaData(currentMetaDataResults.results, this.db.getDialectConfig());
+    
+            const parsedMetadata = parseDatabaseMetaData(currentMetaDataResults.results, this.db.getDialectConfig());
+    
+            if (!parsedMetadata) {
+                currentMetaData = null;
+            } else if (typeof parsedMetadata === "object" && !Array.isArray(parsedMetadata)) {
+                // ✅ Ensure that we only get MetadataHeader, not multiple tables
+                currentMetaData = parsedMetadata as MetadataHeader;
+            } else {
+                throw new Error("Unexpected metadata format: Multiple tables returned for a single-table query.");
+            }
     
             if (currentMetaData) {
                 this.db.updateTableMetadata(table, currentMetaData, "existingMetaData");
@@ -184,7 +199,7 @@ export class AutoSQLHandler {
         }
     
         return { currentMetaData, tableExists };
-    }
+    }    
 
     async splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader): Promise<{table: string, data: Record<string, any>[], metaData: MetadataHeader}[]> {
         try {

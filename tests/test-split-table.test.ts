@@ -1,4 +1,6 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
+import { parseDatabaseMetaData } from "../src/helpers/utilities";
+import { MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_split_table";
 
@@ -49,9 +51,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             // ✅ Run the query
             const splitQuery = db.getSplitTablesQuery(TEST_TABLE_NAME);
-            console.log(splitQuery)
             const currentSplitResults = await db.runQuery(splitQuery);
-            console.log(`Test Result [${config.sqlDialect}]: Split Tables Query Output 1`, currentSplitResults);
 
             // ✅ Validate output
             expect(currentSplitResults.success).toBe(true); // Ensure query was successful
@@ -70,6 +70,23 @@ Object.values(DB_CONFIG).forEach((config) => {
                     expect.objectContaining({ table_name: `${TEST_TABLE_NAME}__part_002` }),
                 ])
             );
+
+            if(currentSplitResults.results) {
+                const normalizedResults = parseDatabaseMetaData(currentSplitResults!.results, db.getDialectConfig()) || {}
+                const groupedByTable = Object.entries(normalizedResults).reduce((acc, [columnName, columnDef]) => {
+                    if (!columnDef.tableName) return acc; // Skip if there's no table name
+                
+                    const tableName = columnDef.tableName;
+                
+                    if (!acc[tableName]) acc[tableName] = {}; // Initialize table entry
+                
+                    acc[tableName][columnName] = columnDef; // Add column metadata under the table name
+                
+                    return acc;
+                }, {} as Record<string, MetadataHeader>);
+                console.log(normalizedResults)
+                console.log(groupedByTable)
+            }
 
         });
 
@@ -92,7 +109,6 @@ Object.values(DB_CONFIG).forEach((config) => {
             // ✅ Run the query
             const splitQuery = db.getSplitTablesQuery(TEST_TABLE_NAME);
             const currentSplitResults = await db.runQuery(splitQuery);
-            console.log(`Test Result [${config.sqlDialect}]: No Split Tables Query Output 2`, currentSplitResults);
 
             // ✅ Validate output
             expect(currentSplitResults.success).toBe(true); // Ensure query was successful

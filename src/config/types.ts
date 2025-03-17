@@ -12,6 +12,7 @@ export interface ColumnDefinition {
   calculated?: boolean;
   updatedCalculated?: boolean;
   previousType?: string;
+  tableName?: string[];
 }
 
 export type MetadataHeader = Record<string, ColumnDefinition>;

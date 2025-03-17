@@ -217,30 +217,50 @@ export function parseDatabaseLength(lengthStr?: string): { length?: number; deci
     return { length, decimal };
 }
 
-export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig): MetadataHeader | null {
-    const metadata: MetadataHeader = {};
+export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig ): MetadataHeader | Record<string, MetadataHeader> | null {
+    if (!rows || rows.length === 0) return null; // Return null if no data
 
-    rows.forEach((row: any) => {
-        // Normalize column keys to lowercase
+    const hasTableName = rows.some(row => "table_name" in row || "TABLE_NAME" in row);
+    const hasNoTableName = rows.some(row => !("table_name" in row) && !("TABLE_NAME" in row));
+
+    if (hasTableName && hasNoTableName) {
+        throw new Error("Inconsistent data: Some rows contain 'table_name' while others do not.");
+    }
+
+    const metadata: Record<string, MetadataHeader> = {};
+
+    rows.forEach((row) => {
         const normalizedRow = Object.keys(row).reduce((acc, key) => {
             acc[key.toLowerCase()] = row[key];
             return acc;
         }, {} as Record<string, any>);
-        // Extract normalized values
+
+        if (!normalizedRow.column_name) return; // Skip invalid rows
+
         const lengthInfo = parseDatabaseLength(String(normalizedRow["length"]));
-        const dataType = dialectConfig?.translate?.serverToLocal[normalizedRow.data_type.toLowerCase()] || normalizedRow["data_type"].toLowerCase();
+        const dataType =
+            dialectConfig?.translate?.serverToLocal[normalizedRow.data_type.toLowerCase()] ||
+            normalizedRow["data_type"].toLowerCase();
         const columnKey = (normalizedRow["column_key"] || "").toUpperCase();
-        
+
         let normalizedLength: number | undefined = lengthInfo.length;
         if (dialectConfig?.noLength.includes(dataType)) {
-            normalizedLength = undefined; // ✅ Force `undefined` for `TEXT`, `JSON`, `BOOLEAN`, etc.
+            normalizedLength = undefined;
         } else if (dialectConfig?.optionalLength.includes(dataType) && lengthInfo.length === undefined) {
-            normalizedLength = undefined; // ✅ Ensure `undefined` if the DB does not store it
+            normalizedLength = undefined;
         }
 
-        const autoIncrement = String(normalizedRow["extra"] || "").includes("auto_increment") || String(normalizedRow["column_default"] || "").includes("nextval");
+        const autoIncrement =
+            String(normalizedRow["extra"] || "").includes("auto_increment") ||
+            String(normalizedRow["column_default"] || "").includes("nextval");
 
-        metadata[normalizedRow["column_name"]] = {
+        const tableName = normalizedRow.table_name || "noTableName"; // Default for single-table case
+
+        if (!metadata[tableName]) {
+            metadata[tableName] = {};
+        }
+
+        metadata[tableName][normalizedRow.column_name] = { 
             type: dataType,
             length: normalizedLength,
             allowNull: normalizedRow["is_nullable"] === "YES",
@@ -248,13 +268,14 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
             primary: columnKey === "PRIMARY",
             index: columnKey === "INDEX",
             autoIncrement: autoIncrement,
-            decimal: lengthInfo.decimal ?? undefined
+            decimal: lengthInfo.decimal ?? undefined,
+            default: normalizedRow["column_default"],
+            tableName: hasTableName ? tableName : undefined, // Store only if relevant
         };
     });
 
-    return Object.keys(metadata).length > 0 ? metadata : null;
+    return hasTableName ? metadata : metadata["noTableName"] || null;
 }
-
 
 export function generateCombinations<T>(array: T[], length: number): T[][] {
     if (length === 1) return array.map(el => [el]);
@@ -401,16 +422,19 @@ export const normalizeKeysArray = (data: Record<string, any>[]): Record<string, 
     );
 };
 
-export function organiseSplitTable(newMetaData: MetadataHeader, currentMetaData: Record<string, any>[]) {
+export function organiseSplitTable(newMetaData: MetadataHeader, currentMetaData: Record<string, any>[], dialectConfig?: DialectConfig) {
     // First iterate through current Meta Data
-    const normalizedMetaData = normalizeKeysArray(currentMetaData);
-    const groupedByTable = normalizedMetaData.reduce((acc, row) => {
-        const { table_name, ...columnData } = row; // Extract table_name separately
+    const normalizedMetaData = parseDatabaseMetaData(currentMetaData, dialectConfig) || {};
+    const groupedByTable = Object.values(normalizedMetaData).reduce((acc, columnDef) => {
+        if (!columnDef.tableName) return acc; // Skip if there's no table name
     
-        if (!acc[table_name]) acc[table_name] = []; // Initialize if needed
-        acc[table_name].push(columnData); // Add column data
+        if (!acc[columnDef.tableName]) acc[columnDef.tableName] = {}; // Initialize table entry
+    
+        acc[columnDef.tableName] = {
+            ...acc[columnDef.tableName],
+            [columnDef.tableName]: columnDef // Add column metadata under the table name
+        };
     
         return acc;
-    }, {} as Record<string, any[]>);
-    
+    }, {} as Record<string, MetadataHeader>);
 }
