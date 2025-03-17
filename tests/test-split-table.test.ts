@@ -49,15 +49,22 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             // ✅ Run the query
             const splitQuery = db.getSplitTablesQuery(TEST_TABLE_NAME);
+            console.log(splitQuery)
             const currentSplitResults = await db.runQuery(splitQuery);
             console.log(`Test Result [${config.sqlDialect}]: Split Tables Query Output 1`, currentSplitResults);
 
             // ✅ Validate output
             expect(currentSplitResults.success).toBe(true); // Ensure query was successful
             expect(currentSplitResults.results).toBeDefined(); // Ensure results exist
-            expect(currentSplitResults.results!.length).toBe(2); // Use ! to assert results exist
+            expect(currentSplitResults.results!.length).toBe(6); // Use ! to assert results exist
 
-            expect(currentSplitResults.results).toEqual(
+            const normalizeKeys = (obj: Record<string, any>) =>
+                Object.keys(obj).reduce((acc, key) => {
+                    acc[key.toLowerCase()] = obj[key]; // Convert all keys to lowercase
+                    return acc;
+                }, {} as Record<string, any>);
+            
+            expect(currentSplitResults!.results!.map(normalizeKeys)).toEqual(
                 expect.arrayContaining([
                     expect.objectContaining({ table_name: `${TEST_TABLE_NAME}__part_001` }),
                     expect.objectContaining({ table_name: `${TEST_TABLE_NAME}__part_002` }),

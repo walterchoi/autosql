@@ -30,11 +30,11 @@ Object.values(DB_CONFIG).forEach((config) => {
                     }
                     throw tempError;
                 }
-                return [{ id: 1 }];
+                return { rows: [{ id: 1 }]};
             });
     
             const result = await db.runQuery('SELECT * FROM users');
-            expect(result!.results).toEqual([{ id: 1 }]);
+            expect(result.results).toEqual([{ id: 1 }]);
             expect(attemptCount).toBe(3);
         });
     
@@ -52,9 +52,9 @@ Object.values(DB_CONFIG).forEach((config) => {
                 throw permanentError;
             });
     
-            const result = await db.runQuery('INVALID SQL')
-            expect(result.success).toBe(false)
-            expect(result.error).toBe("Syntax error")
+            const result = await db.runQuery('INVALID SQL');
+            expect(result.success).toBe(false);
+            expect(result.error).toBe("Syntax error");
             expect(attemptCount).toBe(1); // No retries
         });
     
