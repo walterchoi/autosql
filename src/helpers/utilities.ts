@@ -391,3 +391,26 @@ export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supporte
 export function isValidDataFormat(data: Record<string, any>[] | any): boolean {
     return Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null && !Array.isArray(data[0]);
 }
+
+export const normalizeKeysArray = (data: Record<string, any>[]): Record<string, any>[] => {
+    return data.map(obj =>
+        Object.keys(obj).reduce((acc, key) => {
+            acc[key.toLowerCase()] = obj[key];
+            return acc;
+        }, {} as Record<string, any>)
+    );
+};
+
+export function organiseSplitTable(newMetaData: MetadataHeader, currentMetaData: Record<string, any>[]) {
+    // First iterate through current Meta Data
+    const normalizedMetaData = normalizeKeysArray(currentMetaData);
+    const groupedByTable = normalizedMetaData.reduce((acc, row) => {
+        const { table_name, ...columnData } = row; // Extract table_name separately
+    
+        if (!acc[table_name]) acc[table_name] = []; // Initialize if needed
+        acc[table_name].push(columnData); // Add column data
+    
+        return acc;
+    }, {} as Record<string, any[]>);
+    
+}

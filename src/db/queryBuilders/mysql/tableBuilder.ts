@@ -231,17 +231,67 @@ export class MySQLTableQueryBuilder {
 
     static getSplitTablesQuery(table: string, schema?: string): QueryInput {
         return {
-            query: `SELECT 
-                t.table_name, 
-                c.column_name, 
-                c.data_type
-            FROM information_schema.tables t
-            JOIN information_schema.columns c ON t.table_name = c.table_name
-            WHERE t.table_name LIKE '${table}__part_%'
-                AND t.table_name REGEXP '^${table}__part_[0-9]+$'
-                ${schema ? `AND t.table_schema = '${schema}'` : ""}
-            ORDER BY t.table_name, c.ordinal_position;`,
-            params: []
-        }
+            query: `
+                SELECT 
+                    c.COLUMN_NAME, 
+                    c.TABLE_NAME,
+                    c.DATA_TYPE,
+                    c.EXTRA,
+                    CASE 
+                        WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL 
+                            THEN CONCAT(c.NUMERIC_PRECISION, ',', c.NUMERIC_SCALE)
+                        WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NULL 
+                            THEN c.NUMERIC_PRECISION
+                        WHEN c.CHARACTER_MAXIMUM_LENGTH IS NOT NULL 
+                            THEN c.CHARACTER_MAXIMUM_LENGTH
+                        ELSE NULL 
+                    END AS LENGTH, 
+                    c.IS_NULLABLE, 
+                    CASE 
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS tc
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k 
+                                ON tc.TABLE_SCHEMA = k.TABLE_SCHEMA 
+                                AND tc.TABLE_NAME = k.TABLE_NAME 
+                                AND tc.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+                            WHERE tc.TABLE_SCHEMA = c.TABLE_SCHEMA
+                            AND tc.TABLE_NAME = c.TABLE_NAME
+                            AND k.COLUMN_NAME = c.COLUMN_NAME
+                            AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                        ) THEN 'PRIMARY'
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS AS tc
+                            JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE AS k 
+                                ON tc.TABLE_SCHEMA = k.TABLE_SCHEMA 
+                                AND tc.TABLE_NAME = k.TABLE_NAME 
+                                AND tc.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+                            WHERE tc.TABLE_SCHEMA = c.TABLE_SCHEMA
+                            AND tc.TABLE_NAME = c.TABLE_NAME
+                            AND k.COLUMN_NAME = c.COLUMN_NAME
+                            AND tc.CONSTRAINT_TYPE = 'UNIQUE'
+                        ) THEN 'UNIQUE'
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM INFORMATION_SCHEMA.STATISTICS AS i
+                            WHERE i.TABLE_SCHEMA = c.TABLE_SCHEMA
+                            AND i.TABLE_NAME = c.TABLE_NAME
+                            AND i.COLUMN_NAME = c.COLUMN_NAME
+                            AND i.INDEX_NAME <> 'PRIMARY'
+                        ) THEN 'INDEX'
+                        ELSE NULL 
+                    END AS COLUMN_KEY
+                FROM INFORMATION_SCHEMA.COLUMNS AS c
+                JOIN INFORMATION_SCHEMA.TABLES AS t 
+                    ON c.TABLE_SCHEMA = t.TABLE_SCHEMA 
+                    AND c.TABLE_NAME = t.TABLE_NAME
+                WHERE t.TABLE_NAME LIKE CONCAT(?, '__part_%') 
+                    AND t.TABLE_NAME REGEXP CONCAT('^', ?, '__part_[0-9]+$')
+                    ${schema ? `AND t.TABLE_SCHEMA = ?` : ""}
+                ORDER BY t.TABLE_NAME, c.ORDINAL_POSITION;
+            `,
+            params: schema ? [table, table, schema] : [table, table],
+        };
     }
 }

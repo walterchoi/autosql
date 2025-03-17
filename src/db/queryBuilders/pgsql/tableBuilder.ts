@@ -225,16 +225,59 @@ export class PostgresTableQueryBuilder {
     static getSplitTablesQuery(table: string, schema?: string): QueryInput {
         return {
             query: `SELECT 
-                c.table_name, 
-                a.column_name, 
-                a.data_type
-            FROM information_schema.tables c
-            JOIN information_schema.columns a ON c.table_name = a.table_name
-            WHERE c.table_name LIKE '${table}__part_%'
-              AND c.table_name ~ '^${table}__part_[0-9]+$'
-              ${schema ? `AND c.table_schema = '${schema}'` : ""}
-            ORDER BY c.table_name, a.ordinal_position;`,
-            params: []
+                    DISTINCT ON (c.COLUMN_NAME, c.TABLE_NAME) 
+                    c.COLUMN_NAME,
+                    c.TABLE_NAME,
+                    c.DATA_TYPE,
+                    c.COLUMN_DEFAULT,
+                    CASE
+                        WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL THEN CONCAT(c.NUMERIC_PRECISION,',',c.NUMERIC_SCALE)
+                        WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NULL THEN c.NUMERIC_PRECISION::varchar
+                        WHEN c.CHARACTER_MAXIMUM_LENGTH IS NOT NULL THEN c.CHARACTER_MAXIMUM_LENGTH::varchar
+                        ELSE NULL
+                    END AS LENGTH,
+                    c.IS_NULLABLE, 
+                    CASE 
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM pg_index pi 
+                            JOIN pg_attribute pa ON pa.attrelid = pi.indrelid 
+                            AND pa.attnum = ANY(pi.indkey) 
+                            AND pa.attname = c.COLUMN_NAME
+                            WHERE pi.indrelid = t.oid 
+                            AND pi.indisprimary = TRUE
+                        ) THEN 'PRIMARY'
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM pg_constraint pc 
+                            JOIN pg_attribute pa ON pa.attrelid = pc.conrelid 
+                            AND pa.attnum = ANY(pc.conkey)
+                            AND pa.attname = c.COLUMN_NAME
+                            WHERE pc.conrelid = t.oid 
+                            AND pc.contype = 'u'
+                        ) THEN 'UNIQUE'
+                        WHEN EXISTS (
+                            SELECT 1 
+                            FROM pg_index pi
+                            JOIN pg_attribute pa ON pa.attrelid = pi.indrelid 
+                            AND pa.attnum = ANY(pi.indkey) 
+                            AND pa.attname = c.COLUMN_NAME
+                            WHERE pi.indrelid = t.oid 
+                            AND pi.indisunique = FALSE
+                            AND pi.indisprimary = FALSE
+                        ) THEN 'INDEX'
+                        ELSE NULL
+                    END AS COLUMN_KEY
+                FROM INFORMATION_SCHEMA.COLUMNS AS c
+                LEFT JOIN pg_class AS t 
+                    ON t.relname = c.TABLE_NAME 
+                    AND t.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = c.TABLE_SCHEMA)
+                WHERE c.table_schema = $1 
+                AND c.table_name LIKE $2 || '__part_%'
+                AND c.table_name SIMILAR TO $2 || '__part_[0-9]+'
+                ORDER BY c.COLUMN_NAME, c.TABLE_NAME, c.ordinal_position;
+            `,
+            params: [schema, table],
         }
     }
 }
