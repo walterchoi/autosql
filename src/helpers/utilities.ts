@@ -421,7 +421,7 @@ export const normalizeKeysArray = (data: Record<string, any>[]): Record<string, 
     );
 };
 
-export function organiseSplitTable(newMetaData: MetadataHeader, currentMetaData: Record<string, any>[], dialectConfig?: DialectConfig) {
+export function organizeSplitTable(newMetaData: MetadataHeader, currentMetaData: Record<string, any>[], dialectConfig?: DialectConfig) {
     // First iterate through current Meta Data
     let normalizedMetaData = parseDatabaseMetaData(currentMetaData, dialectConfig) || {};
     if (!Object.keys(normalizedMetaData).some(key => typeof normalizedMetaData[key] === "object" && !Array.isArray(normalizedMetaData[key]))) {
