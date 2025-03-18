@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { parseDatabaseMetaData, organizeSplitTable } from "../src/helpers/utilities";
+import { parseDatabaseMetaData, organizeSplitTable, organizeSplitData } from "../src/helpers/utilities";
 import { MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_split_table";
@@ -40,6 +40,39 @@ const newMetaData : MetadataHeader = {
         allowNull: true
     }
 }
+
+const newData: Record<string, any>[] = [
+    {
+        id: 1,
+        name: "Alice Johnson",
+        email: "alice.johnson@example.com",
+        phone: "123-456-7890",
+        address: "123 Elm Street, Springfield",
+        leads: 5,
+        status: "Active",
+        opportunityId: "OPP-001"
+    },
+    {
+        id: 2,
+        name: "Bob Smith",
+        email: "bob.smith@example.com",
+        phone: "987-654-3210",
+        address: "456 Maple Avenue, Shelbyville",
+        leads: null, // No leads assigned
+        status: "Pending",
+        opportunityId: "OPP-002"
+    },
+    {
+        id: 3,
+        name: "Charlie Davis",
+        email: "charlie.davis@example.com",
+        phone: "555-123-4567",
+        address: "789 Oak Lane, Capital City",
+        leads: 2,
+        status: null, // Status unknown
+        opportunityId: null // No opportunity assigned yet
+    }
+];
 
 Object.values(DB_CONFIG).forEach((config) => {
     describe(`getSplitTablesQuery Tests for ${config.sqlDialect.toUpperCase()}`, () => {
@@ -107,8 +140,11 @@ Object.values(DB_CONFIG).forEach((config) => {
                     expect.objectContaining({ table_name: `${TEST_TABLE_NAME}__part_002` }),
                 ])
             );
-            
+
             const newGroupedByTable = organizeSplitTable(TEST_TABLE_NAME, newMetaData, currentSplitResults!.results || [], db.getDialectConfig())
+            const newGroupedData = organizeSplitData(newData, newGroupedByTable)
+            console.log(newGroupedByTable)
+            console.log(newGroupedData)
         });
 
         test("Returns no results when no split tables exist", async () => {

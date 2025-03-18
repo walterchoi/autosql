@@ -497,6 +497,34 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
     return newGroupedByTable
 }
 
+export function organizeSplitData(data: Record<string, any>[], splitMetaData: Record<string, MetadataHeader>): Record<string, Record<string, any>[]> {
+    const groupedData: Record<string, Record<string, any>[]> = {};
+    data.forEach((row) => {
+        // ✅ Initialize an object for each table's row data
+        const rowDataByTable: Record<string, Record<string, any>> = {};
+
+        Object.entries(splitMetaData).forEach(([tableName, columns]) => {
+            rowDataByTable[tableName] = {}; // ✅ Ensure each table has a row initialized
+
+            Object.keys(columns).forEach((columnName) => {
+                if (row.hasOwnProperty(columnName)) {
+                    rowDataByTable[tableName][columnName] = row[columnName];
+                }
+            });
+
+            // ✅ Only add to groupedData if it has at least one column
+            if (Object.keys(rowDataByTable[tableName]).length > 0) {
+                if (!groupedData[tableName]) {
+                    groupedData[tableName] = [];
+                }
+                groupedData[tableName].push(rowDataByTable[tableName]);
+            }
+        });
+    });
+
+    return groupedData;
+}
+
 export function getNextTableName(tableName: string): string {
     const match = tableName.match(/^(.*?)(__part_(\d+))?$/); // Match `table__part_001`
     if (match && match[3]) {
