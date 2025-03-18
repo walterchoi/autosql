@@ -246,7 +246,7 @@ export class AutoSQLHandler {
             mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData)
 
             if(this.db.getConfig().autoSplit) {
-                const { rowSize, exceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
+                const { rowSize, exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
                 // Split the table structure
                 if(exceedsLimit) {
 

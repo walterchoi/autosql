@@ -1,6 +1,7 @@
 import { TranslateMap, DialectConfig } from "../../config/types";
 
 export const pgsqlConfig: DialectConfig = {
+  dialect: "pgsql",
   encoding: "UTF8",
   collate: "en_US.UTF-8",
   engine: "",

@@ -421,15 +421,32 @@ export const normalizeKeysArray = (data: Record<string, any>[]): Record<string, 
     );
 };
 
-export function organizeSplitTable(newMetaData: MetadataHeader, currentMetaData: Record<string, any>[], dialectConfig?: DialectConfig) {
-    // First iterate through current Meta Data
-    let normalizedMetaData = parseDatabaseMetaData(currentMetaData, dialectConfig) || {};
-    if (!Object.keys(normalizedMetaData).some(key => typeof normalizedMetaData[key] === "object" && !Array.isArray(normalizedMetaData[key]))) {
-        normalizedMetaData = { defaultTable: normalizedMetaData as MetadataHeader };
+export function organizeSplitTable(table: string, newMetaData: MetadataHeader, currentMetaData: Record<string, any>[] | MetadataHeader | Record<string, MetadataHeader>, dialectConfig: DialectConfig) : Record<string, MetadataHeader> {
+    let normalizedMetaData: Record<string, MetadataHeader>;
+
+    // ✅ Check if currentMetaData is already in structured format
+    if (typeof currentMetaData === "object" && !Array.isArray(currentMetaData)) {
+        if (Object.values(currentMetaData).some(value => typeof value === "object" && !Array.isArray(value))) {
+            // ✅ Already `Record<string, MetadataHeader>`, use it directly
+            normalizedMetaData = currentMetaData as Record<string, MetadataHeader>;
+        } else {
+            // ✅ If it's `MetadataHeader`, wrap it in `{ table: MetadataHeader }`
+            normalizedMetaData = { [table]: currentMetaData as MetadataHeader };
+        }
+    } else {
+        // ✅ Otherwise, assume it's raw DB results and parse
+        const parsedMetadata = parseDatabaseMetaData(currentMetaData as Record<string, any>[], dialectConfig);
+        if (!parsedMetadata) {
+            normalizedMetaData = { [table]: {} }; // ✅ Ensure it has a valid structure
+        } else if (Object.values(parsedMetadata).some(value => typeof value === "object" && !Array.isArray(value))) {
+            normalizedMetaData = parsedMetadata as Record<string, MetadataHeader>; // ✅ Multiple tables
+        } else {
+            normalizedMetaData = { [table]: parsedMetadata as MetadataHeader }; // ✅ Single table
+        }
     }
 
-    const primaryKeys: string[] = [];
-    const newColumns: MetadataHeader = {}
+    const primaryKeys: MetadataHeader = {};
+    const newColumns: MetadataHeader = {};
     const newGroupedByTable = Object.entries(newMetaData).reduce((acc, [columnName, columnDef]) => {
         const matchingTables = Object.keys(normalizedMetaData).filter(table =>
             Object.prototype.hasOwnProperty.call(normalizedMetaData[table], columnName)
@@ -440,7 +457,7 @@ export function organizeSplitTable(newMetaData: MetadataHeader, currentMetaData:
                 acc[tableName][columnName] = columnDef;   
             });
             if (columnDef.primary) {
-                primaryKeys.push(columnName);
+                primaryKeys[columnName] = columnDef;
             }
         } else {
             newColumns[columnName] = columnDef
@@ -448,4 +465,44 @@ export function organizeSplitTable(newMetaData: MetadataHeader, currentMetaData:
 
         return acc;
     }, {} as Record<string, MetadataHeader>);
+
+    let tableName = Object.keys(newGroupedByTable).pop() || getNextTableName(Object.keys(newGroupedByTable).pop() || table);
+    const unallocatedColumns = { ...newColumns };
+
+    while (Object.keys(unallocatedColumns).length > 0) {
+        // ✅ Check the row size before adding new columns
+        let currentTableData = newGroupedByTable[tableName] || { ...primaryKeys }; // Clone primary keys if new table
+
+        for (var i = 0; i < Object.keys(unallocatedColumns).length; i++) {
+            const columnName = Object.keys(unallocatedColumns)[i]
+            const columnDef = unallocatedColumns[columnName]
+            const mergedMetaData = { ...currentTableData, [columnName]: columnDef }; // Simulate adding column
+    
+            const { exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
+            if (!nearlyExceedsLimit) {
+                // ✅ Add the column if within limits
+                if (!newGroupedByTable[tableName]) {
+                    newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table
+                }
+                newGroupedByTable[tableName][columnName] = columnDef;
+                delete unallocatedColumns[columnName]; // ✅ Remove from unallocated list
+                i--
+            } else {
+                tableName = getNextTableName(tableName);
+                i--
+            }
+        }
+    }
+
+    return newGroupedByTable
 }
+
+export function getNextTableName(tableName: string): string {
+    const match = tableName.match(/^(.*?)(__part_(\d+))?$/); // Match `table__part_001`
+    if (match && match[3]) {
+        const baseName = match[1]; // Extract "table"
+        const num = parseInt(match[3], 10) + 1; // Increment existing number
+        return `${baseName}__part_${String(num).padStart(3, "0")}`; // Zero-padded
+    }
+    return `${tableName}__part_001`; // If no number exists, start at __part_001
+};

@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { parseDatabaseMetaData } from "../src/helpers/utilities";
+import { parseDatabaseMetaData, organizeSplitTable } from "../src/helpers/utilities";
 import { MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_split_table";
@@ -29,6 +29,14 @@ const newMetaData : MetadataHeader = {
     },
     leads: {
         type: "smallint",
+        allowNull: true
+    },
+    status: {
+        type: "varchar",
+        allowNull: true
+    },
+    opportunityId: {
+        type: "varchar",
         allowNull: true
     }
 }
@@ -99,36 +107,8 @@ Object.values(DB_CONFIG).forEach((config) => {
                     expect.objectContaining({ table_name: `${TEST_TABLE_NAME}__part_002` }),
                 ])
             );
-
-            let normalizedResults = parseDatabaseMetaData(currentSplitResults!.results || [], db.getDialectConfig()) || {};
-            if (!Object.keys(normalizedResults).some(key => typeof normalizedResults[key] === "object" && !Array.isArray(normalizedResults[key]))) {
-                normalizedResults = { defaultTable: normalizedResults as MetadataHeader };
-            }
-
-            const primaryKeys: string[] = [];
-            const newColumns: MetadataHeader = {}
-            const newGroupedByTable = Object.entries(newMetaData).reduce((acc, [columnName, columnDef]) => {
-                const matchingTables = Object.keys(normalizedResults).filter(table =>
-                    Object.prototype.hasOwnProperty.call(normalizedResults[table], columnName)
-                );
-                if (matchingTables.length > 0) {
-                    matchingTables.forEach(tableName => {
-                        if (!acc[tableName]) acc[tableName] = {};
-                        acc[tableName][columnName] = columnDef;   
-                    });
-                    if (columnDef.primary) {
-                        primaryKeys.push(columnName);
-                    }
-                } else {
-                    newColumns[columnName] = columnDef
-                }
-
-                return acc;
-            }, {} as Record<string, MetadataHeader>);
-
-            console.log(newGroupedByTable)
-            console.log(primaryKeys)
-            console.log(newColumns)
+            
+            const newGroupedByTable = organizeSplitTable(TEST_TABLE_NAME, newMetaData, currentSplitResults!.results || [], db.getDialectConfig())
         });
 
         test("Returns no results when no split tables exist", async () => {

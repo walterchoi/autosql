@@ -99,6 +99,7 @@ export interface TranslateMap {
   }
   
 export interface DialectConfig {
+    dialect: supportedDialects;
     requireLength: string[];
     optionalLength: string[];
     noLength: string[];
