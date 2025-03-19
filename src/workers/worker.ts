@@ -1,4 +1,6 @@
 import { parentPort, workerData } from "worker_threads";
+import { Database } from "../db/database";
+import { AutoSQLHandler } from "../db/autosql";
 
 (async () => {
   try {
@@ -13,22 +15,27 @@ import { parentPort, workerData } from "worker_threads";
     console.log(`Worker started with dbConfig: ${JSON.stringify(dbConfig)}`);
 
     parentPort?.on("message", async (task) => {
-      const { method, params } = task;
+        let db : Database
+        db = Database.create(dbConfig);
 
-      if (method === "test") {
-        const randomTimeInMs = Math.random() * 500;
-        await new Promise(resolve => setTimeout(resolve, randomTimeInMs)); // Simulate async delay
-        parentPort?.postMessage({ success: true, result: params });
-        return;
-      }
+        const { method, params } = task;
 
-      throw new Error(`Invalid method: ${method}`);
-    });
+        if (method === "test") {
+            const randomTimeInMs = Math.random() * 500;
+            const startTime = db.startDate
+            const result = `${startTime}, ${params}`
+            await new Promise(resolve => setTimeout(resolve, randomTimeInMs)); // Simulate async delay
+            parentPort?.postMessage({ success: true, result: result });
+            return;
+        }
 
-  } catch (error) {
-    parentPort?.postMessage({
-      success: false,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
+        throw new Error(`Invalid method: ${method}`);
+        });
+
+        } catch (error) {
+            parentPort?.postMessage({
+            success: false,
+            error: error instanceof Error ? error.message : String(error),
+        });
+    }
 })();
