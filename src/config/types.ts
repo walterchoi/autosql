@@ -90,6 +90,7 @@ export interface DatabaseConfig {
       autoSplit?: boolean;
 
       useWorkers?: boolean;
+      maxWorkers?: number;
       
 }
 

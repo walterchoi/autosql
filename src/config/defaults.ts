@@ -15,7 +15,9 @@ export const defaults = {
     deleteColumns: false,
     waitForApproval: false,
     decimalMaxLength: 10,
-    autoSplit: false
+    autoSplit: false,
+    useWorkers: true,
+    maxWorkers: 8
 }
 
 export const maxQueryAttempts = 3;

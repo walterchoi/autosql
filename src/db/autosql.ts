@@ -211,9 +211,9 @@ export class AutoSQLHandler {
             if (!parsedSplitMetadata) {
                 parsedSplitMetadata = { [table]: {} }; // ✅ Ensure it has a valid structure
             } else if (Object.values(parsedSplitMetadata).some(value => typeof value === "object" && !Array.isArray(value))) {
-                parsedSplitMetadata = parsedSplitMetadata as Record<string, MetadataHeader>; // ✅ Multiple tables
+                parsedSplitMetadata = parsedSplitMetadata as Record<string, MetadataHeader>;
             } else {
-                parsedSplitMetadata = { [table]: parsedSplitMetadata as MetadataHeader }; // ✅ Single table
+                parsedSplitMetadata = { [table]: parsedSplitMetadata as MetadataHeader };
             }
             const newGroupedByTable = organizeSplitTable(table, metaData, parsedSplitMetadata, this.db.getDialectConfig())
             const newGroupedData = organizeSplitData(data, newGroupedByTable)

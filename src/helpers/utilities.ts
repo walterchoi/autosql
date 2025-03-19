@@ -30,7 +30,9 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             samplingMinimum: defaults.samplingMinimum,
             metaData: config.metaData || {}, // Ensuring headers remain intact
             maxKeyLength: defaults.maxKeyLength,
-            autoSplit: defaults.autoSplit
+            autoSplit: defaults.autoSplit,
+            useWorkers: defaults.useWorkers,
+            maxWorkers: defaults.maxWorkers
         };
 
         // Merge provided config with defaults
