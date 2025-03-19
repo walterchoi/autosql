@@ -1,9 +1,9 @@
 import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
 import { Database } from "./database";
-import { InsertResult, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult } from "../config/types";
+import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
-import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat } from "../helpers/utilities";
+import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData } from "../helpers/utilities";
 import { ensureTimestamps } from "../helpers/timestamps";
 
 export class AutoSQLHandler {
@@ -207,21 +207,29 @@ export class AutoSQLHandler {
             const currentSplitResults = await this.db.runQuery(splitQuery);
             if(!currentSplitResults || !currentSplitResults.success || !currentSplitResults.results) { throw new Error(currentSplitResults.error || `Error while retrieving existing split table information for: ${table}`)}
             const currentSplit = currentSplitResults.results
-            const normalizedResults = parseDatabaseMetaData(currentSplitResults!.results, this.db.getDialectConfig()) || {}
-            const groupedByTable = Object.entries(normalizedResults).reduce((acc, [columnName, columnDef]) => {
-                if (!columnDef.tableName) return acc; // Skip if there's no table name
+            let parsedSplitMetadata = parseDatabaseMetaData(currentSplit as Record<string, any>[], this.db.getDialectConfig());
+            if (!parsedSplitMetadata) {
+                parsedSplitMetadata = { [table]: {} }; // ✅ Ensure it has a valid structure
+            } else if (Object.values(parsedSplitMetadata).some(value => typeof value === "object" && !Array.isArray(value))) {
+                parsedSplitMetadata = parsedSplitMetadata as Record<string, MetadataHeader>; // ✅ Multiple tables
+            } else {
+                parsedSplitMetadata = { [table]: parsedSplitMetadata as MetadataHeader }; // ✅ Single table
+            }
+            const newGroupedByTable = organizeSplitTable(table, metaData, parsedSplitMetadata, this.db.getDialectConfig())
+            const newGroupedData = organizeSplitData(data, newGroupedByTable)
+            const transformedData = await Promise.all(
+                Object.keys(newGroupedByTable).map(async (tableName) => {
+                    const newMetaData = await getMetaData(this.db.getConfig(), newGroupedData[tableName] || []);
             
-                const tableName = columnDef.tableName;
-            
-                if (!acc[tableName]) acc[tableName] = {}; // Initialize table entry
-            
-                acc[tableName][columnName] = columnDef; // Add column metadata under the table name
-            
-                return acc;
-            }, {} as Record<string, MetadataHeader>);
-            // Split table metadata into multiple:
-            // { table: name, data: Record<string, any>[], metaData: MetadataHeader}[]?
-            return [{ table, data, metaData}]
+                    return {
+                        table: tableName,
+                        data: newGroupedData[tableName] || [],
+                        metaData: newMetaData,
+                        previousMetaData: parsedSplitMetadata[tableName]
+                    };
+                })
+            );
+            return transformedData
         } catch (error) {
             throw error
         }
@@ -237,6 +245,7 @@ export class AutoSQLHandler {
 
             let changes: AlterTableChanges | null = null;
             let mergedMetaData: MetadataHeader | null = null;
+            let insertInput: InsertInput[] = []
             if(currentMetaData) {
                 ({ changes, updatedMetaData: mergedMetaData, } = compareMetaData(currentMetaData, newMetaData,this.db.getDialectConfig()));
                 this.db.updateTableMetadata(table, mergedMetaData, "metaData")
@@ -249,9 +258,19 @@ export class AutoSQLHandler {
                 const { rowSize, exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
                 // Split the table structure
                 if(exceedsLimit) {
-
+                    insertInput = await this.splitTableData(table, data, mergedMetaData)
                 }
             }
+
+            if(!insertInput || insertInput.length == 0) {
+                insertInput = [{
+                    table,
+                    data,
+                    metaData: mergedMetaData
+                }]
+            }
+
+            
 
             const configuredTables = await this.autoConfigureTable(table, data, changes || currentMetaData, mergedMetaData)
             const start = this.db.startDate;

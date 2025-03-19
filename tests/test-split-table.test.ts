@@ -145,6 +145,9 @@ Object.values(DB_CONFIG).forEach((config) => {
             const newGroupedData = organizeSplitData(newData, newGroupedByTable)
             console.log(newGroupedByTable)
             console.log(newGroupedData)
+
+            const groupedInfo = await db.autoSQL.splitTableData(TEST_TABLE_NAME, newData, newMetaData)
+            console.log(groupedInfo)
         });
 
         test("Returns no results when no split tables exist", async () => {

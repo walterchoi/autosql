@@ -88,6 +88,9 @@ export interface DatabaseConfig {
       waitForApproval?: boolean;
 
       autoSplit?: boolean;
+
+      useWorkers?: boolean;
+      
 }
 
 export type QueryInput = string | QueryWithParams;
@@ -123,6 +126,12 @@ export interface InsertResult {
   end: Date; 
   duration: number; 
   affectedRows: number 
+}
+
+export interface InsertInput {
+  table: string, 
+  data: Record<string, any>[], 
+  metaData: MetadataHeader
 }
 
 export interface QueryResult {
