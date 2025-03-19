@@ -11,12 +11,13 @@ import { AutoSQLHandler } from "../db/autosql";
 
     // Extract database config, method, and params
     const { dbConfig } = workerData;
+    let db : Database
+    db = Database.create(dbConfig);
+    const autoSQL = db.autoSQL as AutoSQLHandler;
 
     console.log(`Worker started with dbConfig: ${JSON.stringify(dbConfig)}`);
 
     parentPort?.on("message", async (task) => {
-        let db : Database
-        db = Database.create(dbConfig);
 
         const { method, params } = task;
 
@@ -27,15 +28,18 @@ import { AutoSQLHandler } from "../db/autosql";
             await new Promise(resolve => setTimeout(resolve, randomTimeInMs)); // Simulate async delay
             parentPort?.postMessage({ success: true, result: result });
             return;
-        }
-
+        } else if (typeof autoSQL[method as keyof AutoSQLHandler] === "function") {
+            const result = await (autoSQL[method as keyof AutoSQLHandler] as Function)(...params);
+            parentPort?.postMessage({ success: true, result });
+        } else {
         throw new Error(`Invalid method: ${method}`);
+        }
         });
 
-        } catch (error) {
-            parentPort?.postMessage({
-            success: false,
-            error: error instanceof Error ? error.message : String(error),
+    } catch (error) {
+        parentPort?.postMessage({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
         });
     }
 })();

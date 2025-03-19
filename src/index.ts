@@ -70,7 +70,7 @@ async function runWorkerTests() {
     for (let i = 1; i <= 10; i++) {
         const params = [`Worker-${i}`, `Task-${i}`];
 
-        const workerPromise = pool.runTask("test", params).then((result) => {
+        const workerPromise = pool.runTask("testFunction", params).then((result) => {
             console.log(`Worker ${i} completed:`, result);
             return result;
         });

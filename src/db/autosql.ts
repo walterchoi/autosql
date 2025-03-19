@@ -234,6 +234,10 @@ export class AutoSQLHandler {
             throw error
         }
     }
+
+    testFunction(): string {
+        return 'Hello World'
+    }
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string): Promise<QueryResult> {
         try {
