@@ -1,12 +1,13 @@
 export default {
-    preset: "ts-jest",
-    testEnvironment: "node",
-    roots: ["<rootDir>/tests"],
-    transform: {
-      "^.+\\.tsx?$": "ts-jest"
-    },
-    moduleFileExtensions: ["ts", "tsx", "js"],
-    collectCoverage: true,
-    coverageDirectory: "coverage",
-    verbose: true
-  };
+  preset: "ts-jest",
+  testEnvironment: "node",
+  transform: {
+    "^.+\\.tsx?$": ["ts-jest", { useESM: true }]
+  },
+  moduleFileExtensions: ["ts", "tsx", "js", "mjs", "cjs"],
+  moduleNameMapper: {
+    // Ensure .js imports resolve to .ts files
+    "^(\\.{1,2}/src/.*)\\.js$": "$1.ts"
+  },
+  extensionsToTreatAsEsm: [".ts"]
+};

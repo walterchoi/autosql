@@ -270,8 +270,6 @@ export class AutoSQLHandler {
                 }]
             }
 
-            
-
             const configuredTables = await this.autoConfigureTable(table, data, changes || currentMetaData, mergedMetaData)
             const start = this.db.startDate;
             const affectedRows = 0

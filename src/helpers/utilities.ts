@@ -534,3 +534,11 @@ export function getNextTableName(tableName: string): string {
     }
     return `${tableName}__part_001`; // If no number exists, start at __part_001
 };
+
+export async function wait_x_mseconds (x: number) {
+    return new Promise (resolve => {
+        setTimeout(() => {    
+            resolve(null)
+        }, x)
+    })
+}
