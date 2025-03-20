@@ -20,6 +20,7 @@ import { AutoSQLHandler } from "../db/autosql";
     parentPort?.on("message", async (task) => {
 
         const { method, params } = task;
+        const normalizedParams = Array.isArray(params) ? params : [params];
 
         if (method === "test") {
             const randomTimeInMs = Math.random() * 500;
@@ -29,7 +30,7 @@ import { AutoSQLHandler } from "../db/autosql";
             parentPort?.postMessage({ success: true, result: result });
             return;
         } else if (typeof autoSQL[method as keyof AutoSQLHandler] === "function") {
-            const result = await (autoSQL[method as keyof AutoSQLHandler] as Function)(...params);
+            const result = await (autoSQL[method as keyof AutoSQLHandler] as Function)(...normalizedParams);
             parentPort?.postMessage({ success: true, result });
         } else {
         throw new Error(`Invalid method: ${method}`);

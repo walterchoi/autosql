@@ -132,7 +132,8 @@ export interface InsertResult {
 export interface InsertInput {
   table: string, 
   data: Record<string, any>[], 
-  metaData: MetadataHeader
+  metaData: MetadataHeader,
+  previousMetaData: AlterTableChanges | MetadataHeader | null
 }
 
 export interface QueryResult {

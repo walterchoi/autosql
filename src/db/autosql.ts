@@ -6,7 +6,7 @@ import { getMetaData, compareMetaData } from "../helpers/metadata";
 import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData } from "../helpers/utilities";
 import { defaults } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
-import WorkerPool from "../workers/workerPool";
+import WorkerHelper from "../workers/workerHelper";
 
 export class AutoSQLHandler {
     private db: Database;
@@ -203,7 +203,7 @@ export class AutoSQLHandler {
         return { currentMetaData, tableExists };
     }    
 
-    async splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader): Promise<{table: string, data: Record<string, any>[], metaData: MetadataHeader}[]> {
+    async splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader): Promise<{table: string, data: Record<string, any>[], metaData: MetadataHeader, previousMetaData: MetadataHeader}[]> {
         try {
             const splitQuery = this.db.getSplitTablesQuery(table);
             const currentSplitResults = await this.db.runQuery(splitQuery);
@@ -237,9 +237,17 @@ export class AutoSQLHandler {
         }
     }
 
-    testFunction(): string {
-        return 'Hello World'
-    }
+    testFunction(input1: string | object, input2: string | object, input3: string | object): string {
+        // Function to format JSON input as a string
+        const formatInput = (input: any): string => {
+            if (typeof input === "object" && input !== null) {
+                return JSON.stringify(input, null, 2); // Pretty print JSON
+            }
+            return String(input); // Convert non-object inputs to string
+        };
+    
+        return `Hello World:\n${formatInput(input1)},\n${formatInput(input2)},\n${formatInput(input3)}`;
+    }    
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string): Promise<QueryResult> {
         try {
@@ -272,13 +280,13 @@ export class AutoSQLHandler {
                 insertInput = [{
                     table,
                     data,
+                    previousMetaData: changes || currentMetaData,
                     metaData: mergedMetaData
                 }]
             }
 
             if(this.db.getConfig().useWorkers) {
-                const pool = new WorkerPool(this.db.getConfig().maxWorkers || defaults.maxWorkers, this.db.getConfig());
-                const workerPromises: Promise<any>[] = [];
+                const configuredTables = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput)
             }
 
             const configuredTables = await this.autoConfigureTable(table, data, changes || currentMetaData, mergedMetaData)
