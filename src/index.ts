@@ -57,38 +57,29 @@ const DB_CONFIG = {
     }
 }
 
-import WorkerPool from "./workers/workerPool";
+import { DatabaseConfig } from "./config/types";
+import WorkerHelper from "./workers/workerHelper";
 
 async function runWorkerTests() {
-    const dbConfig = Object.values(DB_CONFIG)[0]; // Pick one DB config
-    const pool = new WorkerPool(10, dbConfig); // Create a pool with 10 workers
+    const dbConfig = Object.values(DB_CONFIG)[0] as DatabaseConfig; // Pick one DB config
+    const taskParams = [
+        ["Task 1", "Additional Data 1"],
+        ["Task 2", "Additional Data 2"],
+        ["Task 3", "Additional Data 3"],
+        ["Task 4", "Additional Data 4"],
+        ["Task 5", "Additional Data 5"],
+        ["Task 6", "Additional Data 6"],
+        ["Task 7", "Additional Data 7"],
+        ["Task 8", "Additional Data 8"],
+        ["Task 9", "Additional Data 9"],
+        ["Task 10", "Additional Data 10"],
+      ];
 
-    console.log("Starting worker tests...");
-
-    const workerPromises: Promise<any>[] = [];
-
-    for (let i = 1; i <= 10; i++) {
-        const params = [`Worker-${i}`, `Task-${i}`];
-
-        const workerPromise = pool.runTask("testFunction", params).then((result) => {
-            console.log(`Worker ${i} completed:`, result);
-            return result;
-        });
-
-        workerPromises.push(workerPromise);
-    }
-
-    // Wait for all workers to finish
-    const results = await Promise.all(workerPromises);
+    const results = await WorkerHelper.run(dbConfig, "testFunction", taskParams);
 
     // Log the results
     console.log("\n✅ All Workers Completed ✅");
-    results.forEach((result, index) => {
-        console.log(`Worker ${index + 1} Result:`, result);
-    });
-
-    // Close the worker pool
-    pool.close();
+    console.log(results)
 }
 
 runWorkerTests();

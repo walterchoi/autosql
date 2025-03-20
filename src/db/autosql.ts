@@ -4,7 +4,9 @@ import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
 import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData } from "../helpers/utilities";
+import { defaults } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
+import WorkerPool from "../workers/workerPool";
 
 export class AutoSQLHandler {
     private db: Database;
@@ -272,6 +274,11 @@ export class AutoSQLHandler {
                     data,
                     metaData: mergedMetaData
                 }]
+            }
+
+            if(this.db.getConfig().useWorkers) {
+                const pool = new WorkerPool(this.db.getConfig().maxWorkers || defaults.maxWorkers, this.db.getConfig());
+                const workerPromises: Promise<any>[] = [];
             }
 
             const configuredTables = await this.autoConfigureTable(table, data, changes || currentMetaData, mergedMetaData)
