@@ -133,7 +133,8 @@ export interface InsertInput {
   table: string, 
   data: Record<string, any>[], 
   metaData: MetadataHeader,
-  previousMetaData: AlterTableChanges | MetadataHeader | null
+  previousMetaData: AlterTableChanges | MetadataHeader | null,
+  runQuery?: boolean
 }
 
 export interface QueryResult {
@@ -144,6 +145,7 @@ export interface QueryResult {
     success: boolean;
     results?: any[];
     error?: string;
+    table?: string;
 }
 
 export interface metaDataInterim {

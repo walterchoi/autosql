@@ -23,8 +23,12 @@ export class MySQLDatabase extends Database {
             password: this.config.password,
             database: this.config.database || this.config.schema,
             port: this.config.port || 3306,
-            connectionLimit: 3
+            connectionLimit: 5
         });
+    }
+
+    public getMaxConnections(): number {
+        return (this.connection as any)?.config?.connectionLimit ?? 5;
     }
 
     public getDialectConfig() {

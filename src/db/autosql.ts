@@ -1,7 +1,7 @@
 import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
 import { Database } from "./database";
-import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult } from "../config/types";
+import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
 import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData } from "../helpers/utilities";
 import { defaults } from "../config/defaults";
@@ -15,7 +15,7 @@ export class AutoSQLHandler {
         this.db = dbInstance;
     }
 
-    async autoCreateTable(table: string, newMetaData: MetadataHeader, tableExists?: boolean): Promise<QueryResult> {
+    async autoCreateTable(table: string, newMetaData: MetadataHeader, tableExists?: boolean, runQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
         try {
             // ✅ Skip table existence check if already known
             if (tableExists === undefined) {
@@ -33,6 +33,9 @@ export class AutoSQLHandler {
     
             // ✅ Create the table
             const createQuery = this.db.getCreateTableQuery(table, newMetaData);
+            if(!runQuery) {
+                return createQuery
+            }
             const createTable = await this.db.runTransaction(createQuery);
     
             return createTable;
@@ -42,7 +45,7 @@ export class AutoSQLHandler {
         }
     }    
     
-    async autoAlterTable(table: string, tableChanges: AlterTableChanges, tableExists?: boolean): Promise<QueryResult> {
+    async autoAlterTable(table: string, tableChanges: AlterTableChanges, tableExists?: boolean, runQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
         try {
             // ✅ Skip table existence check if already known
             if (tableExists === undefined) {
@@ -60,6 +63,9 @@ export class AutoSQLHandler {
     
             // ✅ Alter the table
             const alterQuery = await this.db.getAlterTableQuery(table, tableChanges);
+            if(!runQuery) {
+                return alterQuery
+            }
             const alterTable = await this.db.runTransaction(alterQuery);
     
             return alterTable
@@ -69,8 +75,28 @@ export class AutoSQLHandler {
         }
     }    
 
-    async autoConfigureTable(table: string, data?: Record<string, any>[] | null, currentMetaDataOrTableChanges?: MetadataHeader | AlterTableChanges | null, newMetaData?: MetadataHeader | null): Promise<QueryResult> {
+    async autoConfigureTable(inputOrTable: string | InsertInput, inputData?: Record<string, any>[] | null, inputCurrentMetaData?: MetadataHeader | AlterTableChanges | null, inputNewMetaData?: MetadataHeader | null, inputRunQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
         try {
+            let table: string;
+            let data: Record<string, any>[] | null = null;
+            let currentMetaDataOrTableChanges: MetadataHeader | AlterTableChanges | null = null;
+            let newMetaData: MetadataHeader | null = null;
+            let runQuery: boolean = true
+
+            if (typeof inputOrTable === "object") {
+                table = inputOrTable.table;
+                data = inputOrTable.data;
+                currentMetaDataOrTableChanges = inputOrTable.previousMetaData;
+                newMetaData = inputOrTable.metaData;
+                runQuery = inputOrTable.runQuery || inputRunQuery || true
+            } else {
+                // ✅ Handle case where `input` is a `string` (table name)
+                table = inputOrTable;
+                data = inputData ?? null;
+                currentMetaDataOrTableChanges = inputCurrentMetaData ?? null;
+                newMetaData = inputNewMetaData ?? null;
+                runQuery = inputRunQuery
+            }
             console.log(`⚡ [autoConfigureTable] Running for table: ${table}`);
 
             if (!currentMetaDataOrTableChanges && data?.length === 0) {
@@ -123,7 +149,7 @@ export class AutoSQLHandler {
 
             if (!tableExists) {
                 console.log(`🔨 Creating table: ${table}`);
-                return await this.autoCreateTable(table, updatedMetadata, false);
+                return await this.autoCreateTable(table, updatedMetadata, false, runQuery);
             }
     
             // ✅ If table exists but no changes, return success
@@ -145,7 +171,7 @@ export class AutoSQLHandler {
     
             // ✅ If table exists and changes exist, alter it
             console.log(`✏️ Altering table: ${table} with changes:`, tableChanges);
-            return await this.autoAlterTable(table, tableChanges, true);
+            return await this.autoAlterTable(table, tableChanges, true, runQuery);
         } catch (error) {
             const start = this.db.startDate;
             const end = new Date();
@@ -156,7 +182,8 @@ export class AutoSQLHandler {
                 duration: end.getTime() - start.getTime(),
                 affectedRows,
                 success: false,
-                error: error instanceof Error ? error.message : String(error)
+                error: error instanceof Error ? error.message : String(error),
+                table: typeof inputOrTable === "object" ? inputOrTable.table : inputOrTable
             };
         }
     }
@@ -285,11 +312,48 @@ export class AutoSQLHandler {
                 }]
             }
 
+            let configuredTables: (QueryResult | QueryInput[])[];
+
             if(this.db.getConfig().useWorkers) {
-                const configuredTables = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput)
+                insertInput = insertInput.map((input) => ({
+                    ...input,
+                    runQuery: false
+                }));                  
+                configuredTables = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as (QueryResult | QueryInput[])[]
+            } else {
+                configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[]
             }
 
-            const configuredTables = await this.autoConfigureTable(table, data, changes || currentMetaData, mergedMetaData)
+            const initialResults: QueryResult[] = configuredTables.filter(
+                (result): result is QueryResult => "success" in result
+            );
+                
+            const queryInputs: QueryInput[][] = configuredTables.filter(
+                (result): result is QueryInput[] => Array.isArray(result)
+            );
+
+            let allResults: QueryResult[]
+            if(queryInputs.length > 0) {
+                const transactionResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(queryInputs);
+                allResults = [...initialResults, ...transactionResults];
+            } else {
+                allResults = [...initialResults];
+            }
+
+            const failedResults = allResults.filter((r) => !r.success);
+
+            // ✅ If any table failed, throw an error with details
+            if (failedResults.length > 0) {
+                throw new Error(
+                `Table configuration failed for ${failedResults.length} table(s):\n` +
+                failedResults.map((t) => `- ${t.table || "Unknown Table"}: ${t.error || "Unknown Error"}`).join("\n")
+                );
+            }
+
+            console.log("✅ All tables configured and executed successfully.");
+            // Configuring table has been completed
+            // Now to add data
+            
             const start = this.db.startDate;
             const affectedRows = 0
             const end = new Date;

@@ -23,8 +23,12 @@ export class PostgresDatabase extends Database {
             password: this.config.password,
             database: this.config.database,
             port: this.config.port || 5432,
-            max: 3
+            max: 5
         });
+    }
+
+    public getMaxConnections(): number {
+        return (this.connection as Pool)?.options?.max ?? 5;
     }
 
     public getDialectConfig() {

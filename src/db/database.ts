@@ -309,6 +309,49 @@ export abstract class Database {
         }
     }
 
+    public async runTransactionsWithConcurrency(queryGroups: QueryInput[][]): Promise<QueryResult[]> {
+        if (!this.connection) {
+            await this.establishConnection();
+        }
+        const results: QueryResult[] = [];
+        let running: Promise<void>[] = [];
+        const poolSize = this.getMaxConnections()
+      
+        let index = 0;
+      
+        const runNext = async () => {
+          const i = index++;
+          if (i >= queryGroups.length) return;
+      
+          console.log(`🔹 Running transaction for group #${i + 1}`);
+          try {
+            const result = await this.runTransaction(queryGroups[i]);
+            results[i] = result;
+          } catch (error: any) {
+            results[i] = {
+              start: new Date(),
+              end: new Date(),
+              duration: 0,
+              success: false,
+              error: error?.message || "Unknown error"
+            };
+          }
+      
+          // Recursively trigger the next task when one finishes
+          await runNext();
+        };
+      
+        // Start the first N (poolSize) tasks
+        for (let i = 0; i < Math.min(poolSize, queryGroups.length); i++) {
+          running.push(runNext());
+        }
+      
+        // Wait for all active tasks to complete
+        await Promise.all(running);
+      
+        return results;
+    }
+
     public async getTableMetaData(schema: string, table: string): Promise<MetadataHeader | null> {
         try {
             if (!this.connection) throw new Error("Database connection not established.");
@@ -352,6 +395,8 @@ export abstract class Database {
     public abstract getTableExistsQuery(schema: string, table: string): QueryInput;
     public abstract getTableMetaDataQuery(schema: string, table: string): QueryInput;
     public abstract getSplitTablesQuery(table: string): QueryInput;
+
+    public abstract getMaxConnections(): number;
 }
 
 import { MySQLDatabase } from "./mysql";
