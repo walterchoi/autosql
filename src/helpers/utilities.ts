@@ -1,5 +1,5 @@
 import { defaults, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE } from "../config/defaults";
-import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects } from "../config/types";
+import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule } from "../config/types";
 export function isObject(val: any): boolean {
     return val !== null && typeof val === "object";
 }
@@ -540,6 +540,47 @@ export function splitInsertData(data: Record<string, any>[], config: DatabaseCon
     return chunks;
 }  
 
+export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig: DialectConfig): any[] {
+    return Object.entries(metaData).map(([column, meta]) => {
+      let value = row[column];
+  
+      if (value === null || value === undefined) {
+        // Use calculated default if provided
+        if (meta.calculatedDefault !== undefined) {
+          value = meta.calculatedDefault;
+        } else {
+          value = null;
+        }
+      }
+  
+      return sqlize(value, meta.type, dialectConfig);
+    });
+}
+
+export function sqlize(value: any, columnType: string | null, dialectConfig: DialectConfig ): any {
+    if (value === null) return null;
+    if(!columnType) {return value}
+
+    const type = columnType.toLowerCase();
+    const rules: SqlizeRule[] = dialectConfig.sqlize
+
+    // Only apply to strings or values that can be coerced to string
+    let strValue = typeof value === "string" ? value : String(value);
+
+    for (const rule of rules) {
+        const appliesToType =
+        rule.type === true ||
+        (Array.isArray(rule.type) && rule.type.includes(type));
+
+        if (appliesToType) {
+        const regex = new RegExp(rule.regex, "g");
+        strValue = strValue.replace(regex, rule.replace);
+        }
+    }
+
+  return strValue;
+}
+  
 export function getNextTableName(tableName: string): string {
     const match = tableName.match(/^(.*?)(__part_(\d+))?$/); // Match `table__part_001`
     if (match && match[3]) {

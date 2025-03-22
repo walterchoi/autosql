@@ -11,6 +11,7 @@ export interface ColumnDefinition {
   decimal?: number;
   calculated?: boolean;
   updatedCalculated?: boolean;
+  calculatedDefault?: any;
   previousType?: string;
   tableName?: string[];
 }
@@ -79,7 +80,7 @@ export interface DatabaseConfig {
       sampling?: number;
       samplingMinimum?: number;
 
-      insertType?: "REPLACE" | "INSERT";
+      insertType?: "UPDATE" | "INSERT";
       maxInsert?: number;
       insertStack?: number;
       safeMode?: boolean;
@@ -108,12 +109,7 @@ export interface DialectConfig {
     decimals: string[];
     translate: TranslateMap;
     defaultTranslation: Record<string, string>;
-    sqlize: Array<{
-      find: string;
-      replace: string;
-      regex: string;
-      type: boolean | string[];
-    }>;
+    sqlize: SqlizeRule[]
     engine: string;
     charset: string;
     collate: string;
@@ -156,4 +152,10 @@ export interface metaDataInterim {
     length: number;
     decimal: number;
   }
+}
+
+export interface SqlizeRule {
+  regex: string;
+  replace: string;
+  type: true | string[]; // `true` = apply to all types
 }

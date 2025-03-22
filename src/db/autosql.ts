@@ -3,7 +3,7 @@ import { PostgresDatabase } from "./pgsql";
 import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
-import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData } from "../helpers/utilities";
+import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues } from "../helpers/utilities";
 import { defaults } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
@@ -266,7 +266,7 @@ export class AutoSQLHandler {
         }
     }
 
-    async insertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery: boolean = true): Promise<QueryInput[] | QueryResult[]> {
+    async insertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery: boolean = true): Promise<QueryInput[] | QueryResult> {
         let table: string;
         let data: Record<string, any>[] = [];
         let metaData: MetadataHeader;
@@ -296,10 +296,22 @@ export class AutoSQLHandler {
         }          
 
         const splitData: Record<string, any>[][] = splitInsertData(data, this.db.getConfig())
-
+        const effectiveMetaData = comparedMetaData?.updatedMetaData || metaData;
         
+        const insertStatements: QueryInput[] = await Promise.all(
+            splitData.map((chunk) => {
+              const normalisedChunk = chunk.map((row) =>
+                getInsertValues(effectiveMetaData, row, this.db.getDialectConfig())
+              );
+              return this.db.getInsertStatementQuery(table, normalisedChunk, effectiveMetaData);
+            })
+          );
 
-        return []
+        if (insertStatements.length > 0 && runQuery) {
+            return await this.db.runTransaction(insertStatements);
+        }
+        
+        return insertStatements;
     }
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string): Promise<QueryResult> {
@@ -322,7 +334,7 @@ export class AutoSQLHandler {
             } else {
                 mergedMetaData = newMetaData
             }
-            mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData)
+            mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData, this.db.startDate)
 
             if(this.db.getConfig().autoSplit) {
                 const { rowSize, exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
@@ -351,7 +363,7 @@ export class AutoSQLHandler {
                 insertInput = insertInput.map((input) => ({
                     ...input,
                     runQuery: false
-                }));                  
+                }));
                 configuredTables = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as (QueryResult | QueryInput[])[]
             } else {
                 configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[]
@@ -382,20 +394,58 @@ export class AutoSQLHandler {
                 failedResults.map((t) => `- ${t.table || "Unknown Table"}: ${t.error || "Unknown Error"}`).join("\n")
                 );
             }
-
             console.log("✅ All tables configured and executed successfully.");
-            // Configuring table has been completed
-            // Now to add data
-            
+
+            let insertQueries: (QueryResult | QueryInput[])[];
+
+            if (insertInput.length === 0) {
+                throw new Error("No data found for insert after tables were configured");
+            }
+
+            if (insertInput.length === 1) {
+                insertQueries = [
+                    await this.insertData({ ...insertInput[0], runQuery: false })
+                ];
+            } else {
+                // Defer query execution for now
+                insertInput = insertInput.map((input) => ({
+                    ...input,
+                    runQuery: false
+                }));
+
+                if (this.db.getConfig().useWorkers) {
+                    insertQueries = await WorkerHelper.run(this.db.getConfig(), "insertData", insertInput) as (QueryResult | QueryInput[])[];
+                } else {
+                    insertQueries = await Promise.all(
+                        insertInput.map((input) => this.insertData({ ...input, runQuery: false }))
+                    ) as (QueryResult | QueryInput[])[];
+                }
+            }
+
+            const insertTransactionInputs: QueryInput[][] = insertQueries as QueryInput[][];
+
+            const allInsertResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(insertTransactionInputs);
+
+            const failedInsertResults = allInsertResults.filter((r) => !r.success);
+
+            if (failedInsertResults.length > 0) {
+                throw new Error(
+                    `Insert failed for ${failedInsertResults.length} chunk(s):\n` +
+                    failedInsertResults.map((t) => `- ${t.table || "Unknown Table"}: ${t.error || "Unknown Error"}`).join("\n")
+                );
+            }
+
             const start = this.db.startDate;
-            const affectedRows = 0
+            const affectedRows = allInsertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
             const end = new Date;
             return {
                 start,
                 end,
                 success: true,
                 duration: end.getTime() - start.getTime(),
-                affectedRows
+                affectedRows,
+                results: allInsertResults,
+                table
             };
         } catch (error: any) {
             const start = this.db.startDate;

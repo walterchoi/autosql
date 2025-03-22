@@ -7,6 +7,7 @@ import { isValidSingleQuery } from './utils/validateQuery';
 import { compareMetaData } from '../helpers/metadata';
 import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
 import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
+import { PostgresInsertQueryBuilder } from "./queryBuilders/pgsql/insertBuilder";
 import { AutoSQLHandler } from "./autosql";
 const dialectConfig = pgsqlConfig
 
@@ -226,6 +227,6 @@ export class PostgresDatabase extends Database {
     }
 
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput {
-        return ''
+        return PostgresInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData)
     }
 }

@@ -1,4 +1,4 @@
-import { TranslateMap, DialectConfig } from "../../config/types";
+import { TranslateMap, DialectConfig, SqlizeRule } from "../../config/types";
 
 export const mysqlConfig: DialectConfig = {
   dialect: "mysql",
@@ -30,41 +30,11 @@ export const mysqlConfig: DialectConfig = {
     "FALSE": "0"
   },
   sqlize: [
-    {
-      find: "'",
-      replace: "''",
-      regex: "'",
-      type: true
-    },
-    {
-      find: "\\",
-      replace: "\\\\",
-      regex: "\\\\",
-      type: true
-    },
-    {
-      find: "true",
-      replace: "1",
-      regex: "^true$",
-      type: ["boolean", "tinyint"]
-    },
-    {
-      find: "false",
-      replace: "0",
-      regex: "^false$",
-      type: ["boolean", "tinyint"]
-    },
-    {
-      find: "T",
-      replace: " ",
-      regex: "T",
-      type: ["date", "datetime", "datetimetz"]
-    },
-    {
-      find: "Z",
-      replace: "",
-      regex: "Z$",
-      type: ["date", "datetime", "datetimetz"]
-    }
+    { regex: "'", replace: "''", type: true },
+    { regex: "\\\\", replace: "\\\\\\\\", type: true },
+    { regex: "^true$", replace: "1", type: ["boolean", "tinyint"] },
+    { regex: "^false$", replace: "0", type: ["boolean", "tinyint"] },
+    { regex: "T", replace: " ", type: ["date", "datetime"] },
+    { regex: "Z$", replace: "", type: ["date", "datetime"] }
   ]
 };

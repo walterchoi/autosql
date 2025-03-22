@@ -35,42 +35,10 @@ export const pgsqlConfig: DialectConfig = {
     "UUID()": "gen_random_uuid()",
     "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP": "CURRENT_TIMESTAMP"
   },
-  sqlize: [
-    {
-      find: "'",
-      replace: "''",
-      regex: "'",
-      type: true
-    },
-    {
-      find: "\\",
-      replace: "\\\\",
-      regex: "\\\\",
-      type: true
-    },
-    {
-      find: "1",
-      replace: "true",
-      regex: "^1$",
-      type: ["boolean"]
-    },
-    {
-      find: "0",
-      replace: "false",
-      regex: "^0$",
-      type: ["boolean"]
-    },
-    {
-      find: ",",
-      replace: "",
-      regex: ",",
-      type: ["binary", "tinyint", "smallint", "int", "bigint", "decimal"]
-    },
-    {
-      find: ".",
-      replace: "0",
-      regex: "^\\.{1}$",
-      type: ["binary", "tinyint", "smallint", "int", "bigint", "decimal"]
-    }
+  sqlize:  [
+    { regex: "'", replace: "''", type: true },
+    { regex: "\\\\", replace: "\\\\\\\\", type: true },
+    { regex: "T", replace: " ", type: ["date", "timestamp", "timestamptz"] },
+    { regex: "Z$", replace: "", type: ["date", "timestamp", "timestamptz"] }
   ]
 };

@@ -7,7 +7,7 @@ export const defaults = {
     samplingMinimum: 100,
     maxKeyLength: 255,
     autoIndexing: true,
-    insert_type: "REPLACE",
+    insert_type: "UPDATE",
     insertStack: 100,
     safeMode: true,
     deleteColumns: false,

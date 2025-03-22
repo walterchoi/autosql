@@ -7,6 +7,7 @@ import { isValidSingleQuery } from './utils/validateQuery';
 import { compareMetaData } from '../helpers/metadata';
 import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
 import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
+import { MySQLInsertQueryBuilder } from "./queryBuilders/mysql/insertBuilder";
 import { AutoSQLHandler } from "./autosql";
 const dialectConfig = mysqlConfig
 
@@ -207,6 +208,6 @@ export class MySQLDatabase extends Database {
     }
 
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput {
-        return ''
+        return MySQLInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData)
     }
 }
