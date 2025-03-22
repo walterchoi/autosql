@@ -3,7 +3,7 @@ import { PostgresDatabase } from "./pgsql";
 import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
-import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData } from "../helpers/utilities";
+import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData } from "../helpers/utilities";
 import { defaults } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
@@ -230,7 +230,7 @@ export class AutoSQLHandler {
         return { currentMetaData, tableExists };
     }    
 
-    async splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader): Promise<{table: string, data: Record<string, any>[], metaData: MetadataHeader, previousMetaData: MetadataHeader}[]> {
+    async splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader): Promise<{table: string, data: Record<string, any>[], metaData: MetadataHeader, previousMetaData: MetadataHeader, mergedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }}[]> {
         try {
             const splitQuery = this.db.getSplitTablesQuery(table);
             const currentSplitResults = await this.db.runQuery(splitQuery);
@@ -249,12 +249,14 @@ export class AutoSQLHandler {
             const transformedData = await Promise.all(
                 Object.keys(newGroupedByTable).map(async (tableName) => {
                     const newMetaData = await getMetaData(this.db.getConfig(), newGroupedData[tableName] || []);
+                    const mergedMetaData = compareMetaData(parsedSplitMetadata[tableName], newMetaData, this.db.getDialectConfig());
             
                     return {
                         table: tableName,
                         data: newGroupedData[tableName] || [],
                         metaData: newMetaData,
-                        previousMetaData: parsedSplitMetadata[tableName]
+                        previousMetaData: parsedSplitMetadata[tableName],
+                        mergedMetaData: mergedMetaData
                     };
                 })
             );
@@ -264,17 +266,41 @@ export class AutoSQLHandler {
         }
     }
 
-    testFunction(input1: string | object, input2: string | object, input3: string | object): string {
-        // Function to format JSON input as a string
-        const formatInput = (input: any): string => {
-            if (typeof input === "object" && input !== null) {
-                return JSON.stringify(input, null, 2); // Pretty print JSON
-            }
-            return String(input); // Convert non-object inputs to string
-        };
-    
-        return `Hello World:\n${formatInput(input1)},\n${formatInput(input2)},\n${formatInput(input3)}`;
-    }    
+    async insertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery: boolean = true): Promise<QueryInput[] | QueryResult[]> {
+        let table: string;
+        let data: Record<string, any>[] = [];
+        let metaData: MetadataHeader;
+        let previousMetaData: AlterTableChanges | MetadataHeader | null = null;
+        let comparedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader } | undefined;
+        let runQuery: boolean;
+      
+        // ✅ Support InsertInput object
+        if (typeof inputOrTable === "object" && "table" in inputOrTable && "data" in inputOrTable) {
+          table = inputOrTable.table;
+          data = inputOrTable.data;
+          metaData = inputOrTable.metaData;
+          previousMetaData = inputOrTable.previousMetaData;
+          comparedMetaData = inputOrTable.comparedMetaData;
+          runQuery = inputOrTable.runQuery ?? true;
+        } else {
+          // ✅ Support individual parameters
+          table = inputOrTable;
+          data = inputData ?? [];
+          metaData = inputMetaData!;
+          previousMetaData = inputPreviousMetaData ?? null;
+          comparedMetaData = inputComparedMetaData;
+          runQuery = inputRunQuery ?? true
+        }
+        if (data.length === 0) {
+            throw new Error(`insertData: no data rows provided for table "${table}"`);
+        }          
+
+        const splitData: Record<string, any>[][] = splitInsertData(data, this.db.getConfig())
+
+        
+
+        return []
+    }
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string): Promise<QueryResult> {
         try {
@@ -287,8 +313,11 @@ export class AutoSQLHandler {
             let changes: AlterTableChanges | null = null;
             let mergedMetaData: MetadataHeader | null = null;
             let insertInput: InsertInput[] = []
+            let comparedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader } | undefined
             if(currentMetaData) {
-                ({ changes, updatedMetaData: mergedMetaData, } = compareMetaData(currentMetaData, newMetaData,this.db.getDialectConfig()));
+                comparedMetaData = compareMetaData(currentMetaData, newMetaData, this.db.getDialectConfig());
+                changes = comparedMetaData.changes;
+                mergedMetaData = comparedMetaData.updatedMetaData
                 this.db.updateTableMetadata(table, mergedMetaData, "metaData")
             } else {
                 mergedMetaData = newMetaData
@@ -304,11 +333,15 @@ export class AutoSQLHandler {
             }
 
             if(!insertInput || insertInput.length == 0) {
+                if(comparedMetaData === undefined) {
+                    comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig());
+                }
                 insertInput = [{
                     table,
                     data,
                     previousMetaData: changes || currentMetaData,
-                    metaData: mergedMetaData
+                    metaData: mergedMetaData,
+                    comparedMetaData
                 }]
             }
 

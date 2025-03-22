@@ -1,7 +1,7 @@
 import { Pool } from "mysql2/promise";
 import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './utils/validateQuery';
-import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges, InsertResult, MetadataHeader, QueryResult } from '../config/types';
+import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges, InsertResult, MetadataHeader, QueryResult, InsertInput } from '../config/types';
 import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
 import { maxQueryAttempts } from "../config/defaults";
 import { AutoSQLHandler } from "./autosql";
@@ -395,6 +395,7 @@ export abstract class Database {
     public abstract getTableExistsQuery(schema: string, table: string): QueryInput;
     public abstract getTableMetaDataQuery(schema: string, table: string): QueryInput;
     public abstract getSplitTablesQuery(table: string): QueryInput;
+    public abstract getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput; 
 
     public abstract getMaxConnections(): number;
 }

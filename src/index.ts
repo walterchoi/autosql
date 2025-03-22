@@ -90,7 +90,6 @@ async function runWorkerTests() {
         ["String", { arrayInsideObject: { data: [1, 2, 3, 4] } }, "End"], // String & Nested Array Object
     ];
     
-
     const results = await WorkerHelper.run(dbConfig, "testFunction", taskParams);
 
     // Log the results

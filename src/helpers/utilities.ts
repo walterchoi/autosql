@@ -527,6 +527,19 @@ export function organizeSplitData(data: Record<string, any>[], splitMetaData: Re
     return groupedData;
 }
 
+export function splitInsertData(data: Record<string, any>[], config: DatabaseConfig): Record<string, any>[][] {
+    const {
+      insertStack = 1000
+    } = config;
+
+    const chunks: Record<string, any>[][] = [];
+    for (let i = 0; i < data.length; i += insertStack) {
+      chunks.push(data.slice(i, i + insertStack));
+    }
+  
+    return chunks;
+}  
+
 export function getNextTableName(tableName: string): string {
     const match = tableName.match(/^(.*?)(__part_(\d+))?$/); // Match `table__part_001`
     if (match && match[3]) {

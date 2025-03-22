@@ -8,9 +8,7 @@ export const defaults = {
     maxKeyLength: 255,
     autoIndexing: true,
     insert_type: "REPLACE",
-    maxInsert: 5000,
     insertStack: 100,
-    maxInsertSize: 1048576,
     safeMode: true,
     deleteColumns: false,
     waitForApproval: false,
@@ -31,22 +29,22 @@ export const DEFAULT_LENGTHS = {
     longtext: 4,
     json: 4, 
     decimal: 10, 
-  };
+};
 
 export const CREATED_TIMESTAMP_NAMES = [
     "dwh_created_at", "created_at", "create_at", "created_date",
     "create_date", "creation_time", "createdon", "record_created",
     "inserted_at", "creation_date", "createdtimestamp", "created_ts"
-  ];
+];
   
 export const MODIFIED_TIMESTAMP_NAMES = [
     "dwh_modified_at", "modified_at", "modify_at", "modified_date",
     "update_date", "updatedon", "last_modified", "last_update",
     "record_updated", "changed_at", "updated_timestamp", "modified_ts"
-  ];
-  
+];
+
 export const DWH_LOADED_TIMESTAMP_NAMES = [
     "dwh_loaded_at", "dwh_loaded_date", "data_warehouse_loaded_at",
     "etl_loaded_at", "data_loaded_at", "extract_timestamp",
     "ingestion_time", "etl_timestamp", "dw_timestamp"
-  ];
+];

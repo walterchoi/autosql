@@ -205,7 +205,21 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
     }
 }
 
-export function compareMetaData(oldHeadersOriginal: MetadataHeader, newHeadersOriginal: MetadataHeader, dialectConfig?: DialectConfig): { changes: AlterTableChanges; updatedMetaData: MetadataHeader } {
+export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHeadersOriginal: MetadataHeader, dialectConfig?: DialectConfig): { changes: AlterTableChanges; updatedMetaData: MetadataHeader } {
+    if(!oldHeadersOriginal) {
+        return { 
+            changes: {
+                addColumns: {},
+                modifyColumns: {},
+                dropColumns: [],
+                renameColumns: [],
+                nullableColumns: [],
+                noLongerUnique: [],
+                primaryKeyChanges: [],
+            },
+            updatedMetaData: newHeadersOriginal
+        }
+    }
     const newHeaders : MetadataHeader = JSON.parse(JSON.stringify(newHeadersOriginal));
     const oldHeaders : MetadataHeader = JSON.parse(JSON.stringify(oldHeadersOriginal));
     const addColumns: MetadataHeader = {};

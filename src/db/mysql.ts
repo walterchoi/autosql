@@ -1,7 +1,7 @@
 import mysql, { Pool, PoolConnection, ResultSetHeader, FieldPacket } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader, InsertInput } from "../config/types";
 import { mysqlConfig } from "./config/mysqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareMetaData } from '../helpers/metadata';
@@ -204,5 +204,9 @@ export class MySQLDatabase extends Database {
 
     getSplitTablesQuery(table: string): QueryInput {
         return MySQLTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
+    }
+
+    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput {
+        return ''
     }
 }

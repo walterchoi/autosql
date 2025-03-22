@@ -82,7 +82,6 @@ export interface DatabaseConfig {
       insertType?: "REPLACE" | "INSERT";
       maxInsert?: number;
       insertStack?: number;
-      maxInsertSize?: number;
       safeMode?: boolean;
       deleteColumns?: boolean;
       waitForApproval?: boolean;
@@ -91,7 +90,6 @@ export interface DatabaseConfig {
 
       useWorkers?: boolean;
       maxWorkers?: number;
-      
 }
 
 export type QueryInput = string | QueryWithParams;
@@ -134,6 +132,7 @@ export interface InsertInput {
   data: Record<string, any>[], 
   metaData: MetadataHeader,
   previousMetaData: AlterTableChanges | MetadataHeader | null,
+  comparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader },
   runQuery?: boolean
 }
 

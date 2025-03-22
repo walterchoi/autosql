@@ -1,7 +1,7 @@
 import { Pool, PoolClient } from "pg";
 import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { pgsqlConfig } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareMetaData } from '../helpers/metadata';
@@ -223,5 +223,9 @@ export class PostgresDatabase extends Database {
 
     getSplitTablesQuery(table: string): QueryInput {
         return PostgresTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
+    }
+
+    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput {
+        return ''
     }
 }
