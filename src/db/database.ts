@@ -62,7 +62,7 @@ export abstract class Database {
 
     public async establishConnection(): Promise<void> {
         let attempts = 0;
-        const maxAttempts = 3;
+        const maxAttempts = maxQueryAttempts || 3;
 
         while (attempts < maxAttempts) {
             try {

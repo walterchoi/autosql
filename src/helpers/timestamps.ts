@@ -1,7 +1,7 @@
 import { DatabaseConfig, MetadataHeader } from "../config/types";
 import { CREATED_TIMESTAMP_NAMES, MODIFIED_TIMESTAMP_NAMES, DWH_LOADED_TIMESTAMP_NAMES } from "../config/defaults";
 
-export function ensureTimestamps(dbConfig: DatabaseConfig, metaData: MetadataHeader, startDate: Date): MetadataHeader {
+export function ensureTimestamps(dbConfig: DatabaseConfig, metaData: MetadataHeader, startDate: Date = new Date()): MetadataHeader {
     if (!dbConfig.addTimestamps) {
       return metaData; // RETURN if timestamps are not required
     }

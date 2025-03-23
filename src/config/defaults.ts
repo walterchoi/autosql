@@ -1,6 +1,4 @@
 export const defaults = {
-    minimumUnique: 10,
-    maximumUniqueLength: 64,
     maxNonTextLength: 256,
     pseudoUnique: 0.90,
     sampling: 0,
@@ -14,7 +12,8 @@ export const defaults = {
     decimalMaxLength: 10,
     autoSplit: false,
     useWorkers: true,
-    maxWorkers: 8
+    maxWorkers: 8,
+    addTimestamps: true
 }
 
 export const maxQueryAttempts = 3;

@@ -71,8 +71,6 @@ export interface DatabaseConfig {
       encoding?: string;
       addTimestamps?: boolean;
 
-      minimumUnique?: number;
-      maximumUniqueLength?: number;
       maxNonTextLength?: number;
       pseudoUnique?: number;
       autoIndexing?: boolean;

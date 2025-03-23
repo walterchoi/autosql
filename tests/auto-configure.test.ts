@@ -45,7 +45,9 @@ Object.values(DB_CONFIG).forEach((config) => {
             const dropQueryResults = await db.runQuery(dropQuery)
         
             const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, [], null, INITIAL_METADATA);
-        
+            if (Array.isArray(result)) {
+                throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
+            }
             expect(result.success).toBe(false);
             expect(result.error).toContain(`No existing metadata and no data provided to infer structure.`);
         });
@@ -61,7 +63,9 @@ Object.values(DB_CONFIG).forEach((config) => {
             ];
         
             const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, null, INITIAL_METADATA);
-        
+            if (Array.isArray(result)) {
+                throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
+            }
             expect(result.success).toBe(true);
             console.log(`Test Result [${config.sqlDialect}]: Creates table when it does not exist:`, result);
         
@@ -83,7 +87,9 @@ Object.values(DB_CONFIG).forEach((config) => {
             const sampleData = [{ id: 1, name: "Alice" }];
         
             const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, null, INITIAL_METADATA);
-        
+            if (Array.isArray(result)) {
+                throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
+            }
             expect(result.success).toBe(true);
             console.log(`Test Result [${config.sqlDialect}]: Creates table with provided metadata:`, result);
         
@@ -104,7 +110,9 @@ Object.values(DB_CONFIG).forEach((config) => {
             await db.runQuery(`CREATE TABLE IF NOT EXISTS ${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
         
             const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, [], INITIAL_METADATA, INITIAL_METADATA);
-        
+            if (Array.isArray(result)) {
+                throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
+            }
             expect(result.success).toBe(true);
             expect(result.results).toEqual([]); // ✅ No changes should be applied
             console.log(`Test Result [${config.sqlDialect}]: Table exists, no changes needed:`, result);
@@ -120,7 +128,9 @@ Object.values(DB_CONFIG).forEach((config) => {
             const sampleData = [{ id: 1, name: "Alice", email: "alice@example.com" }];
         
             const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, INITIAL_METADATA);
-        
+            if (Array.isArray(result)) {
+                throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
+            }
             expect(result.success).toBe(true);
             console.log(`Test Result [${config.sqlDialect}]: Table altered when metadata changes:`, result);
         });
@@ -135,7 +145,9 @@ Object.values(DB_CONFIG).forEach((config) => {
             const sampleData = [{ id: 1, name: "Alice", email: "alice@example.com" }];
         
             const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, ALTER_TABLE_CHANGES, UPDATED_METADATA);
-        
+            if (Array.isArray(result)) {
+                throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
+            }
             expect(result.success).toBe(true);
             console.log(`Test Result [${config.sqlDialect}]: Table altered using precomputed changes:`, result);
         }); 

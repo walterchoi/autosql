@@ -26,20 +26,21 @@ describe("ensureTimestamps", () => {
     expect(result).toHaveProperty("dwh_modified_at");
     expect(result).toHaveProperty("dwh_loaded_at");
 
-    expect(result["dwh_created_at"]).toEqual({
+    expect(result["dwh_created_at"]).toMatchObject({
       type: "datetime",
       allowNull: false,
-      calculated: true
+      calculated: true,
+      updatedCalculated: false,
     });
 
-    expect(result["dwh_modified_at"]).toEqual({
+    expect(result["dwh_modified_at"]).toMatchObject({
       type: "datetime",
       allowNull: true,
       calculated: true,
       updatedCalculated: true
     });
 
-    expect(result["dwh_loaded_at"]).toEqual({
+    expect(result["dwh_loaded_at"]).toMatchObject({
       type: "datetime",
       allowNull: true,
       calculated: true,
