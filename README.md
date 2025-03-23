@@ -70,11 +70,12 @@ const data = [
 
 let db: Database;
 
-beforeAll(() => {
-  db = Database.create(config);
-});
+db = Database.create(config);
+await db.establishConnection();
 
 await db.insertData({ table: 'target_table', data });
+
+await db.closeConnection();
 ```
 
 AutoSQL will:
