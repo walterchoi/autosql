@@ -83,9 +83,8 @@ export interface DatabaseConfig {
       samplingMinimum?: number;
 
       insertType?: "UPDATE" | "INSERT";
-      maxInsert?: number;
       insertStack?: number;
-      
+
       safeMode?: boolean;
       deleteColumns?: boolean;
 

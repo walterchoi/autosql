@@ -5,3 +5,4 @@ coverage/
 docker-compose.yml
 DevDoc.md
 tests/utils/config.local.json
+READMEDEV.md

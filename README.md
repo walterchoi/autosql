@@ -89,33 +89,60 @@ AutoSQL will:
 ## ⚙️ Configuration
 
 ```ts
-interface Config {
-  host: string;
-  username: string;
-  password: string;
-  database: string;
-  table: string;
-  sql_dialect: 'mysql' | 'pgsql';
-  meta_data?: ColumnMetadata[];
-  primary?: string[];
-  ssh_config?: SSHConfig;
-  auto_id?: boolean;
-  create_table?: boolean;
-  safe_mode?: boolean;
-  insert_type?: 'REPLACE' | 'IGNORE';
-  max_insert?: number;
-  max_insert_size?: number;
-  insert_stack?: number;
+export interface DatabaseConfig {
+  // Required connection settings
+  sqlDialect: 'mysql' | 'pgsql';
+  host?: string;
+  user?: string;
+  password?: string;
+  database?: string;
+  port?: number;
+
+  // Optional table target
+  schema?: string;
+  table?: string;
+
+  // Metadata control
+  metaData?: { [tableName: string]: MetadataHeader };
+  existingMetaData?: { [tableName: string]: MetadataHeader };
+  updatePrimaryKey?: boolean;
+  primaryKey?: string[];
+
+  // Table creation and charset settings
+  engine?: string;
+  charset?: string;
+  collate?: string;
+  encoding?: string;
+  addTimestamps?: boolean;
+
+  // Type inference controls
+  minimumUnique?: number;
+  maximumUniqueLength?: number;
+  maxNonTextLength?: number;
+  pseudoUnique?: number;
+  autoIndexing?: boolean;
+  decimalMaxLength?: number;
+  maxKeyLength?: number;
+
+  // Sampling controls
   sampling?: number;
-  sampling_minimum?: number;
-  pseudo_unique?: number;
-  minimum_unique?: number;
-  collation?: string;
-  wait_for_approval?: boolean;
-  locale?: string;
-  timezone?: string;
-  convert_timezone?: boolean;
-  convert_all_timezone?: boolean;
+  samplingMinimum?: number;
+
+  // Insert strategy
+  insertType?: 'UPDATE' | 'INSERT'; // UPDATE automatically replaces non-primary key values with new values that are found
+  insertStack?: number; // Maximum number of rows to insert in one query - defaults to 100
+  safeMode?: boolean; // Prevent the altering of tables if needed - defaults to FALSE 
+  deleteColumns?: boolean; // Drop columns if needed - defaults to FALSE
+
+  // Batching + scaling
+  autoSplit?: boolean;
+  useWorkers?: boolean;
+  maxWorkers?: number;
+
+  // SSH tunneling support
+  sshConfig?: SSHKeys;
+  sshStream?: ClientChannel | null;
+  sshClient?: SSHClient;
 }
 ```
 
