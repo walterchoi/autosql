@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
 import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader, InsertInput, QueryResult } from "../config/types";
@@ -18,13 +18,21 @@ export class PostgresDatabase extends Database {
     }
 
     async establishDatabaseConnection(): Promise<void> {
-        this.connection = new Pool({
+        let Pg: typeof import("pg");
+        try {
+            Pg = require("pg");
+        } catch (err) {
+            throw new Error("Missing required dependency 'pg'. Please install it to use PgDatabase.");
+        }
+
+        this.connection = new Pg.Pool({
             host: this.config.host,
             user: this.config.user,
             password: this.config.password,
             database: this.config.database,
             port: this.config.port || 5432,
-            max: 5
+            max: 5,
+            stream: this.config.sshStream ? () => this.config.sshStream! : undefined
         });
     }
 

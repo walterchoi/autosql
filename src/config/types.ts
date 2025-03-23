@@ -1,3 +1,5 @@
+import type { Client as SSHClient, ClientChannel } from "ssh2";
+
 export interface ColumnDefinition {
   type: string | null;
   length?: number;
@@ -91,6 +93,25 @@ export interface DatabaseConfig {
 
       useWorkers?: boolean;
       maxWorkers?: number;
+
+      sshConfig?: SSHKeys;
+      sshStream?: ClientChannel | null;
+      sshClient?: SSHClient;
+}
+
+export interface SSHKeys {
+  host: string;
+  port: number;
+  username: string;
+  password?: string;
+  private_key_path?: string;
+  private_key?: string;
+  timeout?: number;
+  debug?: boolean;
+  source_address?: string;
+  source_port?: number;
+  destination_address: string;
+  destination_port: number;
 }
 
 export type QueryInput = string | QueryWithParams;

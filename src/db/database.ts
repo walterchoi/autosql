@@ -1,14 +1,13 @@
-import { Pool } from "mysql2/promise";
-import { Pool as PgPool } from "pg";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges, InsertResult, MetadataHeader, QueryResult, InsertInput } from '../config/types';
 import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
 import { maxQueryAttempts } from "../config/defaults";
 import { AutoSQLHandler } from "./autosql";
+import { setSSH } from '../helpers/ssh';
 
 // Abstract database class to define common methods.
 export abstract class Database {
-    protected connection: Pool | PgPool | null = null;
+    protected connection: any | null = null;
     protected config: DatabaseConfig;
     public autoSQL!: AutoSQLHandler;
     startDate : Date = new Date();
@@ -67,6 +66,11 @@ export abstract class Database {
 
         while (attempts < maxAttempts) {
             try {
+                if (this.config.sshConfig) {
+                    const { stream, sshClient } = await setSSH(this.config.sshConfig);
+                    this.config.sshStream = stream;
+                    this.config.sshClient = sshClient;
+                }
                 await this.establishDatabaseConnection();
                 return;
             } catch (error: any) {
@@ -229,11 +233,16 @@ export abstract class Database {
             if ("end" in this.connection) {
                 await this.connection.end(); // MySQL & PostgreSQL close method
             }
+            if (this.config.sshClient) {
+                this.config.sshClient.end();
+            }
             return { success: true };
         } catch (error) {
             return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
         } finally {
-            this.connection = null;
+            this.connection = undefined;        
+            this.config.sshClient = undefined;
+            this.config.sshStream = undefined;
         }
     }
 

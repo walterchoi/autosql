@@ -1,4 +1,4 @@
-import mysql, { Pool, PoolConnection, ResultSetHeader, FieldPacket } from "mysql2/promise";
+import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
 import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader, InsertInput } from "../config/types";
@@ -18,13 +18,20 @@ export class MySQLDatabase extends Database {
     }
 
     async establishDatabaseConnection(): Promise<void> {
+        let mysql: any;
+        try {
+            mysql = require("mysql2/promise");
+        } catch (err) {
+            throw new Error("Missing required dependency 'mysql2'. Please install it to use MySQLDatabase.");
+        }
         this.connection = mysql.createPool({
             host: this.config.host,
             user: this.config.user,
             password: this.config.password,
             database: this.config.database || this.config.schema,
             port: this.config.port || 3306,
-            connectionLimit: 5
+            connectionLimit: 5,
+            ...(this.config.sshStream ? { stream: this.config.sshStream } : {})
         });
     }
 
@@ -41,6 +48,7 @@ export class MySQLDatabase extends Database {
     }
 
     async testQuery(queryOrParams: QueryInput): Promise<any> {
+
         const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
     
         if (!isValidSingleQuery(query)) {
@@ -50,7 +58,7 @@ export class MySQLDatabase extends Database {
         if (!this.connection) {
             await this.establishConnection();
         }
-    
+
         let client: PoolConnection | null = null;
         try {
             client = await (this.connection as Pool).getConnection();
