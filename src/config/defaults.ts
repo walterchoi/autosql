@@ -1,5 +1,4 @@
 export const defaults = {
-    maxNonTextLength: 256,
     pseudoUnique: 0.90,
     sampling: 0,
     samplingMinimum: 100,

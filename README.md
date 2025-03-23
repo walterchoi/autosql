@@ -116,8 +116,6 @@ export interface DatabaseConfig {
   addTimestamps?: boolean; // If TRUE, runs function ensureTimestamps as part of AutoSQL function. Which adds a dwh_created_at, dwh_modified_at and dwh_loaded_at timestamp columns that are automatically filled. - defaults to TRUE
 
   // Type inference controls
-  minimumUnique?: number; 
-  maximumUniqueLength?: number;
   maxNonTextLength?: number;
   pseudoUnique?: number; // The % of values that must be unique to be considered pseudoUnique. - defaults to 0.9 (90%)
   autoIndexing?: boolean; // Automatically identify and add indexes to tables when altering / creating - defaults to TRUE
