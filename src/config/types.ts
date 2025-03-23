@@ -85,9 +85,9 @@ export interface DatabaseConfig {
       insertType?: "UPDATE" | "INSERT";
       maxInsert?: number;
       insertStack?: number;
+      
       safeMode?: boolean;
       deleteColumns?: boolean;
-      waitForApproval?: boolean;
 
       autoSplit?: boolean;
 

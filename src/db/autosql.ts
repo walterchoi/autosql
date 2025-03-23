@@ -357,44 +357,46 @@ export class AutoSQLHandler {
                 }]
             }
 
-            let configuredTables: (QueryResult | QueryInput[])[];
+            if(!this.db.getConfig().safeMode) {
+                // Configure Tables
+                let configuredTables: (QueryResult | QueryInput[])[];
+                if(this.db.getConfig().useWorkers) {
+                    insertInput = insertInput.map((input) => ({
+                        ...input,
+                        runQuery: false
+                    }));
+                    configuredTables = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as (QueryResult | QueryInput[])[]
+                } else {
+                    configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[]
+                }
 
-            if(this.db.getConfig().useWorkers) {
-                insertInput = insertInput.map((input) => ({
-                    ...input,
-                    runQuery: false
-                }));
-                configuredTables = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as (QueryResult | QueryInput[])[]
-            } else {
-                configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[]
-            }
-
-            const initialResults: QueryResult[] = configuredTables.filter(
-                (result): result is QueryResult => "success" in result
-            );
-                
-            const queryInputs: QueryInput[][] = configuredTables.filter(
-                (result): result is QueryInput[] => Array.isArray(result)
-            );
-
-            let allResults: QueryResult[]
-            if(queryInputs.length > 0) {
-                const transactionResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(queryInputs);
-                allResults = [...initialResults, ...transactionResults];
-            } else {
-                allResults = [...initialResults];
-            }
-
-            const failedResults = allResults.filter((r) => !r.success);
-
-            // ✅ If any table failed, throw an error with details
-            if (failedResults.length > 0) {
-                throw new Error(
-                `Table configuration failed for ${failedResults.length} table(s):\n` +
-                failedResults.map((t) => `- ${t.table || "Unknown Table"}: ${t.error || "Unknown Error"}`).join("\n")
+                const initialResults: QueryResult[] = configuredTables.filter(
+                    (result): result is QueryResult => "success" in result
                 );
+                    
+                const queryInputs: QueryInput[][] = configuredTables.filter(
+                    (result): result is QueryInput[] => Array.isArray(result)
+                );
+
+                let allResults: QueryResult[]
+                if(queryInputs.length > 0) {
+                    const transactionResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(queryInputs);
+                    allResults = [...initialResults, ...transactionResults];
+                } else {
+                    allResults = [...initialResults];
+                }
+
+                const failedResults = allResults.filter((r) => !r.success);
+
+                // ✅ If any table failed, throw an error with details
+                if (failedResults.length > 0) {
+                    throw new Error(
+                    `Table configuration failed for ${failedResults.length} table(s):\n` +
+                    failedResults.map((t) => `- ${t.table || "Unknown Table"}: ${t.error || "Unknown Error"}`).join("\n")
+                    );
+                }
+                console.log("✅ All tables configured and executed successfully.");
             }
-            console.log("✅ All tables configured and executed successfully.");
 
             let insertQueries: (QueryResult | QueryInput[])[];
 

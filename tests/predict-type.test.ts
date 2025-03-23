@@ -129,6 +129,7 @@ describe("predictType function", () => {
         // ✅ Unix timestamp
         expect(predictType(`/Date(1700000000000)/`)).toBe("datetime"); // No timezone
         expect(predictType(`/Date(1700000000000+0000)/`)).toBe("datetimetz"); // With timezone
+        expect(predictType(`/Date(-1501545600000+0000)/`)).toBe("datetimetz"); // With timezone
 
         // ✅ ISO 8601 formats
         expect(predictType(`2024-02-20T15:30:00Z`)).toBe("datetimetz"); // UTC

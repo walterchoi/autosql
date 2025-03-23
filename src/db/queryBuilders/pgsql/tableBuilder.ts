@@ -73,9 +73,11 @@ export class PostgresTableQueryBuilder {
         let alterStatements: string[] = [];
     
         // ✅ Handle `DROP COLUMN`
-        changes.dropColumns.forEach(columnName => {
-            alterStatements.push(`DROP COLUMN "${columnName}"`);
-        });
+        if(databaseConfig?.deleteColumns) {
+            changes.dropColumns.forEach(columnName => {
+                alterStatements.push(`DROP COLUMN "${columnName}"`);
+            });
+        }
     
         // ✅ Handle `RENAME COLUMN`
         changes.renameColumns.forEach(({ oldName, newName }) => {

@@ -4,7 +4,7 @@
 
 > **Now rewritten in TypeScript with an entirely new class-based structure!**
 
-## 🚀 AutoSQL v2 — A Smarter Way to Insert Data
+## 🚀 AutoSQL — A Smarter Way to Insert Data
 
 AutoSQL is a TypeScript-powered tool that simplifies and automates the SQL insertion process with intelligent schema prediction, safe table handling, batching, and dialect-specific optimisations for MySQL and PostgreSQL.
 
@@ -46,7 +46,6 @@ AutoSQL supports:
 Optional support for SSH tunneling is available via:
 
 - [`ssh2`](https://www.npmjs.com/package/ssh2)
-- [`fs`](https://www.npmjs.com/package/fs) (for private key file reading)
 
 ---
 
