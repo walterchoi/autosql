@@ -1,8 +1,8 @@
 import { DatabaseConfig } from '../config/types';
-import { normalizeNumber, validateConfig, shuffleArray, calculateColumnLength } from './utilities';
+import { normalizeNumber, validateConfig, shuffleArray } from './utilities';
 import { groupings } from '../config/groupings';
 import { collateTypes } from './columnTypes';
-import { updateColumnType, predictType } from './columnTypes';
+import { predictType } from './columnTypes';
 import { defaults } from '../config/defaults';
 import { predictIndexes } from './keys';
 import { Database } from '../db/database';
