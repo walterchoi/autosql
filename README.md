@@ -28,7 +28,7 @@ npm install autosql
 
 - [Supported SQL Dialects](#-supported-sql-dialects)
 - [Quick Start](#-quick-start)
-- [Configuration](#-configuration)
+- [Configuration](#%EF%B8%8F-configuration)
   - [Metadata Format](#-metadata-format)
   - [SSH Support](#-ssh-support)
 - [Insert Options](#-insert-options)
