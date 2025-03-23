@@ -52,23 +52,29 @@ Optional support for SSH tunneling is available via:
 ## ⚡ Quick Start
 
 ```ts
-import { autoSQL } from 'autosql';
+import { Database } from 'autosql';
 
 const config = {
+  sqlDialect: 'mysql',
   host: 'localhost',
-  username: 'user',
-  password: 'pass',
-  database: 'db_name',
-  table: 'target_table',
-  sql_dialect: 'mysql', // or 'pgsql'
+  user: 'root',
+  password: 'root',
+  database: 'mysql',
+  port: 3306
 };
 
 const data = [
   { id: 1, name: 'Alice', created_at: '2024-01-01' },
-  { id: 2, name: 'Bob', created_at: '2024-01-02' },
+  { id: 2, name: 'Bob', created_at: '2024-01-02' }
 ];
 
-await autoSQL(config, data);
+let db: Database;
+
+beforeAll(() => {
+  db = Database.create(config);
+});
+
+await db.insertData({ table: 'target_table', data });
 ```
 
 AutoSQL will:
