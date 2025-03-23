@@ -212,7 +212,7 @@ These control batching and insert behaviour:
 
 ---
 
-### 🏁 Core Interfaces: `Database` and `AutoSQLHandler`
+## 🏁 Core Classes: `Database` and `AutoSQLHandler`
 
 These are the primary entry points into AutoSQL's workflow. The `Database` class handles connection management, while `AutoSQLHandler` exposes end-to-end insert automation and table management functions.
 
@@ -231,6 +231,8 @@ const result = await db.autoSQL.autoConfigureTable(
 ```
 
 This is the core interface for managing connections, generating queries, and executing inserts.
+
+### ⚙️ `Database` Class
 
 #### 🔹 Core Methods
 - **`getConfig()`** – Returns the full `DatabaseConfig` used to initialise this instance.
