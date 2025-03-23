@@ -21,7 +21,6 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         // Define default values
         const defaultConfig: DatabaseConfig = {
             sqlDialect: config.sqlDialect, // Keep required field
-            maxNonTextLength: defaults.maxNonTextLength,
             pseudoUnique: defaults.pseudoUnique,
             autoIndexing: defaults.autoIndexing,
             sampling: defaults.sampling,
