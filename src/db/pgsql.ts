@@ -235,6 +235,6 @@ export class PostgresDatabase extends Database {
     }
 
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput {
-        return PostgresInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData)
+        return PostgresInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig())
     }
 }

@@ -216,6 +216,6 @@ export class MySQLDatabase extends Database {
     }
 
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput {
-        return MySQLInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData)
+        return MySQLInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig())
     }
 }

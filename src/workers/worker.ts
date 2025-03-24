@@ -15,11 +15,10 @@ import { AutoSQLHandler } from "../db/autosql";
     db = Database.create(dbConfig);
     const autoSQL = db.autoSQL as AutoSQLHandler;
 
-    console.log(`Worker started with dbConfig: ${JSON.stringify(dbConfig)}`);
-
     parentPort?.on("message", async (task) => {
 
         const { method, params } = task;
+        console.log(`Worker started to complete ${method}`);
         const normalizedParams = Array.isArray(params) ? params : [params];
 
         if (method === "test") {

@@ -369,7 +369,6 @@ export class AutoSQLHandler {
                 } else {
                     configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[]
                 }
-
                 const initialResults: QueryResult[] = configuredTables.filter(
                     (result): result is QueryResult => "success" in result
                 );
