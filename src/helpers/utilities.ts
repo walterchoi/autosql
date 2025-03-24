@@ -1,5 +1,6 @@
 import { defaults, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE } from "../config/defaults";
 import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule } from "../config/types";
+import { groupings } from "../config/groupings";
 export function isObject(val: any): boolean {
     return val !== null && typeof val === "object";
 }
@@ -537,7 +538,7 @@ export function splitInsertData(data: Record<string, any>[], config: DatabaseCon
     return chunks;
 }  
 
-export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig: DialectConfig): any[] {
+export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig: DialectConfig, databaseConfig?: DatabaseConfig): any[] {
     return Object.entries(metaData).map(([column, meta]) => {
       let value = row[column];
   
@@ -550,32 +551,55 @@ export function getInsertValues(metaData: MetadataHeader, row: Record<string, an
         }
       }
   
-      return sqlize(value, meta.type, dialectConfig);
+      return sqlize(value, meta.type, dialectConfig, databaseConfig);
     });
 }
 
-export function sqlize(value: any, columnType: string | null, dialectConfig: DialectConfig ): any {
-    if (value === null) return null;
-    if(!columnType) {return value}
+export function sqlize(value: any, columnType: string | null, dialectConfig: DialectConfig, databaseConfig?: DatabaseConfig ): any {
+    try {
+        if (value === null) return null;
+        if(!columnType) {return value};
 
-    const type = columnType.toLowerCase();
-    const rules: SqlizeRule[] = dialectConfig.sqlize
+        const type = columnType.toLowerCase();
+        const rules: SqlizeRule[] = dialectConfig.sqlize;
+        let strValue = typeof value === "string" ? value : String(value);
 
-    // Only apply to strings or values that can be coerced to string
-    let strValue = typeof value === "string" ? value : String(value);
-
-    for (const rule of rules) {
-        const appliesToType =
-        rule.type === true ||
-        (Array.isArray(rule.type) && rule.type.includes(type));
-
-        if (appliesToType) {
-        const regex = new RegExp(rule.regex, "g");
-        strValue = strValue.replace(regex, rule.replace);
+        const isDateLike = groupings.dateGroup.includes(columnType);
+        if (isDateLike) {
+            const match = strValue.match(/\/Date\((\d+)(?:[+-]\d+)?\)\//);
+            if (match) {
+                const millis = parseInt(match[1], 10);
+                strValue = new Date(millis).toISOString();
+            } else {
+                const cleaned = strValue.replace(/[^\d:-\sT]/g, "");
+                const parsedDate = new Date(cleaned);
+                if (!isNaN(parsedDate.getTime())) {
+                strValue = parsedDate.toISOString();
+                }
+            }
         }
-    }
 
-  return strValue;
+        const isNumberLike = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
+        if (isNumberLike) {
+            const normalised = normalizeNumber(value) || strValue;
+            const precision = databaseConfig?.decimalMaxLength ?? defaults.decimalMaxLength;
+            strValue = roundStringDecimal(normalised, precision);
+        }
+
+        for (const rule of rules) {
+            const appliesToType =
+            rule.type === true || (Array.isArray(rule.type) && rule.type.includes(type));
+      
+            if (appliesToType) {
+              const regex = new RegExp(rule.regex, "g");
+              strValue = strValue.replace(regex, rule.replace);
+            }
+        }
+
+        return strValue
+    } catch (error) {
+        return value
+    }
 }
   
 export function getNextTableName(tableName: string): string {
@@ -595,3 +619,27 @@ export async function wait_x_mseconds (x: number) {
         }, x)
     })
 }
+
+function roundStringDecimal(valueStr: string, precision: number): string {
+    if (!valueStr.includes('.')) return valueStr;
+  
+    const [intPart, decimalPartRaw] = valueStr.split('.');
+    const decimalPart = decimalPartRaw.slice(0, precision);
+    const nextDigit = decimalPartRaw.charAt(precision);
+  
+    if (!nextDigit || parseInt(nextDigit, 10) < 5) {
+      // No rounding needed, just trim excess
+      return decimalPart.length > 0
+        ? `${intPart}.${decimalPart}`
+        : intPart;
+    }
+  
+    // Perform manual rounding
+    let full = `${intPart}.${decimalPart}`;
+    let roundedNum = Number(full);
+    const multiplier = Math.pow(10, precision);
+    roundedNum = Math.round(roundedNum * multiplier) / multiplier;
+  
+    return roundedNum.toString();
+}
+  

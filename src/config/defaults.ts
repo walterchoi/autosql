@@ -8,7 +8,7 @@ export const defaults = {
     insertStack: 100,
     safeMode: false,
     deleteColumns: false,
-    decimalMaxLength: 10,
+    decimalMaxLength: 6,
     autoSplit: false,
     useWorkers: true,
     maxWorkers: 8,

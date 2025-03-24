@@ -3,7 +3,7 @@ export const groupings = {
     "specialIntGroup": ["decimal", "double", "exponent"],
     "textGroup": ["varchar", "text", "mediumtext", "longtext"],
     "specialTextGroup": ["json"],
-    "dateGroup": ["date", "time", "datetime", "datetimetz"],
+    "dateGroup": ["date", "time", "datetime", "datetimetz", 'timestamp', 'timestamptz'],
     "keysGroup": ["tinyint", "smallint", "int", "varchar"]
 }
 

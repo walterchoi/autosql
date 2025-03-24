@@ -301,7 +301,7 @@ export class AutoSQLHandler {
         const insertStatements: QueryInput[] = await Promise.all(
             splitData.map((chunk) => {
               const normalisedChunk = chunk.map((row) =>
-                getInsertValues(effectiveMetaData, row, this.db.getDialectConfig())
+                getInsertValues(effectiveMetaData, row, this.db.getDialectConfig(), this.db.getConfig())
               );
               return this.db.getInsertStatementQuery(table, normalisedChunk, effectiveMetaData);
             })
