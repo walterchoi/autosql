@@ -1,4 +1,4 @@
-import { defaults, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE } from "../config/defaults";
+import { defaults, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE, MAX_COLUMN_COUNT } from "../config/defaults";
 import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule } from "../config/types";
 import { groupings } from "../config/groupings";
 export function isObject(val: any): boolean {
@@ -447,20 +447,32 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 
     const primaryKeys: MetadataHeader = {};
     const newColumns: MetadataHeader = {};
+    const allTablesEmpty = Object.values(normalizedMetaData).every(table => Object.keys(table).length === 0);
     const newGroupedByTable = Object.entries(newMetaData).reduce((acc, [columnName, columnDef]) => {
+        if (allTablesEmpty) {
+            if (columnDef.primary) {
+                primaryKeys[columnName] = columnDef;
+            } else {
+                newColumns[columnName] = columnDef;
+            }
+            return acc;
+        }
+
         const matchingTables = Object.keys(normalizedMetaData).filter(table =>
             Object.prototype.hasOwnProperty.call(normalizedMetaData[table], columnName)
         );
+
         if (matchingTables.length > 0) {
             matchingTables.forEach(tableName => {
-                if (!acc[tableName]) acc[tableName] = {};
-                acc[tableName][columnName] = columnDef;   
+            if (!acc[tableName]) acc[tableName] = {};
+            acc[tableName][columnName] = columnDef;
             });
+
             if (columnDef.primary) {
-                primaryKeys[columnName] = columnDef;
+            primaryKeys[columnName] = columnDef;
             }
         } else {
-            newColumns[columnName] = columnDef
+            newColumns[columnName] = columnDef;
         }
 
         return acc;
@@ -471,15 +483,16 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 
     while (Object.keys(unallocatedColumns).length > 0) {
         // ✅ Check the row size before adding new columns
-        let currentTableData = newGroupedByTable[tableName] || { ...primaryKeys }; // Clone primary keys if new table
-
         for (var i = 0; i < Object.keys(unallocatedColumns).length; i++) {
+            const currentTableData = newGroupedByTable[tableName] || { ...primaryKeys };
             const columnName = Object.keys(unallocatedColumns)[i]
             const columnDef = unallocatedColumns[columnName]
             const mergedMetaData = { ...currentTableData, [columnName]: columnDef }; // Simulate adding column
-    
+            const columnCount = Object.keys(mergedMetaData).length;
+            const exceedsColumnLimit = columnCount >= MAX_COLUMN_COUNT
+
             const { exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
-            if (!nearlyExceedsLimit) {
+            if (!nearlyExceedsLimit && !exceedsColumnLimit) {
                 // ✅ Add the column if within limits
                 if (!newGroupedByTable[tableName]) {
                     newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table

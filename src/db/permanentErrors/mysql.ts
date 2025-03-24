@@ -5,6 +5,8 @@ export const mysqlPermanentErrors = [
   // Table or field issues
   "ER_NO_SUCH_TABLE", // Table doesn't exist
   "ER_BAD_FIELD_ERROR", // Unknown column
+  "ER_TOO_BIG_PRECISION", // Column precision was too big
+  "ER_TOO_MANY_KEYS", // Too many keys added to table
 
   // Constraint violations
   "ER_DUP_ENTRY", // Duplicate entry for key

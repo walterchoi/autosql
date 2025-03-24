@@ -4,7 +4,7 @@ import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
 import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues } from "../helpers/utilities";
-import { defaults } from "../config/defaults";
+import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
 
@@ -338,12 +338,13 @@ export class AutoSQLHandler {
 
             if(this.db.getConfig().autoSplit) {
                 const { rowSize, exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
+                const columnCount = Object.keys(mergedMetaData).length;
+                const exceedsColumnLimit = columnCount >= MAX_COLUMN_COUNT
                 // Split the table structure
-                if(exceedsLimit) {
+                if(exceedsLimit || exceedsColumnLimit) {
                     insertInput = await this.splitTableData(table, data, mergedMetaData)
                 }
             }
-
             if(!insertInput || insertInput.length == 0) {
                 if(comparedMetaData === undefined) {
                     comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig());
