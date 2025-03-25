@@ -121,9 +121,9 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
 
         const uniquePercentage = metaDataInterim[column].uniqueSet.size / metaDataInterim[column].valueCount;
-        if(uniquePercentage == 1) {
+        if(uniquePercentage == 1 && metaDataInterim[column].uniqueSet.size > 0) {
             metaData[column].unique = true;
-        } else if (uniquePercentage >= (databaseConfig.pseudoUnique || defaults.pseudoUnique)) {
+        } else if (uniquePercentage >= (databaseConfig.pseudoUnique || defaults.pseudoUnique) && metaDataInterim[column].uniqueSet.size > 0) {
             metaData[column].pseudounique = true;
         }
         if(metaDataInterim[column].nullCount !== 0) {

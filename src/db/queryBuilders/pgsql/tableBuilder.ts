@@ -2,6 +2,7 @@ import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from ".
 import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
 import { getUsingClause } from "./alterTableTypeConversion";
+import { generateSafeConstraintName } from "../../../helpers/utilities";
 const dialectConfig = pgsqlConfig
 
 export class PostgresTableQueryBuilder {
@@ -53,8 +54,12 @@ export class PostgresTableQueryBuilder {
         if (primaryKeys.length) sqlQuery += `PRIMARY KEY (${primaryKeys.join(", ")}),\n`;
         if (uniqueKeys.length) {
             sqlQuery += `${uniqueKeys
-                .map((key) => `CONSTRAINT "${table}_${key.replace(/"/g, '')}_key" UNIQUE("${key.replace(/"/g, '')}")`)
-                .join(", ")},\n`;
+                .map((key) => {
+                    const columnName = key.replace(/"/g, '');
+                    const constraintName = generateSafeConstraintName(table, columnName, 'unique');
+                    return `CONSTRAINT "${constraintName}" UNIQUE("${columnName}")`;
+                })
+                .join(', ')},\n`;
         }        
     
         sqlQuery = sqlQuery.slice(0, -2) + "\n);";
@@ -62,8 +67,16 @@ export class PostgresTableQueryBuilder {
     
         // Create indexes separately
         for (const index of indexes) {
-            sqlQueries.push({ query: `CREATE INDEX "${table}_${index.replace(/"/g, "")}_idx" ON ${schemaPrefix}"${table}" ("${index.replace(/"/g, "")}");`, params: []});
-        }
+            if (!index) continue; // Skip empty index names
+        
+            const cleanIndex = index.replace(/"/g, '');
+            const indexName = generateSafeConstraintName(table, cleanIndex, 'index');
+        
+            sqlQueries.push({
+                query: `CREATE INDEX "${indexName}" ON ${schemaPrefix}"${table}" ("${cleanIndex}");`,
+                params: []
+            });
+        }        
     
         return sqlQueries;
     }

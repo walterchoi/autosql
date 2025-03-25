@@ -18,7 +18,6 @@ import { AutoSQLHandler } from "../db/autosql";
     parentPort?.on("message", async (task) => {
 
         const { method, params } = task;
-        console.log(`Worker started to complete ${method}`);
         const normalizedParams = Array.isArray(params) ? params : [params];
 
         if (method === "test") {

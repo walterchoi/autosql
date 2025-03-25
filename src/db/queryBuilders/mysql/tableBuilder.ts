@@ -2,6 +2,7 @@ import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from ".
 import { mysqlConfig } from "../../config/mysqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
 import { getUsingClause } from "./alterTableTypeConversion";
+import { generateSafeConstraintName } from "../../../helpers/utilities";
 const dialectConfig = mysqlConfig
 
 export class MySQLTableQueryBuilder {
@@ -66,8 +67,12 @@ export class MySQLTableQueryBuilder {
     
         // Create indexes separately
         for (const index of indexes) {
-            sqlQueries.push({ query: `CREATE INDEX \`${index.replace(/`/g, "")}_idx\` ON ${schemaPrefix}\`${table}\` (\`${index.replace(/`/g, "")}\`);`, params: []});
-        }
+            const indexName = generateSafeConstraintName(table, index, "index").replace(/`/g, "");
+            sqlQueries.push({
+                query: `CREATE INDEX \`${indexName}\` ON ${schemaPrefix}\`${table}\` (\`${index.replace(/`/g, "")}\`);`,
+                params: []
+            });
+        }        
     
         return sqlQueries;
     }

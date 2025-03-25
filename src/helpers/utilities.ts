@@ -1,6 +1,7 @@
 import { defaults, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE, MAX_COLUMN_COUNT } from "../config/defaults";
 import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule } from "../config/types";
 import { groupings } from "../config/groupings";
+import crypto from 'crypto';
 export function isObject(val: any): boolean {
     return val !== null && typeof val === "object";
 }
@@ -655,4 +656,15 @@ function roundStringDecimal(valueStr: string, precision: number): string {
   
     return roundedNum.toString();
 }
-  
+
+export function generateSafeConstraintName(table: string, column: string, type: 'unique' | 'index' = 'unique'): string {
+    const base = `${table}_${column}_${type}`;
+    
+    if (base.length <= 63) return base;
+
+    // Truncate and append a hash for uniqueness
+    const hash = crypto.createHash('md5').update(base).digest('hex').slice(0, 6);
+    const truncated = base.slice(0, 63 - hash.length - 1); // -1 for underscore
+
+    return `${truncated}_${hash}`;
+}
