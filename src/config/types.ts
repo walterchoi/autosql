@@ -75,6 +75,7 @@ export interface DatabaseConfig {
       autoIndexing?: boolean;
       decimalMaxLength?: number;
       maxKeyLength?: number;
+      maxVarcharLength?: number,
 
       sampling?: number;
       samplingMinimum?: number;

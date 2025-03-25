@@ -129,6 +129,12 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         if(metaDataInterim[column].nullCount !== 0) {
             metaData[column].allowNull = true;
         }
+        if(metaData[column].length > (databaseConfig.maxKeyLength || defaults.maxKeyLength) && metaData[column].unique) {
+            metaData[column].unique = false
+        }
+        if(metaData[column].type === 'varchar' && metaData[column].length > (databaseConfig.maxVarcharLength || defaults.maxVarcharLength)) {
+            metaData[column].type = 'text'
+        }
     }
 
     for (const row of remainingData) {
