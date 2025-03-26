@@ -142,7 +142,7 @@ export class MySQLTableQueryBuilder {
             }
 
             if (column.previousType && column.previousType !== column.type) {
-                const updateQuery = getUsingClause(columnName, column.previousType, column.type, table);
+                const updateQuery = getUsingClause(columnName, column.previousType, column.type, table, schema);
                 if (updateQuery) {
                     queries.push({ query: updateQuery, params: [] });
                 }

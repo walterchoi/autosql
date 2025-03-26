@@ -1,5 +1,6 @@
 import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig, InsertInput } from "../../../config/types";
 import { mysqlConfig } from "../../config/mysqlConfig";
+import { getInsertValues } from "../../../helpers/utilities";
 import { compareMetaData } from '../../../helpers/metadata';
 const dialectConfig = mysqlConfig
 
@@ -8,6 +9,7 @@ export class MySQLInsertQueryBuilder {
         let table: string;
         let rows: Record<string, any>[];
         let header: MetadataHeader;
+        
         const schemaPrefix = databaseConfig?.schema ? `\`${databaseConfig.schema}\`.` : "";
 
         if (typeof tableOrInput === "object" && "table" in tableOrInput) {
@@ -26,11 +28,15 @@ export class MySQLInsertQueryBuilder {
 
         const columns = Object.keys(header);
 
-        const params: any[] = [];
-        for (const row of rows) {
-            for (const col of columns) {
-            params.push(row[col] ?? null);
-            }
+        // Flatten values
+        let params: any[] = [];
+        if (typeof rows[0] === "object" && !Array.isArray(rows[0])) {
+            const normalisedChunk = (rows as Record<string, any>[]).map(row =>
+                getInsertValues(header, row, undefined, undefined, false) // ⬅ false = flatten
+            );
+            params = normalisedChunk.flat();
+        } else {
+            params = rows.flat() as any[];
         }
 
         const escapedCols = columns.map(col => `\`${col}\``).join(", ");

@@ -79,7 +79,7 @@ export class MySQLDatabase extends Database {
 
     protected async executeQuery(query: string): Promise<any>;
     protected async executeQuery(QueryInput: QueryInput): Promise<any>;
-    protected async executeQuery(queryOrParams: QueryInput): Promise<{ rows: any; affectedRows?: number }> {
+    protected async executeQuery(queryOrParams: QueryInput): Promise<{ rows: any[]; affectedRows: number }> {
         if (!this.connection) {
             await this.establishConnection();
         }
@@ -90,10 +90,16 @@ export class MySQLDatabase extends Database {
     
         try {
             client = await (this.connection as Pool).getConnection();
-            const [rows, metadata] = await client.query(query, params) as [any, ResultSetHeader | FieldPacket[]];
+            const [rowsOrResult, maybeHeader] = await client.query(query, params) as [any, ResultSetHeader | FieldPacket[]];
     
-            // Ensure metadata exists and has affectedRows (for INSERT, UPDATE, DELETE)
-            const affectedRows = metadata && "affectedRows" in metadata ? (metadata as ResultSetHeader).affectedRows : undefined;
+            const rows = Array.isArray(rowsOrResult) ? rowsOrResult : [];
+            let affectedRows = 0;
+    
+            if (maybeHeader && typeof maybeHeader === 'object' && 'affectedRows' in maybeHeader) {
+                affectedRows = maybeHeader.affectedRows;
+            } else if (rows.length > 0) {
+                affectedRows = rows.length;
+            }
     
             return { rows, affectedRows };
         } catch (error) {
@@ -102,7 +108,7 @@ export class MySQLDatabase extends Database {
         } finally {
             if (client) client.release();
         }
-    }
+    }    
 
     getCreateSchemaQuery(schemaName: string): QueryInput {
         return { query: `CREATE SCHEMA IF NOT EXISTS \`${schemaName}\`;` };

@@ -38,7 +38,7 @@ export const pgsqlConfig: DialectConfig = {
   sqlize:  [
     { regex: "'", replace: "''", type: true },
     { regex: "\\\\", replace: "\\\\\\\\", type: true },
-    { regex: "T", replace: " ", type: ["date", "timestamp", "timestamptz"] },
-    { regex: "Z$", replace: "", type: ["date", "timestamp", "timestamptz"] }
+    { regex: "T", replace: " ", type: ["date", "datetime", "datetimetz"] },
+    { regex: "Z$", replace: "", type: ["date", "datetime", "datetimetz"] }
   ]
 };

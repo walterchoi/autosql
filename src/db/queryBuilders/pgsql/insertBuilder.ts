@@ -1,5 +1,6 @@
 import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig, InsertInput } from "../../../config/types";
 import { pgsqlConfig } from "../../config/pgsqlConfig";
+import { getInsertValues } from "../../../helpers/utilities";
 import { compareMetaData } from '../../../helpers/metadata';
 const dialectConfig = pgsqlConfig
 
@@ -28,11 +29,14 @@ export class PostgresInsertQueryBuilder {
         const columns = Object.keys(header);
 
         // Flatten values
-        const params: any[] = [];
-        for (const row of rows) {
-            for (const col of columns) {
-            params.push(row[col] ?? null);
-            }
+        let params: any[] = [];
+        if (typeof rows[0] === "object" && !Array.isArray(rows[0])) {
+            const normalisedChunk = (rows as Record<string, any>[]).map(row =>
+                getInsertValues(header, row, undefined, undefined, false) // ⬅ false = flatten
+            );
+            params = normalisedChunk.flat();
+        } else {
+            params = rows.flat() as any[];
         }
 
         const quotedCols = columns.map(col => `"${col}"`).join(", ");

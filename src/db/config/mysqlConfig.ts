@@ -34,7 +34,7 @@ export const mysqlConfig: DialectConfig = {
     { regex: "\\\\", replace: "\\\\\\\\", type: true },
     { regex: "^true$", replace: "1", type: ["boolean", "tinyint"] },
     { regex: "^false$", replace: "0", type: ["boolean", "tinyint"] },
-    { regex: "T", replace: " ", type: ["date", "timestamp", "timestamptz"] },
-    { regex: "Z$", replace: "", type: ["date", "timestamp", "timestamptz"] }
+    { regex: "T", replace: " ", type: ["date", "datetime", "datetimetz"] },
+    { regex: "Z$", replace: "", type: ["date", "datetime", "datetimetz"] }
   ]
 };

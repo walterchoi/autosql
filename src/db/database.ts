@@ -91,54 +91,6 @@ export abstract class Database {
 
         throw new Error("Database connection failed after multiple attempts.");
     }
-    
-    public async runQuery(queryOrParams: QueryInput): Promise<QueryResult> {
-        const results: any[] = [];
-        const maxAttempts = maxQueryAttempts || 3;
-        let attempts = 0;
-        let _error: any;
-        const start = new Date();
-        let end: Date;
-        let affectedRows: number | undefined = undefined;
-
-        const QueryInput: QueryInput = typeof queryOrParams === "string" ? { query: queryOrParams, params: [] } : queryOrParams;
-
-        if (!isValidSingleQuery(QueryInput.query)) {
-            return { start, end: new Date(), duration: 0, success: false, error: "Multiple SQL statements detected. Use transactions instead." };
-        }
-
-        while (attempts < maxAttempts) {
-            try {
-                const { rows, affectedRows: rowsAffected } = await this.executeQuery(QueryInput);
-                affectedRows = rowsAffected || 0;
-                end = new Date();
-                return {
-                    start,
-                    end,
-                    duration: end.getTime() - start.getTime(),
-                    affectedRows,
-                    success: true,
-                    results: rows
-                };
-            } catch (error: any) {
-                const permanentErrors = await this.getPermanentErrors();
-                if (permanentErrors.includes(error.code)) {
-                    end = new Date();
-                    return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error.message };
-                }
-    
-                attempts++;
-                if (attempts < maxAttempts) {
-                    await new Promise(res => setTimeout(res, 1000)); // Wait before retry
-                } else {
-                    _error = error;
-                }
-            }
-        }
-    
-        end = new Date();
-        return { start, end, duration: end.getTime() - start.getTime(), success: false, error: _error?.message };
-    }
 
     // Test database connection.
     public async testConnection(): Promise<boolean> {
@@ -245,12 +197,60 @@ export abstract class Database {
             this.config.sshStream = undefined;
         }
     }
+    
+    public async runQuery(queryOrParams: QueryInput): Promise<QueryResult> {
+        const results: any[] = [];
+        const maxAttempts = maxQueryAttempts || 3;
+        let attempts = 0;
+        let _error: any;
+        const start = new Date();
+        let end: Date;
+        let affectedRows: number | undefined = undefined;
+
+        const QueryInput: QueryInput = typeof queryOrParams === "string" ? { query: queryOrParams, params: [] } : queryOrParams;
+
+        if (!isValidSingleQuery(QueryInput.query)) {
+            return { start, end: new Date(), duration: 0, success: false, error: "Multiple SQL statements detected. Use transactions instead." };
+        }
+
+        while (attempts < maxAttempts) {
+            try {
+                const { rows, affectedRows } = await this.executeQuery(QueryInput);
+
+                end = new Date();
+                return {
+                    start,
+                    end,
+                    duration: end.getTime() - start.getTime(),
+                    affectedRows,
+                    success: true,
+                    results: rows
+                };
+
+            } catch (error: any) {
+                const permanentErrors = await this.getPermanentErrors();
+                if (permanentErrors.includes(error.code)) {
+                    end = new Date();
+                    return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error.message };
+                }
+    
+                attempts++;
+                if (attempts < maxAttempts) {
+                    await new Promise(res => setTimeout(res, 1000)); // Wait before retry
+                } else {
+                    _error = error;
+                }
+            }
+        }
+    
+        end = new Date();
+        return { start, end, duration: end.getTime() - start.getTime(), success: false, error: _error?.message };
+    }
 
     public async runTransaction(queriesOrStrings: QueryInput[]): Promise<QueryResult> {
         if (!this.connection) {
             await this.establishConnection();
         }
-    
         let results: any[] = [];
         const maxAttempts = maxQueryAttempts || 3;
         let _error: any;
@@ -270,9 +270,11 @@ export abstract class Database {
                 let attempts = 0;
                 while (attempts < maxAttempts) {
                     try {
-                        const { rows, affectedRows: rowsAffected } = await this.executeQuery(QueryInput);
+                        const { rows, affectedRows } = await this.executeQuery(QueryInput);
+
                         results = results.concat(rows);
-                        if (rowsAffected) totalAffectedRows += rowsAffected;
+                        totalAffectedRows += affectedRows || 0;
+
                         break; // Exit retry loop on success
                     } catch (error: any) {
                         attempts++;
@@ -301,11 +303,12 @@ export abstract class Database {
                 start,
                 end,
                 duration: end.getTime() - start.getTime(),
-                affectedRows: totalAffectedRows,
+                affectedRows: totalAffectedRows || results.length,
                 success: true,
                 results
             };
         } catch (error: any) {
+            console.log(error)
             await this.rollback();
             end = new Date();
             return {

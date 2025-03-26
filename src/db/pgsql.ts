@@ -91,7 +91,7 @@ export class PostgresDatabase extends Database {
 
     protected async executeQuery(query: string): Promise<any>;
     protected async executeQuery(QueryInput: QueryInput): Promise<any>;
-    protected async executeQuery(queryOrParams: QueryInput): Promise<{ rows: any; affectedRows?: number }> {
+    protected async executeQuery(queryOrParams: QueryInput): Promise<{ rows: any[]; affectedRows: number }> {
         if (!this.connection) {
             await this.establishConnection();
         }
@@ -104,7 +104,10 @@ export class PostgresDatabase extends Database {
             client = await (this.connection as Pool).connect();
             const result = await client.query(query, params);
     
-            return { rows: result.rows, affectedRows: result.rowCount ?? undefined };
+            const rows = result.rows || [];
+            const affectedRows = result.rowCount ?? rows.length ?? 0;
+    
+            return { rows, affectedRows };
         } catch (error) {
             if (client) await client.query("ROLLBACK;");
             throw error;

@@ -301,7 +301,7 @@ export class AutoSQLHandler {
         const insertStatements: QueryInput[] = await Promise.all(
             splitData.map((chunk) => {
               const normalisedChunk = chunk.map((row) =>
-                getInsertValues(effectiveMetaData, row, this.db.getDialectConfig(), this.db.getConfig())
+                getInsertValues(effectiveMetaData, row, this.db.getDialectConfig(), this.db.getConfig(), true)
               );
               return this.db.getInsertStatementQuery(table, normalisedChunk, effectiveMetaData);
             })
@@ -366,7 +366,16 @@ export class AutoSQLHandler {
                         ...input,
                         runQuery: false
                     }));
-                    configuredTables = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as (QueryResult | QueryInput[])[]
+                    const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
+                    const failed = workerResults.filter(w => !w.success);
+                    if (failed.length > 0) {
+                        throw new Error(
+                            `Worker execution failed for ${failed.length} task(s):\n` +
+                            failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
+                        );
+                    }
+
+                    configuredTables = workerResults.map(w => w.result);
                 } else {
                     configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[]
                 }
@@ -416,7 +425,16 @@ export class AutoSQLHandler {
                 }));
 
                 if (this.db.getConfig().useWorkers) {
-                    insertQueries = await WorkerHelper.run(this.db.getConfig(), "insertData", insertInput) as (QueryResult | QueryInput[])[];
+                    const workerResults = await WorkerHelper.run(this.db.getConfig(), "insertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
+                    const failed = workerResults.filter(w => !w.success);
+                    if (failed.length > 0) {
+                        throw new Error(
+                            `Worker execution failed for ${failed.length} task(s):\n` +
+                            failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
+                        );
+                    }
+
+                    insertQueries = workerResults.map(w => w.result);
                 } else {
                     insertQueries = await Promise.all(
                         insertInput.map((input) => this.insertData({ ...input, runQuery: false }))

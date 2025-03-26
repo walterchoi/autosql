@@ -338,15 +338,14 @@ export function isMetaDataHeader(input: any): input is MetadataHeader {
 
         // ✅ Optional fields must match expected types
         if (
-            ("length" in column && typeof column.length !== "number") ||
-            ("allowNull" in column && typeof column.allowNull !== "boolean") ||
-            ("unique" in column && typeof column.unique !== "boolean") ||
-            ("index" in column && typeof column.index !== "boolean") ||
-            ("pseudounique" in column && typeof column.pseudounique !== "boolean") ||
-            ("primary" in column && typeof column.primary !== "boolean") ||
-            ("autoIncrement" in column && typeof column.autoIncrement !== "boolean") ||
-            ("decimal" in column && typeof column.decimal !== "number") ||
-            ("default" in column && column.default === undefined) // `default` can be anything except `undefined`
+            ("length" in column && column.length != null && typeof column.length !== "number") ||
+            ("allowNull" in column && column.allowNull != null && typeof column.allowNull !== "boolean") ||
+            ("unique" in column && column.unique != null && typeof column.unique !== "boolean") ||
+            ("index" in column && column.index != null && typeof column.index !== "boolean") ||
+            ("pseudounique" in column && column.pseudounique != null && typeof column.pseudounique !== "boolean") ||
+            ("primary" in column && column.primary != null && typeof column.primary !== "boolean") ||
+            ("autoIncrement" in column && column.autoIncrement != null && typeof column.autoIncrement !== "boolean") ||
+            ("decimal" in column && column.decimal != null && typeof column.decimal !== "number")
         ) {
             return false;
         }
@@ -552,21 +551,27 @@ export function splitInsertData(data: Record<string, any>[], config: DatabaseCon
     return chunks;
 }  
 
-export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig: DialectConfig, databaseConfig?: DatabaseConfig): any[] {
-    return Object.entries(metaData).map(([column, meta]) => {
+export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig?: DialectConfig, databaseConfig?: DatabaseConfig, sqlizeValues: boolean = false): any[] {
+    const newRow = Object.entries(metaData).map(([column, meta]) => {
       let value = row[column];
-  
+    
       if (value === null || value === undefined) {
         // Use calculated default if provided
         if (meta.calculatedDefault !== undefined) {
           value = meta.calculatedDefault;
+        } else if(meta.default !== undefined) {
+            value = meta.default;
         } else {
-          value = null;
+            value = null;
         }
       }
-  
-      return sqlize(value, meta.type, dialectConfig, databaseConfig);
+      if(sqlizeValues && dialectConfig) {
+        return sqlize(value, meta.type, dialectConfig, databaseConfig);
+      } else {
+        return value
+      }
     });
+    return newRow
 }
 
 export function sqlize(value: any, columnType: string | null, dialectConfig: DialectConfig, databaseConfig?: DatabaseConfig ): any {
@@ -608,6 +613,10 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
               const regex = new RegExp(rule.regex, "g");
               strValue = strValue.replace(regex, rule.replace);
             }
+        }
+
+        if(strValue === '' || strValue === 'null') {
+            return null
         }
 
         return strValue
