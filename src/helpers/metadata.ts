@@ -1,5 +1,5 @@
 import { DatabaseConfig } from '../config/types';
-import { normalizeNumber, validateConfig, shuffleArray } from './utilities';
+import { normalizeNumber, validateConfig, shuffleArray, sqlize } from './utilities';
 import { groupings } from '../config/groupings';
 import { collateTypes } from './columnTypes';
 import { predictType } from './columnTypes';
@@ -41,6 +41,10 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     if ((sampling !== undefined || samplingMinimum !== undefined) && (sampling === undefined || samplingMinimum === undefined)) {
         throw new Error("Both sampling percentage and sampling minimum must be provided together.");
     }
+
+    const dialect = databaseConfig.sqlDialect;
+    const db = Database.create({sqlDialect: dialect})
+    const dialectConfig: DialectConfig = db.getDialectConfig()
 
     let sampleData = data;
     let remainingData: Record<string, any>[] = [];
@@ -92,9 +96,9 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
             }
             const type = predictType(value)
             if(!type) continue;
-            
+            const sqlizedValue = sqlize(value, type, dialectConfig, databaseConfig)
             metaDataInterim[column].valueCount++;
-            metaDataInterim[column].uniqueSet.add(value);
+            metaDataInterim[column].uniqueSet.add(sqlizedValue);
             metaDataInterim[column].types.add(type);
             if (groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) {
                 let valueStr = normalizeNumber(value);

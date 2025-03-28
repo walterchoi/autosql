@@ -159,11 +159,11 @@ export class MySQLDatabase extends Database {
                 throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error}`);
             }
         
-            const uniqueIndexes = uniqueIndexesResult.results as { indexname: string; columns: string }[];
+            const uniqueIndexes = uniqueIndexesResult.results as { INDEX_NAME: string; columns: string }[];
         
             indexesToDrop = uniqueIndexes
                 .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
-                .map(({ indexname }) => `DROP INDEX \`${indexname}\``);
+                .map(({ INDEX_NAME }) => `DROP INDEX \`${INDEX_NAME}\``);
         
             if (indexesToDrop.length > 0) {
                 queries.push({
