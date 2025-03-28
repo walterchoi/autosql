@@ -36,5 +36,6 @@ export const mysqlConfig: DialectConfig = {
     { regex: "^false$", replace: "0", type: ["boolean", "tinyint"] },
     { regex: "T", replace: " ", type: ["date", "datetime", "datetimetz"] },
     { regex: "Z$", replace: "", type: ["date", "datetime", "datetimetz"] }
-  ]
+  ],
+  maxIndexCount: 64
 };

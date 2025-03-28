@@ -469,7 +469,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
             });
 
             if (columnDef.primary) {
-            primaryKeys[columnName] = columnDef;
+                primaryKeys[columnName] = columnDef;
             }
         } else {
             newColumns[columnName] = columnDef;
@@ -480,6 +480,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 
     let tableName = Object.keys(newGroupedByTable).pop() || getNextTableName(Object.keys(newGroupedByTable).pop() || table);
     const unallocatedColumns = { ...newColumns };
+    console.log(primaryKeys)
 
     while (Object.keys(unallocatedColumns).length > 0) {
         // ✅ Check the row size before adding new columns

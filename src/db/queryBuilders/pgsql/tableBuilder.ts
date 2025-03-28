@@ -7,6 +7,8 @@ const dialectConfig = pgsqlConfig
 
 export class PostgresTableQueryBuilder {
     static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
+        const maxIndexCount = dialectConfig.maxIndexCount || 64;
+        let remainingIndexSlots = maxIndexCount;
         let sqlQueries: QueryInput[] = [];
         const schemaPrefix = databaseConfig?.schema ? `"${databaseConfig.schema}".` : "";
         let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}"${table}" (\n`;
@@ -51,22 +53,28 @@ export class PostgresTableQueryBuilder {
             sqlQuery += `${columnDef},\n`;
         }
     
-        if (primaryKeys.length) sqlQuery += `PRIMARY KEY (${primaryKeys.join(", ")}),\n`;
-        if (uniqueKeys.length) {
-            sqlQuery += `${uniqueKeys
+        if (primaryKeys.length) {
+            sqlQuery += `PRIMARY KEY (${primaryKeys.join(", ")}),\n`
+            remainingIndexSlots--; // 🔢 count primary key toward the limit
+        }
+        const includedUniqueKeys = uniqueKeys.slice(0, remainingIndexSlots);
+        if (includedUniqueKeys.length) {
+            sqlQuery += `${includedUniqueKeys
                 .map((key) => {
                     const columnName = key.replace(/"/g, '');
                     const constraintName = generateSafeConstraintName(table, columnName, 'unique');
+                    remainingIndexSlots -= includedUniqueKeys.length;
                     return `CONSTRAINT "${constraintName}" UNIQUE("${columnName}")`;
                 })
                 .join(', ')},\n`;
-        }        
+        }
     
         sqlQuery = sqlQuery.slice(0, -2) + "\n);";
         sqlQueries.push({ query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
     
         // Create indexes separately
-        for (const index of indexes) {
+        const limitedIndexes = indexes.slice(0, remainingIndexSlots);
+        for (const index of limitedIndexes) {
             if (!index) continue; // Skip empty index names
         
             const cleanIndex = index.replace(/"/g, '');

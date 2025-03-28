@@ -7,6 +7,8 @@ const dialectConfig = mysqlConfig
 
 export class MySQLTableQueryBuilder {
     static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
+        const maxIndexCount = dialectConfig.maxIndexCount || 64;
+        let remainingIndexSlots = maxIndexCount;
         let sqlQueries: QueryInput[] = [];
         const schemaPrefix = databaseConfig?.schema ? `\`${databaseConfig.schema}\`.` : "";
         let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}\`${table}\` (\n`;
@@ -56,8 +58,15 @@ export class MySQLTableQueryBuilder {
             sqlQuery += `${columnDef},\n`;
         }
     
-        if (primaryKeys.length) sqlQuery += `PRIMARY KEY (${primaryKeys.join(", ")}),\n`;
-        if (uniqueKeys.length) sqlQuery += `${uniqueKeys.map((key) => `UNIQUE(${key})`).join(", ")},\n`;
+        if (primaryKeys.length) {
+            sqlQuery += `PRIMARY KEY (${primaryKeys.join(", ")}),\n`;
+            remainingIndexSlots--; // 🔢 count primary key toward the limit
+        }
+        const includedUniqueKeys = uniqueKeys.slice(0, remainingIndexSlots);
+        if (includedUniqueKeys.length) {
+            sqlQuery += `${includedUniqueKeys.map((key) => `UNIQUE(${key})`).join(", ")},\n`;
+            remainingIndexSlots -= includedUniqueKeys.length;
+        }
     
         sqlQuery = sqlQuery.slice(0, -2) + `) ENGINE=${databaseConfig?.engine || dialectConfig.engine} 
             DEFAULT CHARSET=${databaseConfig?.charset || dialectConfig.charset} 
@@ -66,13 +75,14 @@ export class MySQLTableQueryBuilder {
         sqlQueries.push({query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
     
         // Create indexes separately
-        for (const index of indexes) {
+        const limitedIndexes = indexes.slice(0, remainingIndexSlots);
+        for (const index of limitedIndexes) {
             const indexName = generateSafeConstraintName(table, index, "index").replace(/`/g, "");
             sqlQueries.push({
                 query: `CREATE INDEX \`${indexName}\` ON ${schemaPrefix}\`${table}\` (\`${index.replace(/`/g, "")}\`);`,
                 params: []
             });
-        }        
+        }
     
         return sqlQueries;
     }

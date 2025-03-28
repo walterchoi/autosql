@@ -6,3 +6,4 @@ tsconfig.json
 docker-compose.yml
 DevDoc.md
 tests/utils/config.local.json
+autosql-1.0.0.tgz

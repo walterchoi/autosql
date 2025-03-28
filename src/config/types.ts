@@ -132,6 +132,7 @@ export interface DialectConfig {
     charset: string;
     collate: string;
     encoding: string;
+    maxIndexCount?: number;
 }
 
 export interface InsertResult { 

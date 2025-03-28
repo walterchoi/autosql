@@ -41,5 +41,6 @@ export const pgsqlConfig: DialectConfig = {
     { regex: "T", replace: " ", type: ["date", "datetime", "datetimetz"] },
     { regex: "\\.\\d{3,}Z$", replace: "", type: ["date", "datetime"] },
     { regex: "Z$", replace: "", type: ["date", "datetime", "datetimetz"] }
-  ]
+  ],
+  maxIndexCount: 64
 };

@@ -18,7 +18,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             const columnType = column.type ?? "varchar";
             const columnLength = column.length ?? 255
             const isNumeric = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
-            const isDecimal = column.decimal || column.type == 'decimal' || groupings.specialIntGroup.includes(columnType); // Identify decimal columns
+            const isDecimal = (column.decimal !== 0 && column.decimal !== undefined) || column.type == 'decimal' || groupings.specialIntGroup.includes(columnType); // Identify decimal columns
             const isText = groupings.textGroup.includes(columnType) && columnType !== "varchar";
             const isDate = groupings.dateGroup.includes(columnType);
 
@@ -94,6 +94,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                     if (foundUniqueCombination) break;
                 }
             }
+
             if (!selectedPrimaryKey && !foundUniqueCombination && data && data.length > 0) {
                 const extendedColumns = [...pseudoUniqueColumns, ...dateColumns];
 
@@ -117,7 +118,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                 }
             }
         }
-
+        
         return headers;
     } catch (error) {
         throw new Error(`Error in predictIndexes: ${(error as Error).message}`);

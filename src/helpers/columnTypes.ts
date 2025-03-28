@@ -127,7 +127,7 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
         }
 
         if (types.length === 0) {
-            return "binary";
+            return "binary"; // Default fallback if all inputs were null
         }
 
         // If there's only one unique type, return it
