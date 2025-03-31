@@ -120,26 +120,34 @@ export interface DatabaseConfig {
   charset?: string;
   collate?: string;
   encoding?: string;
-  addTimestamps?: boolean; // If TRUE, runs function ensureTimestamps as part of AutoSQL function. Which adds a dwh_created_at, dwh_modified_at and dwh_loaded_at timestamp columns that are automatically filled. - defaults to TRUE
 
   // Type inference controls
   pseudoUnique?: number; // The % of values that must be unique to be considered pseudoUnique. - defaults to 0.9 (90%)
   autoIndexing?: boolean; // Automatically identify and add indexes to tables when altering / creating - defaults to TRUE
   decimalMaxLength?: number; // Automatically round decimals to a maximum of X decimal places - defaults to 10
   maxKeyLength?: number; // Limits indexes / primary keys from using columns that are longer than this length - defaults to 255
+  maxVarcharLength?: number; // Prevents varchar columns from exceeding this length, autoconverts this length of varchar to text columns -- defaults to 1024 characters
 
   // Sampling controls
-  sampling?: number;
-  samplingMinimum?: number;
+  sampling?: number; // If provided data exceeds samplingMinimum rows, we sample this % of values for identifying uniques and column types — defaults to 0, allows values between 0 and 1
+  samplingMinimum?: number; // If provided data exceeds this row count, sampling kicks in — defaults to 100
 
   // Insert strategy
   insertType?: 'UPDATE' | 'INSERT'; // UPDATE automatically replaces non-primary key values with new values that are found
   insertStack?: number; // Maximum number of rows to insert in one query - defaults to 100
-  safeMode?: boolean; // Prevent the altering of tables if needed - defaults to FALSE 
-  deleteColumns?: boolean; // Drop columns if needed - defaults to FALSE
+  safeMode?: boolean; // Prevent the altering of tables if needed - defaults to false
+  deleteColumns?: boolean; // Drop columns if needed - defaults to false
 
-  // Batching + scaling
-  autoSplit?: boolean;
+  // Timestamp columns
+  addTimestamps?: boolean; // If TRUE, runs function ensureTimestamps as part of AutoSQL function. Which adds a dwh_created_at, dwh_modified_at and dwh_loaded_at timestamp columns that are automatically filled. -- defaults to TRUE
+
+  // Optional advanced insert modes
+  useStagingInsert?: boolean; // Enable temporary staging table insert pattern (if supported) -- defaults to TRUE
+  addHistory?: boolean; // Automatically duplicate rows into history tables before overwrites -- defaults to FALSE
+  historyTables?: string[]; // Names of the tables to have history tracked -- pairs with addHistory above
+  autoSplit?: boolean; // Automatically split large datasets (columns) across multiple tables if needed
+
+  // Performance scaling
   useWorkers?: boolean;
   maxWorkers?: number;
 
@@ -182,37 +190,88 @@ meta_data: [
 ---
 
 ## 🔐 SSH Support
+AutoSQL supports SSH tunneling for connecting to remote MySQL or PostgreSQL servers via an intermediate gateway.
+
+Include the SSH configuration inside your `DatabaseConfig` object under the `sshConfig` key. AutoSQL will automatically establish the tunnel when `establishConnection()` is called.
 
 ```ts
-ssh_config: {
-  username: 'ssh_user',
-  host: 'remote_host',
-  port: 22,
-  password: 'password',
-  private_key: 'PRIVATE_KEY_STRING',
-  private_key_path: '/path/to/key.pem',
-  source_address: 'localhost',
-  source_port: 3306,
-  destination_address: 'remote_sql_host',
-  destination_port: 3306
-}
+const config: DatabaseConfig = {
+  ...
+  sshConfig: {
+    username: 'ssh_user',
+    host: 'remote_host',
+    port: 22,
+    password: 'password',
+    private_key: 'PRIVATE_KEY_STRING',
+    private_key_path: '/path/to/key.pem',
+    source_address: 'localhost',
+    source_port: 3306,
+    destination_address: 'remote_sql_host',
+    destination_port: 3306
+  }
+
+  const db = Database.create(config);
+  await db.establishConnection();
+  // Tunnel is now active and DB connection is routed through it
 ```
 
 ---
 
 ## 📑 Insert Options
 
-These control batching and insert behaviour:
+These control how data is batched, inserted, and optionally how schema alterations are handled.
 
-- `insertType`: `'UPDATE' | 'INSERT'` — Determines behaviour on duplicate keys. `UPDATE` replaces non-primary key values with the new ones. Defaults to `'INSERT'`.
-- `insertStack`: `number` — Maximum number of rows to insert in a single query. Defaults to `100`.
-- `safeMode`: `boolean` — If `true`, prevents table alterations during runtime. Defaults to `false`.
-- `deleteColumns`: `boolean` — Allows dropping of existing columns when altering tables. Defaults to `false`.
-- `autoSplit`: `boolean` — Automatically splits large datasets into smaller chunks if they exceed size limits.
-- `useWorkers`: `boolean` — Enables background workers for batch inserts. Useful for scaling large jobs.
-- `maxWorkers`: `number` — Maximum number of workers to run in parallel.
+### Basic Insert Options
+
+- `insertType`: `'UPDATE' | 'INSERT'`  
+  Determines behaviour on duplicate keys. `UPDATE` replaces non-primary key values with new ones. Defaults to `'INSERT'`.
+
+- `insertStack`: `number`  
+  Maximum number of rows to insert in a single query. Defaults to `100`.
+
+- `safeMode`: `boolean`  
+  If `true`, prevents any table alterations during runtime. Defaults to `false`.
+
+- `deleteColumns`: `boolean`  
+  Allows dropping of existing columns when altering tables. Defaults to `false`.
 
 ---
+
+### ⏱ Timestamp Columns
+
+- `addTimestamps`: `boolean`  
+  If `true`, automatically adds and manages the following timestamp columns:  
+  - `dwh_created_at`,  
+  - `dwh_modified_at`,  
+  - `dwh_loaded_at`  
+  These are injected and updated during insert operations. Defaults to `true`.
+  This will also check a variety of common timestamp columns and will only add the equivalent if they do not exist in the existing data. As an example, modified timestamps will check modified_at, modify_at, modified_date, update_date etc.
+
+---
+
+### 🧪 Advanced Insert Modes
+
+- `useStagingInsert`: `boolean`  
+  Enables a staging table strategy where data is first inserted into a temporary table before being merged into the target. Useful for large or high-concurrency environments. Defaults to `true`.
+
+- `addHistory`: `boolean`  
+  If enabled, before overwriting rows (in `UPDATE` mode), AutoSQL writes the previous version into a corresponding history table. Defaults to `false`.
+
+- `historyTables`: `string[]`  
+  List of table names to track with history inserts. Used in conjunction with `addHistory`.
+
+- `autoSplit`: `boolean`  
+  Automatically splits datasets across multiple tables when the row size or column count exceeds allowed limits. Prevents failed inserts due to row size limits. Defaults to `false`
+
+---
+
+### 🧵 Scaling & Workers
+
+- `useWorkers`: `boolean`  
+  Enables parallel worker threads for inserting batches. Improves performance with large datasets. Defaults to `true`
+
+- `maxWorkers`: `number`  
+  Maximum number of concurrent workers to use during insertion. Must be used with `useWorkers`. Defaults to `8`
 
 ## 🏁 Core Classes: `Database` and `AutoSQLHandler`
 

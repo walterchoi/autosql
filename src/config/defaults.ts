@@ -3,7 +3,7 @@ export const defaults = {
     sampling: 0,
     samplingMinimum: 100,
     maxKeyLength: 255,
-    maxVarcharLength: 255,
+    maxVarcharLength: 1024,
     autoIndexing: true,
     insertType: "UPDATE",
     insertStack: 100,
