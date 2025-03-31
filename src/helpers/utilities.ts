@@ -1,5 +1,5 @@
 import { defaults, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE, MAX_COLUMN_COUNT } from "../config/defaults";
-import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule } from "../config/types";
+import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult } from "../config/types";
 import { groupings } from "../config/groupings";
 import crypto from 'crypto';
 export function isObject(val: any): boolean {
@@ -31,7 +31,10 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             maxKeyLength: defaults.maxKeyLength,
             autoSplit: defaults.autoSplit,
             useWorkers: defaults.useWorkers,
-            maxWorkers: defaults.maxWorkers
+            maxWorkers: defaults.maxWorkers,
+            useStagingInsert: defaults.useStagingInsert,
+            addHistory: defaults.addHistory,
+            addTimestamps: defaults.addTimestamps
         };
 
         // Merge provided config with defaults
@@ -480,7 +483,6 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 
     let tableName = Object.keys(newGroupedByTable).pop() || getNextTableName(Object.keys(newGroupedByTable).pop() || table);
     const unallocatedColumns = { ...newColumns };
-    console.log(primaryKeys)
 
     while (Object.keys(unallocatedColumns).length > 0) {
         // ✅ Check the row size before adding new columns
@@ -636,6 +638,33 @@ export function getNextTableName(tableName: string): string {
     return `${tableName}__part_001`; // If no number exists, start at __part_001
 };
 
+export function getTempTableName(tableName: string): string {
+    const TEMP_PREFIX = "temp_staging__";
+    return tableName.startsWith(TEMP_PREFIX) ? tableName : `${TEMP_PREFIX}${tableName}`;
+}
+
+export function getTrueTableName(tableName: string): string {
+    const TEMP_PREFIX = "temp_staging__";
+    const HISTORY_SUFFIX = "__history";
+  
+    let result = tableName;
+  
+    if (result.startsWith(TEMP_PREFIX)) {
+      result = result.slice(TEMP_PREFIX.length);
+    }
+  
+    if (result.endsWith(HISTORY_SUFFIX)) {
+      result = result.slice(0, -HISTORY_SUFFIX.length);
+    }
+  
+    return result;
+}  
+
+export function getHistoryTableName(tableName: string): string {
+    const HISTORY_SUFFIX = "__history";
+    return tableName.endsWith(HISTORY_SUFFIX) ? tableName : `${tableName}${HISTORY_SUFFIX}`;
+}
+
 export async function wait_x_mseconds (x: number) {
     return new Promise (resolve => {
         setTimeout(() => {    
@@ -677,4 +706,23 @@ export function generateSafeConstraintName(table: string, column: string, type: 
     const truncated = base.slice(0, 63 - hash.length - 1); // -1 for underscore
 
     return `${truncated}_${hash}`;
+}
+
+export function normalizeResultKeys<T extends Record<string, any>>(row: T): Record<string, any> {
+    return Object.fromEntries(
+        Object.entries(row).map(([key, value]) => [key.toLowerCase(), value])
+    );
+}
+
+export function throwIfFailedResults(results: QueryResult[], action = "operation") {
+    const failed = results.filter(r => !r.success);
+  
+    if (failed.length > 0) {
+      const message = `One or more ${action} failed (${failed.length}):\n` +
+        failed
+          .map(r => `- ${r.table || "Unknown Table"}: ${r.error || "Unknown Error"}`)
+          .join("\n");
+  
+      throw new Error(message);
+    }
 }

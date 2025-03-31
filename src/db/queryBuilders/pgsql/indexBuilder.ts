@@ -1,4 +1,5 @@
 import { QueryInput } from "../../../config/types";
+import { getTempTableName } from "../../../helpers/utilities";
 
 export class PostgresIndexQueryBuilder {
     static getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
@@ -48,6 +49,14 @@ export class PostgresIndexQueryBuilder {
         };
     }
 
+    static getDropUniqueConstraintQuery(table: string, indexName: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `"${schema}".` : "";
+        return {
+          query: `ALTER TABLE ${schemaPrefix}"${table}" DROP CONSTRAINT "${indexName}";`,
+          params: []
+        };
+    }
+
     static getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
         const schemaPrefix = schema ? `"${schema}".` : "";
         return {
@@ -59,7 +68,7 @@ export class PostgresIndexQueryBuilder {
     static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `"${schema}".` : "";
         let query = `
-            SELECT i.relname AS indexname, array_to_string(array_agg(a.attname), ', ') AS columns
+            SELECT i.relname AS index_name, array_to_string(array_agg(a.attname), ', ') AS columns
             FROM pg_index ix
             JOIN pg_class i ON i.oid = ix.indexrelid
             JOIN pg_class t ON t.oid = ix.indrelid
@@ -78,5 +87,35 @@ export class PostgresIndexQueryBuilder {
         query += " GROUP BY i.relname;";
 
         return { query, params };
+    }
+
+    static generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `"${schema}".` : "";
+        const tempTable = getTempTableName(table);
+        const t1 = "t1";
+        const t2 = "t2";
+      
+        const conflictColumns = Object.entries(structure.uniques).map(([index_name, cols]) => {
+          const condition = cols.map(col => `${t1}."${col}" = ${t2}."${col}"`).join(" AND ");
+          const alias = index_name;
+      
+          return `  SUM(CASE WHEN ${condition} THEN 1 ELSE 0 END) AS "${alias}"`;
+        });
+      
+        const primaryMismatch = structure.primary.length
+          ? structure.primary.map(col => `${t1}."${col}" IS DISTINCT FROM ${t2}."${col}"`).join(" OR ")
+          : "FALSE";
+      
+        const query = `SELECT
+            ${conflictColumns.join(",\n")}
+            FROM ${schemaPrefix}"${table}" ${t1}
+            JOIN ${schemaPrefix}"${tempTable}" ${t2}
+            ON (${primaryMismatch});
+            `.trim();
+      
+        return {
+          query,
+          params: []
+        };
     }
 }

@@ -256,7 +256,10 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
             const oldColumn = oldHeaders[oldColumnName];
             const newColumn = newHeaders[newColumnName];
 
-            if (oldColumnName !== newColumnName && JSON.stringify(oldColumn) === JSON.stringify(newColumn)) {
+            if (oldColumnName !== newColumnName &&
+                !(oldColumnName in newHeaders) &&
+                !(newColumnName in oldHeaders) &&
+                JSON.stringify(oldColumn) === JSON.stringify(newColumn)) {
                 renameColumns.push({ oldName: oldColumnName, newName: newColumnName });
 
                 if (oldColumn.primary && newColumn.primary) {

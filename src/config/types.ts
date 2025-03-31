@@ -69,7 +69,6 @@ export interface DatabaseConfig {
       charset?: string;
       collate?: string;
       encoding?: string;
-      addTimestamps?: boolean;
 
       pseudoUnique?: number;
       autoIndexing?: boolean;
@@ -87,6 +86,11 @@ export interface DatabaseConfig {
       deleteColumns?: boolean;
 
       autoSplit?: boolean;
+
+      addTimestamps?: boolean;
+      useStagingInsert?: boolean;
+      addHistory?: boolean;
+      historyTables?: string[];
 
       useWorkers?: boolean;
       maxWorkers?: number;
@@ -148,7 +152,8 @@ export interface InsertInput {
   metaData: MetadataHeader,
   previousMetaData: AlterTableChanges | MetadataHeader | null,
   comparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader },
-  runQuery?: boolean
+  runQuery?: boolean,
+  insertType?: "UPDATE" | "INSERT"
 }
 
 export interface QueryResult {

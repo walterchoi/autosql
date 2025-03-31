@@ -9,6 +9,7 @@ import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
 import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
 import { PostgresInsertQueryBuilder } from "./queryBuilders/pgsql/insertBuilder";
 import { AutoSQLHandler } from "./autosql";
+import { normalizeResultKeys } from "../helpers/utilities";
 const dialectConfig = pgsqlConfig
 
 export class PostgresDatabase extends Database {
@@ -170,11 +171,13 @@ export class PostgresDatabase extends Database {
                 throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error}`);
             }
         
-            const uniqueIndexes = uniqueIndexesResult.results as { indexname: string; columns: string }[];
+            const uniqueIndexes = (uniqueIndexesResult.results || [])
+                .map(row => normalizeResultKeys(row))
+                .filter(row => row.columns);
         
-            indexesToDrop = uniqueIndexes
-                .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
-                .map(({ indexname }) => `DROP INDEX IF EXISTS "${indexname}"`);
+            const indexesToDrop = uniqueIndexes
+                .filter(({ columns }) => columns.split(", ").some((col: string) => alterTableChanges.noLongerUnique.includes(col)))
+                .map(({ index_name }) => `DROP INDEX IF EXISTS "${index_name}"`);
         
                 if (indexesToDrop.length > 0) {
                     queries.push({
@@ -225,6 +228,10 @@ export class PostgresDatabase extends Database {
         return PostgresIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.config.schema);
     }
 
+    getDropUniqueConstraintQuery(table: string, indexName: string): QueryInput {
+        return PostgresIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.config.schema);
+    }
+
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
         return PostgresIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.config.schema);
     }
@@ -237,7 +244,23 @@ export class PostgresDatabase extends Database {
         return PostgresTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
     }
 
-    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput {
-        return PostgresInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig())
+    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
+        return PostgresInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig(), insertInput)
+    }
+
+    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
+        return PostgresInsertQueryBuilder.getInsertFromStagingQuery(tableOrInput, metaData, this.getConfig(), insertInput)
+    }
+
+    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader): QueryInput {
+        return PostgresInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig())
+    }
+
+    getCreateTempTableQuery(table: string): QueryInput {
+        return PostgresTableQueryBuilder.getCreateTempTableQuery(table, this.config.schema)
+    }
+
+    getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }): QueryInput {
+        return PostgresIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.config.schema)
     }
 }

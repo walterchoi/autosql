@@ -2,7 +2,7 @@ import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from ".
 import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
 import { getUsingClause } from "./alterTableTypeConversion";
-import { generateSafeConstraintName } from "../../../helpers/utilities";
+import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
 const dialectConfig = pgsqlConfig
 
 export class PostgresTableQueryBuilder {
@@ -63,7 +63,7 @@ export class PostgresTableQueryBuilder {
                 .map((key) => {
                     const columnName = key.replace(/"/g, '');
                     const constraintName = generateSafeConstraintName(table, columnName, 'unique');
-                    remainingIndexSlots -= includedUniqueKeys.length;
+                    remainingIndexSlots --;
                     return `CONSTRAINT "${constraintName}" UNIQUE("${columnName}")`;
                 })
                 .join(', ')},\n`;
@@ -79,7 +79,6 @@ export class PostgresTableQueryBuilder {
         
             const cleanIndex = index.replace(/"/g, '');
             const indexName = generateSafeConstraintName(table, cleanIndex, 'index');
-        
             sqlQueries.push({
                 query: `CREATE INDEX "${indexName}" ON ${schemaPrefix}"${table}" ("${cleanIndex}");`,
                 params: []
@@ -181,6 +180,13 @@ export class PostgresTableQueryBuilder {
     static getDropTableQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `"${schema}".` : "";
         return { query: `DROP TABLE IF EXISTS ${schemaPrefix}"${table}";`, params: []};
+    }
+
+    static getCreateTempTableQuery(table: string, schema?: string): QueryInput {
+        const tempTableName = getTempTableName(table);
+        const schemaPrefix = schema ? `"${schema}".` : "";
+        return {query: `CREATE TABLE IF NOT EXISTS ${schemaPrefix}"${tempTableName}"
+        AS SELECT * FROM ${schemaPrefix}"${table}" LIMIT 0;`, params: []};
     }
 
     static getTableExistsQuery(schema: string, table: string): QueryInput {

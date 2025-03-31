@@ -24,7 +24,7 @@ export function ensureTimestamps(dbConfig: DatabaseConfig, metaData: MetadataHea
         allowNull: false,
         calculated: true,
         updatedCalculated: false,
-        calculatedDefault: startDate
+        calculatedDefault: startDate.toISOString()
       };
     }
   
@@ -34,7 +34,7 @@ export function ensureTimestamps(dbConfig: DatabaseConfig, metaData: MetadataHea
         allowNull: true,
         calculated: true,
         updatedCalculated: true,
-        calculatedDefault: startDate
+        calculatedDefault: startDate.toISOString()
       };
     }
   
@@ -44,7 +44,7 @@ export function ensureTimestamps(dbConfig: DatabaseConfig, metaData: MetadataHea
         allowNull: true,
         calculated: true,
         updatedCalculated: true,
-        calculatedDefault: startDate
+        calculatedDefault: startDate.toISOString()
       };
     }
   

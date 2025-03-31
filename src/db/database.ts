@@ -402,12 +402,17 @@ export abstract class Database {
     public abstract getForeignKeyConstraintsQuery(table: string): QueryInput;
     public abstract getViewDependenciesQuery(table: string): QueryInput;
     public abstract getDropPrimaryKeyQuery(table: string): QueryInput;
+    public abstract getDropUniqueConstraintQuery(table: string, indexName: string): QueryInput;
     public abstract getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput;
     public abstract getUniqueIndexesQuery(table: string, column_name?: string): QueryInput;
     public abstract getTableExistsQuery(schema: string, table: string): QueryInput;
     public abstract getTableMetaDataQuery(schema: string, table: string): QueryInput;
     public abstract getSplitTablesQuery(table: string): QueryInput;
-    public abstract getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput; 
+    public abstract getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT"): QueryInput; 
+    public abstract getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT"): QueryInput; 
+    public abstract getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader): QueryInput; 
+    public abstract getCreateTempTableQuery(table: string): QueryInput;
+    public abstract getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }): QueryInput;
 
     public abstract getMaxConnections(): number;
 }

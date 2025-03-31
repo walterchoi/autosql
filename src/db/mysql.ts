@@ -9,6 +9,7 @@ import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
 import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
 import { MySQLInsertQueryBuilder } from "./queryBuilders/mysql/insertBuilder";
 import { AutoSQLHandler } from "./autosql";
+import { normalizeResultKeys } from "../helpers/utilities";
 const dialectConfig = mysqlConfig
 
 export class MySQLDatabase extends Database {
@@ -159,11 +160,13 @@ export class MySQLDatabase extends Database {
                 throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error}`);
             }
         
-            const uniqueIndexes = uniqueIndexesResult.results as { INDEX_NAME: string; columns: string }[];
+            const uniqueIndexes = (uniqueIndexesResult.results || [])
+                .map(row => normalizeResultKeys(row))
+                .filter(row => row.columns);
         
-            indexesToDrop = uniqueIndexes
-                .filter(({ columns }) => columns.split(", ").some(col => alterTableChanges.noLongerUnique.includes(col)))
-                .map(({ INDEX_NAME }) => `DROP INDEX \`${INDEX_NAME}\``);
+            const indexesToDrop = uniqueIndexes
+                .filter(({ columns }) => columns.split(", ").some((col: string) => alterTableChanges.noLongerUnique.includes(col)))
+                .map(({ index_name }) => `DROP INDEX \`${index_name}\``);
         
             if (indexesToDrop.length > 0) {
                 queries.push({
@@ -209,6 +212,10 @@ export class MySQLDatabase extends Database {
         return MySQLIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.config.schema);
     }
 
+    getDropUniqueConstraintQuery(table: string, indexName: string): QueryInput {
+        return MySQLIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.config.schema);
+    }
+
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
         return MySQLIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.config.schema);
     }
@@ -221,7 +228,23 @@ export class MySQLDatabase extends Database {
         return MySQLTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
     }
 
-    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader): QueryInput {
-        return MySQLInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig())
+    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
+        return MySQLInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig(), insertInput)
+    }
+
+    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
+        return MySQLInsertQueryBuilder.getInsertFromStagingQuery(tableOrInput, metaData, this.getConfig(), insertInput)
+    }
+
+    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader): QueryInput {
+        return MySQLInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig())
+    }
+
+    getCreateTempTableQuery(table: string): QueryInput {
+        return MySQLTableQueryBuilder.getCreateTempTableQuery(table, this.config.schema)
+    }
+
+    getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }): QueryInput {
+        return MySQLIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.config.schema)
     }
 }

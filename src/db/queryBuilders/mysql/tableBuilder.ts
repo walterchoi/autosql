@@ -2,7 +2,7 @@ import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from ".
 import { mysqlConfig } from "../../config/mysqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
 import { getUsingClause } from "./alterTableTypeConversion";
-import { generateSafeConstraintName } from "../../../helpers/utilities";
+import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
 const dialectConfig = mysqlConfig
 
 export class MySQLTableQueryBuilder {
@@ -177,10 +177,16 @@ export class MySQLTableQueryBuilder {
         return queries;
     }
     
-
     static getDropTableQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `\`${schema}\`.` : "";
         return {query: `DROP TABLE IF EXISTS ${schemaPrefix}\`${table}\`;`, params: []};
+    }
+
+    static getCreateTempTableQuery(table: string, schema?: string): QueryInput {
+        const tempTableName = getTempTableName(table);
+        const schemaPrefix = schema ? `\`${schema}\`.` : "";
+        return {query: `CREATE TABLE IF NOT EXISTS ${schemaPrefix}\`${tempTableName}\`
+        AS SELECT * FROM ${schemaPrefix}\`${table}\` LIMIT 0;`, params: []};
     }
 
     static getTableExistsQuery(schema: string, table: string): QueryInput {

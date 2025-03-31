@@ -3,7 +3,7 @@ import { PostgresDatabase } from "./pgsql";
 import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
-import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues } from "../helpers/utilities";
+import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
@@ -99,7 +99,7 @@ export class AutoSQLHandler {
             }
             console.log(`⚡ [autoConfigureTable] Running for table: ${table}`);
 
-            if (!currentMetaDataOrTableChanges && data?.length === 0) {
+            if (!newMetaData && data?.length === 0) {
                 // ❌ Cannot configure table '${table}': No existing metadata and no data provided to infer structure.
                 throw new Error(`No existing metadata and no data provided to infer structure.`);
             }
@@ -228,7 +228,7 @@ export class AutoSQLHandler {
         }
     
         return { currentMetaData, tableExists };
-    }    
+    }
 
     async splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader): Promise<{table: string, data: Record<string, any>[], metaData: MetadataHeader, previousMetaData: MetadataHeader, mergedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }}[]> {
         try {
@@ -266,13 +266,14 @@ export class AutoSQLHandler {
         }
     }
 
-    async insertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery: boolean = true): Promise<QueryInput[] | QueryResult> {
+    async autoInsertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery: boolean = true, inputInsertType?: "UPDATE" | "INSERT"): Promise<QueryInput[] | QueryResult> {
         let table: string;
         let data: Record<string, any>[] = [];
         let metaData: MetadataHeader;
         let previousMetaData: AlterTableChanges | MetadataHeader | null = null;
         let comparedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader } | undefined;
         let runQuery: boolean;
+        let insertType: "UPDATE" | "INSERT"
       
         // ✅ Support InsertInput object
         if (typeof inputOrTable === "object" && "table" in inputOrTable && "data" in inputOrTable) {
@@ -282,6 +283,7 @@ export class AutoSQLHandler {
           previousMetaData = inputOrTable.previousMetaData;
           comparedMetaData = inputOrTable.comparedMetaData;
           runQuery = inputOrTable.runQuery ?? true;
+          insertType = inputOrTable?.insertType || "UPDATE"
         } else {
           // ✅ Support individual parameters
           table = inputOrTable;
@@ -290,6 +292,7 @@ export class AutoSQLHandler {
           previousMetaData = inputPreviousMetaData ?? null;
           comparedMetaData = inputComparedMetaData;
           runQuery = inputRunQuery ?? true
+          insertType = inputInsertType || "UPDATE"
         }
         if (data.length === 0) {
             throw new Error(`insertData: no data rows provided for table "${table}"`);
@@ -303,160 +306,411 @@ export class AutoSQLHandler {
               const normalisedChunk = chunk.map((row) =>
                 getInsertValues(effectiveMetaData, row, this.db.getDialectConfig(), this.db.getConfig(), true)
               );
-              return this.db.getInsertStatementQuery(table, normalisedChunk, effectiveMetaData);
+              return this.db.getInsertStatementQuery(table, normalisedChunk, effectiveMetaData, insertType);
             })
           );
 
         if (insertStatements.length > 0 && runQuery) {
             return await this.db.runTransaction(insertStatements);
         }
-        
         return insertStatements;
+    }
+
+    private async handleMetadata(table: string, data: Record<string, any>[]) {
+        // Fetch existing metadata
+        const { currentMetaData } = await this.fetchTableMetadata(table);
+        
+        // Generate new metadata from incoming data
+        const newMetaData = await getMetaData(this.db.getConfig(), data);
+        this.db.updateTableMetadata(table, newMetaData, "metaData");
+    
+        let initialComparedMetaData : { changes: AlterTableChanges; updatedMetaData: MetadataHeader } | undefined;
+        let mergedMetaData: MetadataHeader = newMetaData;
+        let changes: AlterTableChanges | null = null;
+    
+        if (currentMetaData) {
+            initialComparedMetaData  = compareMetaData(currentMetaData, newMetaData, this.db.getDialectConfig());
+            changes = initialComparedMetaData .changes;
+            mergedMetaData = initialComparedMetaData.updatedMetaData;
+            this.db.updateTableMetadata(table, mergedMetaData, "metaData");
+        }
+    
+        mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData, this.db.startDate);
+    
+        return { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData };
+    }
+
+    private async attemptTableSplit(table: string, data: Record<string, any>[], mergedMetaData: MetadataHeader) {
+        if (this.db.getConfig().autoSplit) {
+            const { rowSize, exceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
+            const columnCount = Object.keys(mergedMetaData).length;
+            const exceedsColumnLimit = columnCount >= MAX_COLUMN_COUNT;
+    
+            if (exceedsLimit || exceedsColumnLimit) {
+                return await this.splitTableData(table, data, mergedMetaData);
+            }
+        }
+        return [];
+    }
+
+    private async prepareInsertData(table: string, data: Record<string, any>[], schema?: string): Promise<InsertInput[]> {
+        // 🔹 Step 1: Handle Metadata
+        const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(table, data);
+    
+        // 🔹 Step 2: Attempt Table Split
+        let insertInput: InsertInput[] = await this.attemptTableSplit(table, data, mergedMetaData);
+    
+        // 🔹 Step 3: Handle the case when split is not needed or failed
+        if (!insertInput || insertInput.length === 0) {
+            // 🔹 Step 3.1: Handle metadata comparison if not split
+            let comparedMetaData = initialComparedMetaData;
+            if (comparedMetaData === undefined) {
+                comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig());
+            }
+    
+            insertInput = [{
+                table,
+                data,
+                previousMetaData: changes || currentMetaData,
+                metaData: mergedMetaData,
+                comparedMetaData
+            }];
+        }
+    
+        return insertInput;
+    }
+    
+
+    private async configureTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
+        if (this.db.getConfig().safeMode) return [];
+    
+        let configuredTables: (QueryResult | QueryInput[])[];
+    
+        // 🔹 Step 1: Auto-configure tables (with Workers or Directly)
+        if (this.db.getConfig().useWorkers) {
+            insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
+            
+            const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
+    
+            const failed = workerResults.filter(w => !w.success);
+            if (failed.length > 0) {
+                throw new Error(
+                    `Worker execution failed for ${failed.length} task(s):\n` +
+                    failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
+                );
+            }
+    
+            configuredTables = workerResults.map(w => w.result);
+        } else {
+            configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[];
+        }
+    
+        // 🔹 Step 2: Split successful results and queries to execute
+        const initialResults: QueryResult[] = configuredTables.filter(
+            (result): result is QueryResult => "success" in result
+        );
+    
+        const queryInputs: QueryInput[][] = configuredTables.filter(
+            (result): result is QueryInput[] => Array.isArray(result)
+        );
+    
+        // 🔹 Step 3: Execute Transactions (if needed)
+        let allResults: QueryResult[];
+        if (queryInputs.length > 0) {
+            const transactionResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(queryInputs);
+            allResults = [...initialResults, ...transactionResults];
+        } else {
+            allResults = [...initialResults];
+        }
+    
+        // 🔹 Step 4: Handle failures
+        throwIfFailedResults(allResults, "table configuring queries")
+    
+        console.log("✅ All tables configured and executed successfully.");
+        return allResults;
+    }
+
+    private async insertData(insertInput: InsertInput[]): Promise<QueryResult[]> {
+        if (insertInput.length === 0) {
+            throw new Error("No data found for insert after tables were configured");
+        }
+    
+        let insertQueries: (QueryResult | QueryInput[])[];
+    
+        // 🔹 Step 1: Handle single insert separately
+        if (insertInput.length === 1) {
+            insertQueries = [
+                await this.autoInsertData({ ...insertInput[0], runQuery: false })
+            ];
+        } else {
+            // 🔹 Step 2: Defer execution & modify inputs
+            insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
+    
+            if (this.db.getConfig().useWorkers) {
+                const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoInsertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
+    
+                const failed = workerResults.filter(w => !w.success);
+                if (failed.length > 0) {
+                    throw new Error(
+                        `Worker execution failed for ${failed.length} task(s):\n` +
+                        failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
+                    );
+                }
+    
+                insertQueries = workerResults.map(w => w.result);
+            } else {
+                insertQueries = await Promise.all(
+                    insertInput.map((input) => this.autoInsertData({ ...input, runQuery: false }))
+                ) as (QueryResult | QueryInput[])[];
+            }
+        }
+    
+        // 🔹 Step 3: Execute Insert Transactions
+        const insertTransactionInputs: QueryInput[][] = insertQueries as QueryInput[][];
+        const allInsertResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(insertTransactionInputs);
+    
+        // 🔹 Step 4: Handle Failures
+        throwIfFailedResults(allInsertResults, "data insert queries")
+    
+        return allInsertResults;
+    }
+
+    private async prepareStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> { 
+        const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
+
+        const stagingQueries: QueryInput[][] = uniqueTables.map(table => {
+            return [this.db.getCreateTempTableQuery(table)];
+        });
+        const allCreateResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingQueries);
+
+        throwIfFailedResults(allCreateResults, "table create queries")
+        return allCreateResults
+    }
+
+    private async insertStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
+        const stagingInputs: InsertInput[] = insertInput.map(input => ({
+            ...input,
+            table: getTempTableName(input.table),
+            insertType: "INSERT"
+        }));
+        return await this.insertData(stagingInputs)
+    }
+
+    private async removeStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> { 
+        const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
+
+        const stagingQueries: QueryInput[][] = uniqueTables.map(table => {
+            const tempTableName = getTempTableName(table);
+            return [this.db.getDropTableQuery(tempTableName)];
+        });
+        const allDropResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingQueries);
+
+        throwIfFailedResults(allDropResults, "table drop queries")
+        return allDropResults
+    }
+
+    private async resolveConflicts(insertInput: InsertInput[]): Promise<void> {
+        const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
+        const uniqueIndexesQuery = uniqueTables.map(table => {
+            return [this.db.getUniqueIndexesQuery(table)]
+        })
+        const primaryKeyQuery = uniqueTables.map(table => {
+            return [this.db.getPrimaryKeysQuery(table)]
+        })
+        const allUniqueKeys : QueryResult[] = await this.db.runTransactionsWithConcurrency(uniqueIndexesQuery);
+        const allPrimaryKeys : QueryResult[] = await this.db.runTransactionsWithConcurrency(primaryKeyQuery);
+        const tableStructure: Record<string, {
+            uniques: Record<string, string[]>,
+            primary: string[]
+        }> = {};
+
+        for (let i = 0; i < uniqueTables.length; i++) {
+            const table = uniqueTables[i];
+            const uniqueIndexes = allUniqueKeys[i];
+            const primaryColumns = allPrimaryKeys[i]
+            if (!uniqueIndexes?.results) continue;
+            if (!primaryColumns?.results) continue;
+    
+            const normalizedUniques = uniqueIndexes.results
+                .map(row => normalizeResultKeys(row))
+                .filter(row => row.columns);
+
+            const normalizedPrimary = primaryColumns.results
+                .map(row => normalizeResultKeys(row))
+                .filter(row => row.column_name);
+
+            if (!tableStructure[table]) {
+                tableStructure[table] = {
+                    uniques: {},
+                    primary: []
+                };
+            }
+            normalizedUniques.forEach(result => {
+                tableStructure[table].uniques[result.index_name] = (result.columns as string)
+                    .split(",")
+                    .map(col => col.trim());
+            });
+        
+            normalizedPrimary.forEach(result => {
+                tableStructure[table].primary.push(result.column_name);
+            });
+        }
+
+        const conflictsQuery = Object.keys(tableStructure).map(table => {
+            return [this.db.getConstraintConflictQuery(table, tableStructure[table])]
+        })
+        const allConflicts : QueryResult[] = await this.db.runTransactionsWithConcurrency(conflictsQuery);
+        const constraintViolations: Record<string, string[]> = {};
+        let removeConstraintsQuery : QueryInput[][] = []
+
+        for (let i = 0; i < allConflicts.length; i++) {
+          const result = allConflicts[i];
+          const table = Object.keys(tableStructure)[i];
+          let tableConstraintsQueries : QueryInput[] = []
+        
+          const row = result?.results?.[0] || {};
+          const violatingIndexes: string[] = [];
+        
+          for (const [indexName, count] of Object.entries(row)) {
+            const numericCount = typeof count === "string" ? parseInt(count) : Number(count);
+            if (numericCount > 0) {
+                violatingIndexes.push(indexName);
+                tableConstraintsQueries.push(this.db.getDropUniqueConstraintQuery(table, indexName))
+            }
+          }
+        
+          if (violatingIndexes.length) {
+            constraintViolations[table] = violatingIndexes;
+            removeConstraintsQuery.push(tableConstraintsQueries)
+          }
+        }
+
+        const removeConstraints : QueryResult[] = await this.db.runTransactionsWithConcurrency(removeConstraintsQuery);
+        throwIfFailedResults(removeConstraints, 'unique constraint removal queries')
+        return;
+    }
+
+    private async insertFromStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
+        const stagingInputs: InsertInput[] = insertInput.map(input => ({
+            ...input,
+            insertType: "UPDATE"
+        }));
+        const stagingInsertQueries = (stagingInputs).map(stagingInput => {
+            return [this.db.getInsertFromStagingQuery(stagingInput)]
+        })
+        const allInsertResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingInsertQueries);
+        throwIfFailedResults(allInsertResults, 'insert from staging table queries') 
+        return allInsertResults
+    }
+
+    private async insertToHistoryTables(insertInputs: InsertInput[]): Promise<QueryResult[]> {
+        const stagingInsertQueries = (insertInputs).map(insertInput => {
+            return [this.db.getInsertChangedRowsToHistoryQuery(insertInput)]
+        })
+        const allInsertResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingInsertQueries);
+        throwIfFailedResults(allInsertResults, 'insert from staging table queries') 
+        return allInsertResults
+    }
+
+    private async insertHistory(insertInput: InsertInput[]): Promise<QueryResult[]> {
+        const config = this.db.getConfig();
+        if (!config.addHistory || !config.historyTables?.length) return [];
+        if(!this.db.getConfig().useStagingInsert) { throw new Error('Cannot add history tables without using staging insert') }
+
+        const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
+        const eligibleInputs = uniqueTables.filter(table =>
+            config.historyTables!.includes(table)
+        );
+        if(eligibleInputs.length == 0) {return []}
+        // Check for current table meta data
+        // RIGHT HERE
+        const historyInputs: InsertInput[] = await Promise.all(
+            eligibleInputs.map(async (table) => {
+              const historyName = getHistoryTableName(table);
+          
+              // Run both metadata fetches in parallel
+              const [currentStatus, historyStatus] = await Promise.all([
+                this.fetchTableMetadata(table),
+                this.fetchTableMetadata(historyName),
+              ]);
+          
+              const currentMetaData = currentStatus.currentMetaData;
+              const currentHistoryMetaData = historyStatus.currentMetaData;
+          
+              if (!currentMetaData) {
+                throw new Error(`Could not find structure of ${table} for history table creation`);
+              }
+          
+              // ✅ Clean up metaData for history table
+              const cleanedMeta: MetadataHeader = {};
+          
+              for (const col in currentMetaData) {
+                const def = { ...currentMetaData[col] };
+                def.unique = false;
+                def.index = false
+                cleanedMeta[col] = def;
+              }
+          
+              // ✅ Add as_at column
+              cleanedMeta["dwh_as_at"] = {
+                type: "datetime",
+                allowNull: false,
+                primary: true,
+              };
+
+              const automatedColumns = ['dwh_created_at', 'dwh_modified_at', 'dwh_loaded_at']
+
+          
+              // ✅ Ensure existing PKs are retained
+              for (const col in currentMetaData) {
+                if (currentMetaData[col].primary) {
+                  cleanedMeta[col].primary = true;
+                }
+                if(automatedColumns.includes(col)) {
+                    cleanedMeta[col].calculated = true
+                }
+              }
+          
+              return {
+                table: historyName,
+                data: [],
+                metaData: cleanedMeta,
+                previousMetaData: currentHistoryMetaData,
+              };
+            })
+        );
+
+        const configuredHistory = await this.configureTables(historyInputs)
+        const insertedHistory = await this.insertToHistoryTables(historyInputs)
+        return insertedHistory
     }
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string): Promise<QueryResult> {
         try {
+
             if(schema) { this.db.updateSchema(schema) }
-            const { currentMetaData } = await this.fetchTableMetadata(table)
-            // ✅ Generate new metadata based on provided data
-            const newMetaData = await getMetaData(this.db.getConfig(), data);
-            this.db.updateTableMetadata(table, newMetaData, "metaData");
 
-            let changes: AlterTableChanges | null = null;
-            let mergedMetaData: MetadataHeader | null = null;
-            let insertInput: InsertInput[] = []
-            let comparedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader } | undefined
-            if(currentMetaData) {
-                comparedMetaData = compareMetaData(currentMetaData, newMetaData, this.db.getDialectConfig());
-                changes = comparedMetaData.changes;
-                mergedMetaData = comparedMetaData.updatedMetaData
-                this.db.updateTableMetadata(table, mergedMetaData, "metaData")
+            let affectedRows : number;
+            let insertResults : QueryResult[]
+
+            let insertInput = await this.prepareInsertData(table, data, schema);
+
+            await this.configureTables(insertInput)
+
+            if(this.db.getConfig().useStagingInsert) {
+                await this.prepareStagingTables(insertInput);
+                await this.insertStagingTables(insertInput);
+                await this.resolveConflicts(insertInput);
+                await this.insertHistory(insertInput);
+                insertResults = await this.insertFromStagingTables(insertInput);
+                await this.removeStagingTables(insertInput);
             } else {
-                mergedMetaData = newMetaData
-            }
-            mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData, this.db.startDate)
-
-            if(this.db.getConfig().autoSplit) {
-                const { rowSize, exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
-                const columnCount = Object.keys(mergedMetaData).length;
-                const exceedsColumnLimit = columnCount >= MAX_COLUMN_COUNT
-                // Split the table structure
-                if(exceedsLimit || exceedsColumnLimit) {
-                    insertInput = await this.splitTableData(table, data, mergedMetaData)
-                }
-            }
-            if(!insertInput || insertInput.length == 0) {
-                if(comparedMetaData === undefined) {
-                    comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig());
-                }
-                insertInput = [{
-                    table,
-                    data,
-                    previousMetaData: changes || currentMetaData,
-                    metaData: mergedMetaData,
-                    comparedMetaData
-                }]
-            }
-
-            if(!this.db.getConfig().safeMode) {
-                // Configure Tables
-                let configuredTables: (QueryResult | QueryInput[])[];
-                if(this.db.getConfig().useWorkers) {
-                    insertInput = insertInput.map((input) => ({
-                        ...input,
-                        runQuery: false
-                    }));
-                    const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
-                    const failed = workerResults.filter(w => !w.success);
-                    if (failed.length > 0) {
-                        throw new Error(
-                            `Worker execution failed for ${failed.length} task(s):\n` +
-                            failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
-                        );
-                    }
-
-                    configuredTables = workerResults.map(w => w.result);
-                } else {
-                    configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[]
-                }
-                const initialResults: QueryResult[] = configuredTables.filter(
-                    (result): result is QueryResult => "success" in result
-                );
-                    
-                const queryInputs: QueryInput[][] = configuredTables.filter(
-                    (result): result is QueryInput[] => Array.isArray(result)
-                );
-
-                let allResults: QueryResult[]
-                if(queryInputs.length > 0) {
-                    const transactionResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(queryInputs);
-                    allResults = [...initialResults, ...transactionResults];
-                } else {
-                    allResults = [...initialResults];
-                }
-
-                const failedResults = allResults.filter((r) => !r.success);
-
-                // ✅ If any table failed, throw an error with details
-                if (failedResults.length > 0) {
-                    throw new Error(
-                    `Table configuration failed for ${failedResults.length} table(s):\n` +
-                    failedResults.map((t) => `- ${t.table || "Unknown Table"}: ${t.error || "Unknown Error"}`).join("\n")
-                    );
-                }
-                console.log("✅ All tables configured and executed successfully.");
-            }
-
-            let insertQueries: (QueryResult | QueryInput[])[];
-
-            if (insertInput.length === 0) {
-                throw new Error("No data found for insert after tables were configured");
-            }
-
-            if (insertInput.length === 1) {
-                insertQueries = [
-                    await this.insertData({ ...insertInput[0], runQuery: false })
-                ];
-            } else {
-                // Defer query execution for now
-                insertInput = insertInput.map((input) => ({
-                    ...input,
-                    runQuery: false
-                }));
-
-                if (this.db.getConfig().useWorkers) {
-                    const workerResults = await WorkerHelper.run(this.db.getConfig(), "insertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
-                    const failed = workerResults.filter(w => !w.success);
-                    if (failed.length > 0) {
-                        throw new Error(
-                            `Worker execution failed for ${failed.length} task(s):\n` +
-                            failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
-                        );
-                    }
-
-                    insertQueries = workerResults.map(w => w.result);
-                } else {
-                    insertQueries = await Promise.all(
-                        insertInput.map((input) => this.insertData({ ...input, runQuery: false }))
-                    ) as (QueryResult | QueryInput[])[];
-                }
-            }
-
-            const insertTransactionInputs: QueryInput[][] = insertQueries as QueryInput[][];
-
-            const allInsertResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(insertTransactionInputs);
-
-            const failedInsertResults = allInsertResults.filter((r) => !r.success);
-
-            if (failedInsertResults.length > 0) {
-                throw new Error(
-                    `Insert failed for ${failedInsertResults.length} chunk(s):\n` +
-                    failedInsertResults.map((t) => `- ${t.table || "Unknown Table"}: ${t.error || "Unknown Error"}`).join("\n")
-                );
+                insertResults = await this.insertData(insertInput);
             }
 
             const start = this.db.startDate;
-            const affectedRows = allInsertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
+            affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
+            const allResults = insertResults.flatMap(res => res.results || []);
             const end = new Date;
             return {
                 start,
@@ -464,7 +718,7 @@ export class AutoSQLHandler {
                 success: true,
                 duration: end.getTime() - start.getTime(),
                 affectedRows,
-                results: allInsertResults,
+                results: allResults,
                 table
             };
         } catch (error: any) {

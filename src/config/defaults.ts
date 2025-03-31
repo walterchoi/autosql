@@ -13,7 +13,9 @@ export const defaults = {
     autoSplit: false,
     useWorkers: true,
     maxWorkers: 8,
-    addTimestamps: true
+    addTimestamps: true,
+    addHistory: false,
+    useStagingInsert: true
 }
 
 export const maxQueryAttempts = 3;
