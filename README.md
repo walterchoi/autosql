@@ -8,6 +8,16 @@
 
 AutoSQL is a TypeScript-powered tool that simplifies and automates the SQL insertion process with intelligent schema prediction, safe table handling, batching, and dialect-specific optimisations for MySQL and PostgreSQL.
 
+## 🌐 Overview
+
+AutoSQL helps engineers and analysts insert structured or semi-structured JSON into SQL databases (MySQL/PostgreSQL) with zero manual schema prep. It's ideal for:
+
+- No-code/low-code tools that export data as raw JSON
+- Rapid data warehousing of API responses or flat files
+- Auto-generating schemas with correct types, keys, and indexes
+
+It shines in modern ETL workflows where structure is unpredictable but SQL output is needed.
+
 ### 🔧 New in This Version:
 - Full **TypeScript** support
 - Core logic restructured into a reusable `Database` **class-based architecture**
@@ -80,7 +90,11 @@ let db: Database;
 db = Database.create(config);
 await db.establishConnection();
 
-await db.insertData({ table: 'target_table', data });
+// Option 1: Direct insert if schema already exists or is managed externally
+await db.autoInsertData({ table: 'target_table', data });
+
+// Option 2: Fully automated schema + insert workflow
+await db.autoSQL('target_table', data);
 
 await db.closeConnection();
 ```
@@ -90,6 +104,7 @@ AutoSQL will:
 - Create or alter the target table
 - Batch insert rows
 - Handle dialect-specific quirks automatically
+- Automatically manage timestamps and optional history tracking (if configured)
 
 ---
 
@@ -106,6 +121,7 @@ export interface DatabaseConfig {
   port?: number;
 
   // Optional table target
+  // ALL SETTINGS BELOW HERE ARE OPTIONAL
   schema?: string;
   table?: string;
 
@@ -141,11 +157,13 @@ export interface DatabaseConfig {
   // Timestamp columns
   addTimestamps?: boolean; // If TRUE, runs function ensureTimestamps as part of AutoSQL function. Which adds a dwh_created_at, dwh_modified_at and dwh_loaded_at timestamp columns that are automatically filled. -- defaults to TRUE
 
-  // Optional advanced insert modes
+    // Optional advanced insert modes
   useStagingInsert?: boolean; // Enable temporary staging table insert pattern (if supported) -- defaults to TRUE
   addHistory?: boolean; // Automatically duplicate rows into history tables before overwrites -- defaults to FALSE
   historyTables?: string[]; // Names of the tables to have history tracked -- pairs with addHistory above
   autoSplit?: boolean; // Automatically split large datasets (columns) across multiple tables if needed
+  addNested?: boolean; // Extracts nested JSON values into separate tables with composite primary keys -- defaults to FALSE
+  nestedTables?: string[]; // Nested Table names to apply nested extraction on -- if nesting `columnA` on `tableB`, this would be [`tableB_columnA`]
 
   // Performance scaling
   useWorkers?: boolean;
@@ -209,6 +227,7 @@ const config: DatabaseConfig = {
     destination_address: 'remote_sql_host',
     destination_port: 3306
   }
+}
 
   const db = Database.create(config);
   await db.establishConnection();
@@ -263,7 +282,25 @@ These control how data is batched, inserted, and optionally how schema alteratio
 - `autoSplit`: `boolean`  
   Automatically splits datasets across multiple tables when the row size or column count exceeds allowed limits. Prevents failed inserts due to row size limits. Defaults to `false`
 
----
+- `addNested`: `boolean`  
+If enabled, AutoSQL will extract nested objects or arrays from a field and insert them into a separate table.  
+Defaults to `false`.
+
+- `nestedTables`: `string[]`  
+  Used in conjunction with `addNested`. Specifies which nested structures should be extracted and written into their own relational tables.  
+
+  **Format:** Each entry should follow the pattern: `"<tableName>_<columnName>"`  
+
+  For each entry:
+  - If the dataset includes a table that matches `<tableName>`,
+  - And that table contains a column named `<columnName>`,
+  - And the column contains a JSON object or an array of JSON objects,
+  - AutoSQL will extract the nested structure into a new table named `<tableName>_<columnName>`
+
+  **Behavior:**
+  - The new nested table will include the parent row’s primary key (e.g., `row1_id`) to maintain relationships
+  - The nested object will define the child table’s schema
+  - Arrays will be flattened—each item becomes a separate row in the nested table
 
 ### 🧵 Scaling & Workers
 
@@ -273,9 +310,9 @@ These control how data is batched, inserted, and optionally how schema alteratio
 - `maxWorkers`: `number`  
   Maximum number of concurrent workers to use during insertion. Must be used with `useWorkers`. Defaults to `8`
 
-## 🏁 Core Classes: `Database` and `AutoSQLHandler`
+## 🏁 Core Classes: `Database` (with AutoSQL Utilities)
 
-These are the primary entry points into AutoSQL's workflow. The `Database` class handles connection management, while `AutoSQLHandler` exposes end-to-end insert automation and table management functions.
+The `Database` class is the primary entry point into AutoSQL's workflow. It handles connection management and exposes high-level `autoSQL` methods for automated insertions, table creation, and metadata handling.
 
 ```ts
 import { Database } from 'autosql';
@@ -283,7 +320,7 @@ import { Database } from 'autosql';
 const db = Database.create(config);
 await db.establishConnection();
 
-const result = await db.autoSQL.autoConfigureTable(
+await db.autoConfigureTable(
   'target_table', // table name
   sampleData,     // raw input data
   null,           // optional existing metadata
@@ -295,70 +332,79 @@ This is the core interface for managing connections, generating queries, and exe
 
 ### ⚙️ `Database` Class
 
-#### 🔹 Core Methods
-- **`getConfig()`** – Returns the full `DatabaseConfig` used to initialise this instance.
-- **`updateTableMetadata(table, metaData, type?)`** – Updates stored metadata under the given table key.
-- **`updateSchema(schema)`** – Updates the current schema name being used.
-- **`getDialect()`** – Returns the SQL dialect (`mysql` or `pgsql`).
-- **`establishConnection()`** – Creates and stores a live database connection.
-- **`runQuery(queryOrParams)`** – Executes a SQL query or list of queries.
-- **`testConnection()`** – Attempts to connect and returns success as boolean.
-- **`checkSchemaExists(schemaName)`** – Returns whether the given schema(s) exist.
-- **`createSchema(schemaName)`** – Creates the schema if it doesn't exist already.
-- **`createTableQuery(table, headers)`** – Returns `QueryInput[]` to create a table.
-- **`alterTableQuery(table, oldHeaders, newHeaders)`** – Returns `QueryInput[]` to alter an existing table.
-- **`dropTableQuery(table)`** – Returns a `QueryInput` to drop a table.
-- **`startTransaction()` / `commit()` / `rollback()`** – Manages manual transaction blocks.
-- **`closeConnection()`** – Safely closes the active DB connection.
-- **`runTransaction(queries)`** – Runs multiple queries inside a single transaction.
-- **`runTransactionsWithConcurrency(queryGroups)`** – Runs multiple query batches in parallel.
-- **`getTableMetaData(schema, table)`** – Fetches current metadata from the DB for a given table.
-
 #### 🔸 Static Method
 - **`Database.create(config)`** – Returns an instance of either `MySQLDatabase` or `PostgresDatabase` based on config.
 
-#### 🧪 Abstract (Dialect-Specific) Methods
-- **`getPermanentErrors()`** – Returns known non-retryable database error codes or patterns.
-- **`getDialectConfig()`** – Provides dialect-specific query constraints and formatting rules.
-- **`establishDatabaseConnection()`** – Initializes the actual SQL driver connection.
-- **`testQuery(query)`** – Runs a query in test mode to validate structure or reachability.
-- **`executeQuery(query)`** – Executes a raw SQL command using the established driver.
-- **`getCreateSchemaQuery(schemaName)`** – Returns a `CREATE SCHEMA` query for the current dialect.
-- **`getCheckSchemaQuery(schemaName)`** – Returns a `SELECT` query to check if schema exists.
-- **`getCreateTableQuery(table, headers)`** – Builds a dialect-specific `CREATE TABLE` statement.
-- **`getAlterTableQuery(table, changesOrOldMeta, newMeta?)`** – Returns SQL to alter a table structure, either from a diff or two sets of metadata.
-- **`getDropTableQuery(table)`** – Produces a `DROP TABLE` statement.
-- **`getPrimaryKeysQuery(table)`** – Returns a query to fetch current primary keys.
-- **`getForeignKeyConstraintsQuery(table)`** – Returns foreign key references to or from this table.
-- **`getViewDependenciesQuery(table)`** – Lists any views that depend on this table.
-- **`getDropPrimaryKeyQuery(table)`** – Builds query to remove current primary key.
-- **`getAddPrimaryKeyQuery(table, keys)`** – Builds query to add primary key using provided column(s).
-- **`getUniqueIndexesQuery(table, column?)`** – Fetches defined unique indexes for a table (and optional column).
-- **`getTableExistsQuery(schema, table)`** – Generates a query to verify the existence of a table.
-- **`getTableMetaDataQuery(schema, table)`** – Extracts column-level metadata from the DB.
-- **`getSplitTablesQuery(table)`** – Returns SQL to list physical table partitions or children (if supported).
-- **`getInsertStatementQuery(tableOrInput, data?, metaData?)`** – Produces a full insert query based on inputs.
-- **`getMaxConnections()`** – Returns a number representing how many DB connections are safe to use (based on configuration).
+#### 🔹 Core Methods
+- **`getConfig()`** – Returns the full `DatabaseConfig` used to initialise this instance.
+- **`updateSchema(schema: string)`** – Updates the current schema name being used.
+- **`getDialect()`** – Returns the SQL dialect (`mysql` or `pgsql`).
+- **`establishConnection()`** – Creates and stores a live database connection.
+- **`testConnection()`** – Attempts to connect and returns success as a boolean.
+- **`runQuery(queryOrParams: QueryInput | QueryInput[])`** – Executes a SQL query or list of queries.
+- **`startTransaction()` / `commit()` / `rollback()`** – Manages manual transaction blocks.
+- **`runTransaction(queries: QueryInput[])`** – Runs multiple queries inside a single transaction.
+- **`runTransactionsWithConcurrency(queryGroups: QueryInput[][])`** – Runs multiple query batches in parallel.
+- **`closeConnection()`** – Safely closes the active DB connection.
+
+#### 🔹 Table and Schema Methods
+- **`checkSchemaExists(schemaName: string)`** – Returns whether the given schema exists.
+- **`createSchema(schemaName: string)`** – Creates the schema if it doesn't exist already.
+- **`createTableQuery(table: string, headers: MetadataHeader)`** – Returns `QueryInput[]` to create a table.
+- **`alterTableQuery(table: string, oldHeaders: MetadataHeader, newHeaders: MetadataHeader)`** – Returns `QueryInput[]` to alter an existing table.
+- **`dropTableQuery(table: string)`** – Returns a `QueryInput` to drop a table.
+- **`getTableMetaData(schema: string, table: string)`** – Fetches current metadata from the DB for a given table.
+
+#### 🔹 AutoSQL Methods (Exposed on `db`)
+
+- **`autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[])`**  
+  The simplest way to handle everything — metadata inference, schema changes, batching, inserting, history, workers, and nested structures — in one call.  
+  Designed for production-ready automation and one-liner ingestion.
+
+- **`autoInsertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery = true, inputInsertType?: 'UPDATE' | 'INSERT')`**  
+  Executes a full insert using the dialect-aware batching engine.  
+  If `inputRunQuery` is `true`, queries are executed via `runTransactionsWithConcurrency()`.  
+  If `false`, a list of insert queries (`QueryInput[]`) is returned without running them.
+
+- **`autoConfigureTable(inputOrTable: InsertInput | string, data?: Record<string, any>[], currentMeta?: MetadataHeader, newMeta?: MetadataHeader, runQuery = true)`**  
+  Determines whether a table should be created or altered based on metadata comparison.  
+  If `runQuery` is `true`, schema changes are applied immediately via `runTransactionsWithConcurrency()`.  
+  If `false`, queries are returned for inspection.
+
+- **`autoCreateTable(table: string, newMetaData: MetadataHeader, tableExists?: boolean, runQuery = true)`**  
+  Creates a new table with the provided metadata.  
+  If `runQuery` is `false`, returns the `CREATE TABLE` queries without executing them.
+
+- **`autoAlterTable(table: string, tableChanges: AlterTableChanges, tableExists?: boolean, runQuery = true)`**  
+  Alters an existing table using a computed diff.  
+  Like above, `runQuery` controls whether to return or execute the queries.
+
+- **`fetchTableMetadata(table: string)`**  
+  Looks up metadata for the given table and returns `{ currentMetaData, tableExists }`.  
+  Used internally for decisions about schema creation or alteration.
+
+- **`splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader)`**  
+  If `autoSplit` is enabled, splits a wide dataset across multiple smaller tables.  
+  Returns an array of `InsertInput` instructions for multi-table insert execution.
+
+- **`handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[])`**  
+  Combines metadata inference and comparison into one call.  
+  Returns an object with:
+  - `currentMetaData`: existing table metadata from the DB  
+  - `newMetaData`: metadata inferred from new data  
+  - `mergedMetaData`: result of merging existing and new metadata  
+  - `initialComparedMetaData`: diff result, if any  
+  - `changes`: schema changes needed for alignment
+
+- **`getMetaData(config: DatabaseConfig, data: Record<string, any>[], primaryKey?: string[])`**  
+  Analyses sample data and returns a metadata map with type, length, nullability, uniqueness, and key suggestions.
+
+- **`compareMetaData(oldMeta: MetadataHeader, newMeta: MetadataHeader)`**  
+  Compares two metadata structures and returns:
+  - `changes`: an `AlterTableChanges` diff object
+  - `updatedMetaData`: the merged metadata structure
 
 Each method is designed to work with the same `Database` instance.
-
----
-
-### ⚙️ `AutoSQLHandler` Class
-
-This class is accessible via `db.autoSQL` and orchestrates metadata generation, table management, and data insertions using a set of high-level, reusable methods.
-
-- **`autoSQL(table, data, schema?)`** – The all-in-one method that runs metadata prediction, table creation or alteration, and full data insertion. Handles worker concurrency, batch splitting, and uses all helper methods under the hood.
-- **`insertData(inputOrTable, data?, metaData?, previousMeta?, comparedMeta?, runQuery = true)`** – Inserts data using the dialect-aware batching engine. Accepts either a combined `InsertInput` or separate arguments.
-- **`splitTableData(table, data, metaData)`** – If enabled, splits a large dataset across multiple tables. Returns an array of table-specific insert instructions.
-- **`fetchTableMetadata(table)`** – Retrieves existing metadata from the database and returns `{ currentMetaData, tableExists }`.
-- **`autoConfigureTable(inputOrTable, data?, currentMeta?, newMeta?, runQuery = true)`** – Smart wrapper that checks if a table needs to be created or altered based on incoming metadata.
-- **`autoAlterTable(table, tableChanges, tableExists?, runQuery = true)`** – Alters the table structure using a pre-computed `AlterTableChanges` object.
-- **`autoCreateTable(table, newMetaData, tableExists?, runQuery = true)`** – Creates a new table using the provided metadata definition.
-- **`getMetaData(config, data)`** – Analyses a sample dataset and returns metadata including types, lengths, and uniqueness predictions.
-- **`compareMetaData(oldMeta, newMeta)`** – Compares two metadata structures and returns the necessary changes.
-
-Each of these methods is used internally by `autoSQL` and can be called directly for more granular control.
 
 ---
 

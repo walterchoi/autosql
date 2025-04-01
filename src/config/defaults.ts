@@ -16,7 +16,8 @@ export const defaults = {
     maxWorkers: 8,
     addTimestamps: true,
     addHistory: false,
-    useStagingInsert: true
+    useStagingInsert: true,
+    addNested: false
 }
 
 export const maxQueryAttempts = 3;

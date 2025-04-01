@@ -9,7 +9,7 @@ import { setSSH } from '../helpers/ssh';
 export abstract class Database {
     protected connection: any | null = null;
     protected config: DatabaseConfig;
-    public autoSQL!: AutoSQLHandler;
+    public autoSQLHandler!: AutoSQLHandler;
     startDate : Date = new Date();
     protected abstract getPermanentErrors(): Promise<string[]>;
 
@@ -416,6 +416,34 @@ export abstract class Database {
     public abstract getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }): QueryInput;
 
     public abstract getMaxConnections(): number;
+
+    get autoSQL() {
+        return this.autoSQLHandler.autoSQL.bind(this.autoSQLHandler);
+    }
+
+    get autoCreateTable() {
+        return this.autoSQLHandler.autoCreateTable.bind(this.autoSQLHandler);
+    }
+
+    get autoAlterTable() {
+        return this.autoSQLHandler.autoAlterTable.bind(this.autoSQLHandler);
+    }
+
+    get fetchTableMetadata() {
+        return this.autoSQLHandler.fetchTableMetadata.bind(this.autoSQLHandler);
+    }
+
+    get splitTableData() {
+        return this.autoSQLHandler.splitTableData.bind(this.autoSQLHandler);
+    }
+
+    get autoInsertData() {
+        return this.autoSQLHandler.autoInsertData.bind(this.autoSQLHandler);
+    }
+
+    get handleMetadata() {
+        return this.autoSQLHandler.handleMetadata.bind(this.autoSQLHandler);
+    }
 }
 
 import { MySQLDatabase } from "./mysql";

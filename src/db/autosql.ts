@@ -380,7 +380,6 @@ export class AutoSQLHandler {
         return insertInput;
     }
     
-
     private async configureTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
         if (this.db.getConfig().safeMode) return [];
     
@@ -692,6 +691,67 @@ export class AutoSQLHandler {
         const insertedHistory = await this.insertToHistoryTables(historyInputs)
         return insertedHistory
     }
+
+    private async extractNestedInputs(inputs: InsertInput[]): Promise<InsertInput[]> {
+        if(!this.db.getConfig().addNested) { 
+            return []
+        }
+        const nestedInputs: InsertInput[] = [];
+        const nestedMap: Record<string, Record<string, any>[]> = {};
+        const primaryMap: Record<string, string[]> = {};
+
+        for (const input of inputs) {
+          const { table, data, metaData } = input;
+          const primaryKeys = Object.keys(metaData).filter(k => metaData[k].primary);
+      
+          for (const row of data) {
+            for (const [key, value] of Object.entries(row)) {
+                const nestedTable = `${table}_${key}`;
+                // Check if the key is a nested table
+                if(!this.db.getConfig().nestedTables?.includes(nestedTable)) { continue; }
+              if (value && typeof value === "object") {
+
+                const nestedObjects: Record<string, any>[] = Array.isArray(value)
+                    ? value.filter(v => typeof v === "object" && !Array.isArray(v))
+                    : [value];
+                
+                for (const nested of nestedObjects) {
+                    const newRow = {
+                      ...nested,
+                      ...Object.fromEntries(primaryKeys.map(pk => [pk, row[pk]]))
+                    };
+                
+                    // Group by nested table name
+                    if (!nestedMap[nestedTable]) {
+                        nestedMap[nestedTable] = [];
+                    }
+                    if(!primaryMap[nestedTable]) {
+                        primaryMap[nestedTable] = primaryKeys
+                    }
+                    nestedMap[nestedTable].push(newRow);
+                }
+              }
+            }
+          }
+        }
+      
+        for (const [nestedTable, nestedRows] of Object.entries(nestedMap)) {
+            const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(nestedTable, nestedRows, primaryMap[nestedTable]);
+            let comparedMetaData = initialComparedMetaData;
+            if (comparedMetaData === undefined) {
+                comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig());
+            }
+            const insertInput : InsertInput = {
+                table: nestedTable,
+                data: nestedRows,
+                previousMetaData: changes || currentMetaData,
+                metaData: mergedMetaData,
+                comparedMetaData
+            };
+            nestedInputs.push(insertInput);
+        }
+        return nestedInputs;
+    } 
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[]): Promise<QueryResult> {
         try {
@@ -701,6 +761,9 @@ export class AutoSQLHandler {
             let affectedRows : number;
             let insertResults : QueryResult[]
             let insertInput = await this.prepareInsertData(table, data, schema, primaryKey);
+            let nestedInputs = await this.extractNestedInputs(insertInput)
+            insertInput = [...insertInput, ...nestedInputs];
+            
             await this.configureTables(insertInput)
 
             if(this.db.getConfig().useStagingInsert) {
@@ -713,6 +776,8 @@ export class AutoSQLHandler {
             } else {
                 insertResults = await this.insertData(insertInput);
             }
+
+            insertResults = []
 
             const start = this.db.startDate;
             affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);

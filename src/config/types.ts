@@ -94,6 +94,8 @@ export interface DatabaseConfig {
       useStagingInsert?: boolean;
       addHistory?: boolean;
       historyTables?: string[];
+      addNested?: boolean;
+      nestedTables?: string[];
 
       useWorkers?: boolean;
       maxWorkers?: number;

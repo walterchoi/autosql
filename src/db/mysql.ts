@@ -15,7 +15,7 @@ const dialectConfig = mysqlConfig
 export class MySQLDatabase extends Database {
     constructor(config: DatabaseConfig) {
         super(config);
-        this.autoSQL = new AutoSQLHandler(this);
+        this.autoSQLHandler = new AutoSQLHandler(this);
     }
 
     async establishDatabaseConnection(): Promise<void> {

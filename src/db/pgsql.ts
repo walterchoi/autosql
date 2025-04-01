@@ -15,7 +15,7 @@ const dialectConfig = pgsqlConfig
 export class PostgresDatabase extends Database {
     constructor(config: DatabaseConfig) {
         super(config);
-        this.autoSQL = new AutoSQLHandler(this);
+        this.autoSQLHandler = new AutoSQLHandler(this);
     }
 
     async establishDatabaseConnection(): Promise<void> {

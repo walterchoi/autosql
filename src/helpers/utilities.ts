@@ -35,7 +35,8 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             useStagingInsert: defaults.useStagingInsert,
             addHistory: defaults.addHistory,
             addTimestamps: defaults.addTimestamps,
-            decimalMaxLength: defaults.decimalMaxLength
+            decimalMaxLength: defaults.decimalMaxLength,
+            addNested: defaults.addNested,
         };
 
         // Merge provided config with defaults

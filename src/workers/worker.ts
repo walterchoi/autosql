@@ -13,7 +13,7 @@ import { AutoSQLHandler } from "../db/autosql";
     const { dbConfig } = workerData;
     let db : Database
     db = Database.create(dbConfig);
-    const autoSQL = db.autoSQL as AutoSQLHandler;
+    const autoSQL = db.autoSQLHandler as AutoSQLHandler;
 
     parentPort?.on("message", async (task) => {
 
