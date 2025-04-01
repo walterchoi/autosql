@@ -9,6 +9,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         const maxKeyLength = maxKeyLengthInput || defaults.maxKeyLength;
         let primaryKeyFound = false;
 
+        let requiredPrimaryKeys: string[] = [];
         let potentialPrimaryKeys: string[] = [];
         let potentialCompositeKeys: string[] = [];
         let NullablePseudoUniqueColumns: string[] = [];
@@ -37,15 +38,16 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             // If an explicit primary key is defined, set it
             if (primaryKey && primaryKey.includes(columnName)) {
                 column.primary = true;
-                primaryKeyFound = true;
-            }
-
-            // ✅ Only consider unique columns that do NOT allow nulls as a primary key candidate
-            if (column.unique && !column.allowNull) {
+                headers[columnName].primary = true;
+                if (column.unique && !column.allowNull) {
+                    potentialPrimaryKeys.push(columnName);
+                    primaryKeyFound = true;
+                } else {
+                    requiredPrimaryKeys.push(columnName);
+                }
+            } else if (column.unique && !column.allowNull) { // ✅ Only consider unique columns that do NOT allow nulls as a primary key candidate
                 potentialPrimaryKeys.push(columnName);
-            }
-
-            if (column.pseudounique && !column.allowNull) {
+            } else if ((column.pseudounique || column.categorical) && !column.allowNull) {
                 potentialCompositeKeys.push(columnName)
             } else if (column.pseudounique) {
                 NullablePseudoUniqueColumns.push(columnName)
@@ -54,39 +56,55 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         
         if (!primaryKeyFound) {
             let selectedPrimaryKey: string[] | null = null;
-
-            // 1️⃣ Prefer a numeric unique column first
-            for (const key of potentialPrimaryKeys) {
-                if (groupings.intGroup.includes(headers[key].type ?? "")) {
-                    selectedPrimaryKey = [key];
-                    break;
+            if (potentialPrimaryKeys && potentialPrimaryKeys.length > 0) {
+                let idLikeKey: string | null = null;
+                let numericKey: string | null = null;
+                let shortestKey: string = potentialPrimaryKeys[0];
+              
+                for (const key of potentialPrimaryKeys) {
+                  const type = headers[key]?.type ?? "";
+              
+                  // Prefer key ending in 'id' or '_id'
+                  if (!idLikeKey && /(_id|id)$/i.test(key)) {
+                    idLikeKey = key;
+                  }
+              
+                  // Prefer numeric type
+                  if (!numericKey && groupings.intGroup.includes(type)) {
+                    numericKey = key;
+                  }
+              
+                  // Track shortest as fallback
+                  if (key.length < shortestKey.length) {
+                    shortestKey = key;
+                  }
                 }
-            }
-
-            // 2️⃣ If no numeric key, prefer ID-patterned strings or shortest column
-            if(potentialPrimaryKeys && potentialPrimaryKeys.length > 0) {
-                const idPatternKey = potentialPrimaryKeys.find(key => /(_id|id)$/i.test(key));
-                const shortestKey = potentialPrimaryKeys.reduce((a, b) => (a.length < b.length ? a : b));
-                if (!selectedPrimaryKey) {
-                    selectedPrimaryKey = idPatternKey ? [idPatternKey] : shortestKey ? [shortestKey] : null;
-                }
-            }
+              
+                // Pick in order of priority
+                selectedPrimaryKey = idLikeKey
+                  ? [idLikeKey]
+                  : numericKey
+                  ? [numericKey]
+                  : shortestKey
+                  ? [shortestKey]
+                  : null;
+            }      
             
             // ✅ If no unique column exists, try pseudo-unique combinations using data
             let foundUniqueCombination = false;
-            const pseudoUniqueColumns = Object.keys(headers).filter(col => headers[col].pseudounique);
             const dateColumns = Object.keys(headers).filter(
                 col => groupings.dateGroup.includes(headers[col].type ?? "") && headers[col].allowNull !== true
             );
             
             if (!selectedPrimaryKey && data && data.length > 0) {
                 // Find the smallest set of pseudo-unique columns that together are unique
-                for (let i = 1; i <= pseudoUniqueColumns.length; i++) {
-                    const combinations = generateCombinations(pseudoUniqueColumns, i);
+                for (let i = 1; i <= potentialCompositeKeys.length; i++) {
+                    const combinations = generateCombinations(potentialCompositeKeys, i);
         
                     for (const combo of combinations) {
-                        if (isCombinationUnique(data, combo)) {
-                            selectedPrimaryKey = combo;
+                        const fullCombo = Array.from(new Set([...requiredPrimaryKeys, ...combo]));
+                        if (isCombinationUnique(data, fullCombo)) {
+                            selectedPrimaryKey = fullCombo;
                             foundUniqueCombination = true;
                             break;
                         }
@@ -96,14 +114,15 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             }
 
             if (!selectedPrimaryKey && !foundUniqueCombination && data && data.length > 0) {
-                const extendedColumns = [...pseudoUniqueColumns, ...dateColumns];
+                const extendedColumns = [...potentialCompositeKeys, ...dateColumns];
 
                 for (let i = 1; i <= extendedColumns.length; i++) {
                     const combinations = generateCombinations(extendedColumns, i);
     
                     for (const combo of combinations) {
-                        if (isCombinationUnique(data, combo)) {
-                            selectedPrimaryKey = combo; // ✅ Assign combo with date column
+                        const fullCombo = Array.from(new Set([...requiredPrimaryKeys, ...combo]));
+                        if (isCombinationUnique(data, fullCombo)) {
+                            selectedPrimaryKey = fullCombo; // ✅ Assign combo with date column
                             foundUniqueCombination = true;
                             break;
                         }
@@ -118,7 +137,6 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                 }
             }
         }
-        
         return headers;
     } catch (error) {
         throw new Error(`Error in predictIndexes: ${(error as Error).message}`);

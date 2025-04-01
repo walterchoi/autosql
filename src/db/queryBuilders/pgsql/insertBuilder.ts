@@ -186,7 +186,6 @@ export class PostgresInsertQueryBuilder {
           ON ${joinCondition}
         WHERE ${diffCondition};
         `.trim();
-      console.log(query)
       return {
         query,
         params: []

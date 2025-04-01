@@ -116,7 +116,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 expect(queryStr).toContain("\"email\" varchar(255) NOT NULL");
                 expect(queryStr).toContain("\"is_active\" boolean NOT NULL DEFAULT true");
                 expect(queryStr).toContain("PRIMARY KEY (\"user_id\")");
-                expect(queryStr).toContain("CONSTRAINT \"create_table_complex_test_table_user_uuid_key\" UNIQUE(\"user_uuid\")");
+                expect(queryStr).toContain("CONSTRAINT \"create_table_complex_test_table_user_uuid_unique\" UNIQUE(\"user_uuid\")");
             }
         });
 
@@ -155,7 +155,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 expect(queryStr).toContain("UNIQUE(`user_uuid`)");
             } else if (config.sqlDialect === "pgsql") {
                 expect(queryStr).toContain("PRIMARY KEY (\"user_id\")");
-                expect(queryStr).toContain("CONSTRAINT \"create_table_complex_test_table_user_uuid_key\" UNIQUE(\"user_uuid\")");
+                expect(queryStr).toContain("CONSTRAINT \"create_table_complex_test_table_user_uuid_unique\" UNIQUE(\"user_uuid\")");
             }
         });        
     });

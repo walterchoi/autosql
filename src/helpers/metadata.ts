@@ -3,7 +3,7 @@ import { normalizeNumber, validateConfig, shuffleArray, sqlize } from './utiliti
 import { groupings } from '../config/groupings';
 import { collateTypes } from './columnTypes';
 import { predictType } from './columnTypes';
-import { defaults } from '../config/defaults';
+import { defaults, nonCategoricalTypes } from '../config/defaults';
 import { predictIndexes } from './keys';
 import { Database } from '../db/database';
 import { supportedDialects, DialectConfig, ColumnDefinition, MetadataHeader, metaDataInterim, AlterTableChanges } from '../config/types';
@@ -107,7 +107,6 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 }
                 const decimalLen = valueStr.includes(".") ? valueStr.split(".")[1].length : 0;
                 const integerLen = valueStr.split(".")[0].length;
-
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
 
@@ -129,6 +128,10 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
             metaData[column].unique = true;
         } else if (uniquePercentage >= (databaseConfig.pseudoUnique || defaults.pseudoUnique) && metaDataInterim[column].uniqueSet.size > 0) {
             metaData[column].pseudounique = true;
+        } else if (uniquePercentage <= (databaseConfig.categorical || defaults.categorical) && metaDataInterim[column].uniqueSet.size > 0 && !nonCategoricalTypes.includes(type)) {
+            metaData[column].categorical = true;
+        } else if (metaDataInterim[column].uniqueSet.size == 1 && metaDataInterim[column].nullCount == 0 && metaDataInterim[column].valueCount > 0) {
+            metaData[column].singleValue = true;
         }
         if(metaDataInterim[column].nullCount !== 0) {
             metaData[column].allowNull = true;
@@ -154,7 +157,6 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 const decimalLen = valueStr.includes(".") ? valueStr.split(".")[1].length : 0;
                 const integerLen = valueStr.split(".")[0].length;
 
-
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
 
@@ -169,11 +171,10 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         metaData[column].length = metaDataInterim[column].length || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
     }
-
     return metaData
 }
 
-export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, data: Record<string, any>[]) : Promise<MetadataHeader> {
+export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, data: Record<string, any>[], primaryKey?: string[]) : Promise<MetadataHeader> {
     try {
         let validatedConfig: DatabaseConfig;
         let dbInstance: Database | undefined;
@@ -203,7 +204,7 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
         const headers = await getDataHeaders(data, validatedConfig)
         let metaData : MetadataHeader
         if(validatedConfig.autoIndexing) {
-            metaData = predictIndexes(headers, validatedConfig.maxKeyLength, validatedConfig.primaryKey, data)
+            metaData = predictIndexes(headers, validatedConfig.maxKeyLength, primaryKey || validatedConfig.primaryKey, data)
         } else {
             metaData = headers
         }

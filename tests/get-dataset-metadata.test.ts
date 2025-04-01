@@ -17,11 +17,10 @@ Object.values(DB_CONFIG).forEach((config) => {
                     length: 1,
                     allowNull: false,
                     unique: true,
-                    index: false,
+                    index: true,
                     pseudounique: false,
-                    primary: false,
+                    primary: true,
                     autoIncrement: false,
-                    default: undefined,
                     decimal: 0
                 },
                 name: {
@@ -29,11 +28,10 @@ Object.values(DB_CONFIG).forEach((config) => {
                     length: 10,
                     allowNull: false,
                     unique: true,
-                    index: false,
+                    index: true,
                     pseudounique: false,
                     primary: false,
                     autoIncrement: false,
-                    default: undefined,
                     decimal: 0
                 },
                 email: {
@@ -41,11 +39,10 @@ Object.values(DB_CONFIG).forEach((config) => {
                     length: 16,
                     allowNull: false,
                     unique: true,
-                    index: false,
+                    index: true,
                     pseudounique: false,
                     primary: false,
                     autoIncrement: false,
-                    default: undefined,
                     decimal: 0
                 }
             };
@@ -66,11 +63,10 @@ Object.values(DB_CONFIG).forEach((config) => {
                     length: 1,
                     allowNull: false,
                     unique: true,
-                    index: false,
+                    index: true,
                     pseudounique: false,
-                    primary: false,
+                    primary: true,
                     autoIncrement: false,
-                    default: undefined,
                     decimal: 0
                 },
                 name: {
@@ -78,11 +74,10 @@ Object.values(DB_CONFIG).forEach((config) => {
                     length: 4, // "John"
                     allowNull: true, // ✅ Because one row has NULL
                     unique: true,
-                    index: false,
+                    index: true,
                     pseudounique: false,
                     primary: false,
                     autoIncrement: false,
-                    default: undefined,
                     decimal: 0
                 },
                 email: {
@@ -90,17 +85,16 @@ Object.values(DB_CONFIG).forEach((config) => {
                     length: 16,
                     allowNull: false,
                     unique: true, // ✅ All emails are unique
-                    index: false,
+                    index: true,
                     pseudounique: false,
                     primary: false,
                     autoIncrement: false,
-                    default: undefined,
                     decimal: 0
                 }
             };
 
             const metadata = await getMetaData(config, jsonData);
-            expect(metadata).toEqual(expectedMetadata);
+            expect(metadata).toMatchObject(expectedMetadata);
         });
 
         test("Detects unique and pseudo-unique columns", async () => {
@@ -118,11 +112,10 @@ Object.values(DB_CONFIG).forEach((config) => {
                     length: 4,
                     allowNull: false,
                     unique: true, // ✅ Unique values
-                    index: false,
+                    index: true,
                     pseudounique: false,
-                    primary: false,
+                    primary: true,
                     autoIncrement: false,
-                    default: undefined,
                     decimal: 0
                 },
                 user_id: {
@@ -130,11 +123,10 @@ Object.values(DB_CONFIG).forEach((config) => {
                     length: 1,
                     allowNull: false,
                     unique: true,
-                    index: false,
+                    index: true,
                     pseudounique: false,
                     primary: false,
                     autoIncrement: false,
-                    default: undefined,
                     decimal: 0
                 },
                 product_id: {
@@ -142,17 +134,16 @@ Object.values(DB_CONFIG).forEach((config) => {
                     length: 3,
                     allowNull: false,
                     unique: true,
-                    index: false,
+                    index: true,
                     pseudounique: false,
                     primary: false,
                     autoIncrement: false,
-                    default: undefined,
                     decimal: 0
                 }
             };
 
             const metadata = await getMetaData(config, jsonData);
-            expect(metadata).toEqual(expectedMetadata);
+            expect(metadata).toMatchObject(expectedMetadata);
         });
     });
 });

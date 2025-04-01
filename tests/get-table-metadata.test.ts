@@ -85,7 +85,6 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             // ✅ Create table before testing metadata retrieval
             const queries = db.createTableQuery(TEST_TABLE_NAME, TEST_COLUMNS);
-            console.log(queries)
             for (const query of queries) {
                 await db.runQuery(query);
             }

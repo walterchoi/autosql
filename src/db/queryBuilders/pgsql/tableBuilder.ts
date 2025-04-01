@@ -28,7 +28,7 @@ export class PostgresTableQueryBuilder {
     
             // Handle column lengths
             if (column.length && dialectConfig.requireLength.includes(columnType)) {
-                columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
+                columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
             }
     
             // Use SERIAL for Auto-incrementing Primary Keys
@@ -137,8 +137,8 @@ export class PostgresTableQueryBuilder {
                     columnType = dialectConfig.translate.localToServer[columnType];
                 }
                 let columnDef = `SET DATA TYPE ${columnType}`;
-                if (column.length && !pgsqlConfig.noLength.includes(column.type ?? "")) {
-                    columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
+                if (column.length && !dialectConfig.noLength.includes(column.type ?? "")) {
+                    columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
                 }
                 if (column.previousType && column.previousType !== column.type) {
                     const usingExpr = getUsingClause(columnName, column.previousType, column.type);

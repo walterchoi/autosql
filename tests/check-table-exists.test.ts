@@ -23,7 +23,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         test("Check table existence when table exists", async () => {
             // ✅ Ensure the test table exists first
             const createTableQuery = `CREATE TABLE ${db.getConfig().schema || db.getConfig().database || ""}.${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(50));`;
-            await db.runQuery(createTableQuery);
+            const createdTable = await db.runQuery(createTableQuery);
 
             // ✅ Check if the table exists
             const checkTableExistsQuery = db.getTableExistsQuery(
@@ -31,7 +31,6 @@ Object.values(DB_CONFIG).forEach((config) => {
                 TEST_TABLE_NAME
             );
             const result = await db.runQuery(checkTableExistsQuery);
-
             // ✅ Expect result to show that table exists
             expect(result!.results!.length).toBe(1);
             expect(Boolean(Number(result!.results![0].count))).toBe(true);

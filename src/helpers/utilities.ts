@@ -34,7 +34,8 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             maxWorkers: defaults.maxWorkers,
             useStagingInsert: defaults.useStagingInsert,
             addHistory: defaults.addHistory,
-            addTimestamps: defaults.addTimestamps
+            addTimestamps: defaults.addTimestamps,
+            decimalMaxLength: defaults.decimalMaxLength
         };
 
         // Merge provided config with defaults
@@ -569,7 +570,8 @@ export function getInsertValues(metaData: MetadataHeader, row: Record<string, an
         }
       }
       if(sqlizeValues && dialectConfig) {
-        return sqlize(value, meta.type, dialectConfig, databaseConfig);
+        const sqlizedValue = sqlize(value, meta.type, dialectConfig, databaseConfig);
+        return sqlizedValue
       } else {
         return value
       }
@@ -584,6 +586,33 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
 
         const type = columnType.toLowerCase();
         const rules: SqlizeRule[] = dialectConfig.sqlize;
+        if (type === "json") {
+            try {
+                if (typeof value === "string") {
+                    try {
+                        // Try parsing it first (in case it's a JSON string)
+                        const parsed = JSON.parse(value);
+                        return JSON.stringify(parsed); // ✅ Store re-stringified version
+                    } catch {
+                        // ❌ Failed to parse: just return original string
+                        return value;
+                    }
+                } else if (typeof value === "object") {
+                    // ✅ Valid object → stringify
+                    return JSON.stringify(value);
+                } else {
+                    // ⚠️ Unexpected type (number, boolean, etc.)
+                    return JSON.stringify({ value });
+                }
+            } catch (err: any) {
+                console.warn(`[sqlize] Failed to handle JSON value for column:`, {
+                    value,
+                    error: err.message || err
+                });
+                return null; // ❌ Fallback to NULL if completely unusable
+            }
+        }
+        
         let strValue = typeof value === "string" ? value : String(value);
 
         const isDateLike = groupings.dateGroup.includes(columnType);
@@ -726,3 +755,8 @@ export function throwIfFailedResults(results: QueryResult[], action = "operation
       throw new Error(message);
     }
 }
+
+export function normalizeName(name: string): string {
+    return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+  

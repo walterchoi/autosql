@@ -7,6 +7,8 @@ export interface ColumnDefinition {
   unique?: boolean;
   index?: boolean;
   pseudounique?: boolean;
+  categorical?: boolean;
+  singleValue?: boolean;
   primary?: boolean;
   autoIncrement?: boolean;
   default?: any;
@@ -71,6 +73,7 @@ export interface DatabaseConfig {
       encoding?: string;
 
       pseudoUnique?: number;
+      categorical?: number;
       autoIndexing?: boolean;
       decimalMaxLength?: number;
       maxKeyLength?: number;

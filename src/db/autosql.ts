@@ -316,12 +316,12 @@ export class AutoSQLHandler {
         return insertStatements;
     }
 
-    private async handleMetadata(table: string, data: Record<string, any>[]) {
+    async handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[]) {
         // Fetch existing metadata
         const { currentMetaData } = await this.fetchTableMetadata(table);
         
         // Generate new metadata from incoming data
-        const newMetaData = await getMetaData(this.db.getConfig(), data);
+        const newMetaData = await getMetaData(this.db.getConfig(), data, primaryKey);
         this.db.updateTableMetadata(table, newMetaData, "metaData");
     
         let initialComparedMetaData : { changes: AlterTableChanges; updatedMetaData: MetadataHeader } | undefined;
@@ -353,9 +353,9 @@ export class AutoSQLHandler {
         return [];
     }
 
-    private async prepareInsertData(table: string, data: Record<string, any>[], schema?: string): Promise<InsertInput[]> {
+    private async prepareInsertData(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[]): Promise<InsertInput[]> {
         // 🔹 Step 1: Handle Metadata
-        const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(table, data);
+        const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(table, data, primaryKey);
     
         // 🔹 Step 2: Attempt Table Split
         let insertInput: InsertInput[] = await this.attemptTableSplit(table, data, mergedMetaData);
@@ -556,9 +556,17 @@ export class AutoSQLHandler {
             });
         }
 
-        const conflictsQuery = Object.keys(tableStructure).map(table => {
-            return [this.db.getConstraintConflictQuery(table, tableStructure[table])]
-        })
+        const conflictsQuery = Object.keys(tableStructure)
+            .filter(table => {
+                const structure = tableStructure[table];
+                return (structure && Object.keys(structure.uniques || {}).length > 0 && // Must have at least one unique constraint
+                Array.isArray(structure.primary) && structure.primary.length > 0 // Must have at least one primary key
+                );
+            })
+            .map(table => {
+                return [this.db.getConstraintConflictQuery(table, tableStructure[table])];
+            });
+
         const allConflicts : QueryResult[] = await this.db.runTransactionsWithConcurrency(conflictsQuery);
         const constraintViolations: Record<string, string[]> = {};
         let removeConstraintsQuery : QueryInput[][] = []
@@ -685,16 +693,14 @@ export class AutoSQLHandler {
         return insertedHistory
     }
     
-    async autoSQL(table: string, data: Record<string, any>[], schema?: string): Promise<QueryResult> {
+    async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[]): Promise<QueryResult> {
         try {
 
             if(schema) { this.db.updateSchema(schema) }
 
             let affectedRows : number;
             let insertResults : QueryResult[]
-
-            let insertInput = await this.prepareInsertData(table, data, schema);
-
+            let insertInput = await this.prepareInsertData(table, data, schema, primaryKey);
             await this.configureTables(insertInput)
 
             if(this.db.getConfig().useStagingInsert) {

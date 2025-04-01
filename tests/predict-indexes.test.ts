@@ -21,7 +21,7 @@ describe("predictIndexes function", () => {
 
     test("sets primary keys when explicitly provided", () => {
         const meta_data : MetadataHeader = {
-            user_id: { type: "int", length: 11 },
+            user_id: { type: "int", length: 11, unique: true, allowNull: false },
             email: { type: "varchar", unique: true, length: 50 }
         }
 

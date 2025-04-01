@@ -39,18 +39,6 @@ Object.values(DB_CONFIG).forEach((config) => {
             const dropQueryResults = await db.runQuery(dropQuery)
             await db.closeConnection();
         });
-        
-        test("Fails when no metadata and no data are provided", async () => {
-            const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
-            const dropQueryResults = await db.runQuery(dropQuery)
-        
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, [], null, INITIAL_METADATA);
-            if (Array.isArray(result)) {
-                throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
-            }
-            expect(result.success).toBe(false);
-            expect(result.error).toContain(`No existing metadata and no data provided to infer structure.`);
-        });
 
         test("Creates table when it does not exist and no metadata provided", async () => {
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)

@@ -15,6 +15,7 @@ export const DB_CONFIG: Record<string, DatabaseConfig> = fs.existsSync(CONFIG_PA
               user: "root",
               password: "root",
               database: "mysql",
+              schema: "test_schema",
               port: 3306,
               updatePrimaryKey: true,
               addTimestamps: true
@@ -25,6 +26,7 @@ export const DB_CONFIG: Record<string, DatabaseConfig> = fs.existsSync(CONFIG_PA
               user: "test_user",
               password: "test_password",
               database: "postgres",
+              schema: "test_schema",
               port: 5432,
               updatePrimaryKey: true,
               addTimestamps: true

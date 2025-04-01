@@ -77,7 +77,6 @@ export class MySQLInsertQueryBuilder {
             query,
             params
         };
-
         return result;
     }
 

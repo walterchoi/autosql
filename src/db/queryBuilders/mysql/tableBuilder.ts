@@ -28,7 +28,7 @@ export class MySQLTableQueryBuilder {
     
             // Handle column lengths
             if (column.length && !dialectConfig.noLength.includes(columnType)) {
-                columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
+                columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
             }
     
             // Convert BOOLEAN → TINYINT(1) for MySQL
@@ -120,7 +120,7 @@ export class MySQLTableQueryBuilder {
             }
             let columnDef = `\`${columnName}\` ${columnType}`;
             if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
-                columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
+                columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
@@ -137,7 +137,7 @@ export class MySQLTableQueryBuilder {
             }
             let columnDef = `\`${columnName}\` ${columnType}`;
             if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
-                columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
+                columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
             }
             
             // ✅ Apply NULL or NOT NULL depending on whether the column is in nullableColumns

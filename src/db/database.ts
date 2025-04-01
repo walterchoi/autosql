@@ -267,6 +267,7 @@ export abstract class Database {
             await this.startTransaction();
     
             for (const QueryInput of queries) {
+                if (!QueryInput?.query?.trim()) continue; // Skip empty queries
                 let attempts = 0;
                 while (attempts < maxAttempts) {
                     try {

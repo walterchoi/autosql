@@ -26,6 +26,7 @@ export function predictType(data: any): string | null {
         // ✅ Detect and normalize numbers
         if (regexPatterns.number.test(strData) || regexPatterns.decimal.test(strData)) {
             strData = normalizeNumber(strData);
+
             if (!strData) {
                 console.log('!strData - varchar')
                 return "varchar"; // Invalid format
@@ -61,7 +62,9 @@ export function predictType(data: any): string | null {
             const numValue = Number(strData);
 
             // Check if the number is within JavaScript's safe integer range
-            if (!isNaN(numValue) && Number.isSafeInteger(numValue)) {
+            if(strData.split('.').length > 1) {
+                currentType = "decimal"
+            } else if (!isNaN(numValue) && Number.isSafeInteger(numValue)) {
                 if (numValue <= 127 && numValue >= -128) {
                     currentType = "tinyint";
                 } else if (numValue <= 32767 && numValue >= -32768) {
@@ -87,7 +90,13 @@ export function predictType(data: any): string | null {
         }
 
         // Handle text-based types
-        if (currentType === "json" || currentType === "varchar") {
+        if (currentType === "json") {
+            if (strData.length > 4294967295) {
+                throw new Error("data_too_long: Data is too long for JSON field");
+            }
+            return "json"; // ✅ Always keep JSON if detected
+        }
+        if (currentType === "varchar") {
             const length = strData.length;
             if (length < 6553) {
                 return currentType;
