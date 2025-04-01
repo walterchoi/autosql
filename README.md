@@ -44,7 +44,6 @@ npm install autosql
 - [Insert Options](#-insert-options)
 - [Core Interfaces](#-core-classes-database-and-autosqlhandler)
   - [`Database` Class](#%EF%B8%8F-database-class)
-  - [`AutoSQLHandler` Class](#%EF%B8%8F-autosqlhandler-class)
 - [Convenience Utilities](#-convenience-utilities)
   - [Type Inference & Normalisation](#-type-inference--normalisation)
   - [Config & Metadata Tools](#%EF%B8%8F-config--metadata-tools)
