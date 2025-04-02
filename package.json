@@ -22,7 +22,12 @@
     "PGSQL",
     "automation",
     "laziness",
-    "JSON"
+    "JSON",
+    "typescript",
+    "sql",
+    "sql-parser",
+    "database",
+    "orm"
   ],
   "author": "w@walterchoi.com",
   "license": "ISC",
