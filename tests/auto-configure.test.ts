@@ -50,7 +50,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 { id: 2, name: "Bob" }
             ];
         
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, null, INITIAL_METADATA);
+            const result = await db.autoSQLHandler.autoConfigureTable(TEST_TABLE_NAME, sampleData, null, INITIAL_METADATA);
             if (Array.isArray(result)) {
                 throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
             }
@@ -74,7 +74,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             // ✅ Provide sample data to ensure valid execution
             const sampleData = [{ id: 1, name: "Alice" }];
         
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, null, INITIAL_METADATA);
+            const result = await db.autoConfigureTable(TEST_TABLE_NAME, sampleData, null, INITIAL_METADATA);
             if (Array.isArray(result)) {
                 throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
             }
@@ -97,7 +97,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             // ✅ Ensure the table exists first
             await db.runQuery(`CREATE TABLE IF NOT EXISTS ${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
         
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, [], INITIAL_METADATA, INITIAL_METADATA);
+            const result = await db.autoConfigureTable(TEST_TABLE_NAME, [], INITIAL_METADATA, INITIAL_METADATA);
             if (Array.isArray(result)) {
                 throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
             }
@@ -115,7 +115,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             // ✅ Provide sample data (though not required for alteration)
             const sampleData = [{ id: 1, name: "Alice", email: "alice@example.com" }];
         
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, INITIAL_METADATA);
+            const result = await db.autoConfigureTable(TEST_TABLE_NAME, sampleData, INITIAL_METADATA);
             if (Array.isArray(result)) {
                 throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
             }
@@ -132,7 +132,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             // ✅ Provide sample data (though not required for precomputed changes)
             const sampleData = [{ id: 1, name: "Alice", email: "alice@example.com" }];
         
-            const result = await db.autoSQL.autoConfigureTable(TEST_TABLE_NAME, sampleData, ALTER_TABLE_CHANGES, UPDATED_METADATA);
+            const result = await db.autoConfigureTable(TEST_TABLE_NAME, sampleData, ALTER_TABLE_CHANGES, UPDATED_METADATA);
             if (Array.isArray(result)) {
                 throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
             }

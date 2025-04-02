@@ -444,6 +444,10 @@ export abstract class Database {
     get handleMetadata() {
         return this.autoSQLHandler.handleMetadata.bind(this.autoSQLHandler);
     }
+
+    get autoConfigureTable() {
+        return this.autoSQLHandler.autoConfigureTable.bind(this.autoSQLHandler);
+    }
 }
 
 import { MySQLDatabase } from "./mysql";

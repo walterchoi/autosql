@@ -146,7 +146,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             console.log(newGroupedByTable)
             console.log(newGroupedData)
 
-            const groupedInfo = await db.autoSQL.splitTableData(TEST_TABLE_NAME, newData, newMetaData)
+            const groupedInfo = await db.splitTableData(TEST_TABLE_NAME, newData, newMetaData)
             console.log(groupedInfo)
         });
 
