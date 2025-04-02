@@ -1,0 +1,12 @@
+tests/
+*.log
+src/
+.github/
+jest.config.js
+.eslintrc.js
+tsconfig.json
+docker-compose.yml
+tests/utils/config.local.json
+*.tgz
+.env
+*.test.ts

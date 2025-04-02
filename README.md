@@ -1,294 +1,456 @@
-# AutoSQL - SQL insertions automated and simplified
+# AutoSQL - Automated SQL Insertions for Modern Data Workflows
 
-[![NPM](https://nodei.co/npm/autosql.png)](https://nodei.co/npm/autosql/)
+![NPM](https://nodei.co/npm/autosql.png)
 
+> **Now rewritten in TypeScript with an entirely new class-based structure!**
 
-## Simplify inserts through AutoSQL
+## 🚀 AutoSQL — A Smarter Way to Insert Data
 
-AutoSQL is designed to help automate data insertions by: 
-- predicting data types of each column
-- predicting primary keys / unique indexes / useful indexes (mainly date/time fields)
-- creating the target schema or table (if needed)
-- altering the target table to handle the newly provided data (if needed)
-    -- such as changing length of columns
-    -- allowing null values to be inserted
-- separating data into manageable chunks
-    -- limiting number of rows being inserted at once
-    -- keep insert queries below maximum insert size of server
-- catching special characters and converting data to conform with the requirements for the SQL dialect being used
-    -- e.g. special characters such as ' is changed to '' 
-    -- boolean values provided are converted to tinyint equivalents for mysql
-Built to be additive and not destructive, changes made by this repository on a database/table (if allowed via config) should not affect existing data by only allowing increases in length / new null columns etc
+AutoSQL is a TypeScript-powered tool that simplifies and automates the SQL insertion process with intelligent schema prediction, safe table handling, batching, and dialect-specific optimisations for MySQL and PostgreSQL.
 
-To simply insert data - provide a config object and an array of JSON Objects to be inserted
-```js
-const autosql = require('autosql');
-var insert_data = await autosql.auto_sql(config, data).catch((err) => {
-    console.log(err)
-    })
+## 🌐 Overview
+
+AutoSQL helps engineers and analysts insert structured or semi-structured JSON into SQL databases (MySQL/PostgreSQL) with zero manual schema prep. It's ideal for:
+
+- No-code/low-code tools that export data as raw JSON
+- Rapid data warehousing of API responses or flat files
+- Auto-generating schemas with correct types, keys, and indexes
+
+It shines in modern ETL workflows where structure is unpredictable but SQL output is needed.
+
+### 🔧 New in This Version:
+- Full **TypeScript** support
+- Core logic restructured into a reusable `Database` **class-based architecture**
+- Robust error handling and logging support
+- Modular utilities for type prediction, metadata inference, batching, and SSH tunneling
+
+---
+
+## 📦 Installation
+
+```bash
+npm install autosql
 ```
 
-This repository and documentation are still in development.
-If you have any feedback, please contact me via email at w@walterchoi.com
+---
 
-## Table of contents
+## 📚 Table of Contents
 
-- [Supported languages and Dependencies](#Supported-languages-and-Dependencies)
-- [Configuration and defaults](#Configuration-and-defaults)
-- [Convenience methods](#Convenience-methods)
+- [Supported SQL Dialects](#-supported-sql-dialects)
+- [Quick Start](#-quick-start)
+- [Configuration](#%EF%B8%8F-configuration)
+  - [Metadata Format](#-metadata-format)
+  - [SSH Support](#-ssh-support)
+- [Insert Options](#-insert-options)
+- [Core Interfaces](#-core-classes-database-and-autosqlhandler)
+  - [`Database` Class](#%EF%B8%8F-database-class)
+- [Convenience Utilities](#-convenience-utilities)
+  - [Type Inference & Normalisation](#-type-inference--normalisation)
+  - [Config & Metadata Tools](#%EF%B8%8F-config--metadata-tools)
+  - [Metadata Inference & Preparation](#-metadata-inference--preparation)
+  - [Insert Planning & Execution](#-insert-planning--execution)
 
 ---
 
+## 🧬 Supported SQL Dialects
 
-## Supported languages and Dependencies
+AutoSQL supports:
 
-Currently AutoSQL only supports MySQL and pgSQL.
-To support these SQL dialects, this repository has two optional dependencies
-- mysql2 (https://www.npmjs.com/package/mysql2)
-- pg (https://www.npmjs.com/package/pg)
-And to support the use of SSH tunnels, this repository has two optional dependencies
-- ssh2 (https://www.npmjs.com/package/ssh2)
-- fs (https://www.npmjs.com/package/fs)
+- **MySQL** (via `mysql2`)
+- **PostgreSQL** (via `pg`)
+
+Optional support for SSH tunneling is available via:
+
+- [`ssh2`](https://www.npmjs.com/package/ssh2)
 
 ---
 
+## ⚡ Quick Start
 
-## Configuration and defaults
+```ts
+import { Database } from 'autosql';
 
-The configuration variable must be an object and an example (with all the bells and whistles) can be seen below:
+const config = {
+  sqlDialect: 'mysql',
+  host: 'localhost',
+  user: 'root',
+  password: 'root',
+  database: 'mysql',
+  port: 3306
+};
 
-Many aspects of this configuration are optional and defaults for this can be found at ./config/defaults.json
+const data = [
+  { id: 1, name: 'Alice', created_at: '2024-01-01' },
+  { id: 2, name: 'Bob', created_at: '2024-01-02' }
+];
 
-```js 
-CONFIGURATION = {
-    // REQUIRED SECTION
-    // HANDLES SQL connection to run queries/insertions
-    "host": [REQUIRED STRING],
-    "username": [REQUIRED STRING],
-    "password": [REQUIRED STRING],
-    "database": [REQUIRED STRING],
-    "table": [REQUIRED STRING],
-    "sql_dialect": [REQUIRED STRING], // currently can only be "mysql" or "pgsql"
+let db: Database;
 
-    // OPTIONAL SECTION
-    "meta_data": [OPTIONAL ARRAY -- if none is provided, one will be created automatically],
-    "primary": [OPTIONAL ARRAY],
-    "ssh_config": [OPTIONAL OBJECT],
+db = Database.create(config);
+await db.establishConnection();
 
-    // OPTIONAL SETTINGS
-    "max_key_length": [OPTIONAL NUMBER],
-    "auto_id": [OPTIONAL BOOLEAN],
-    "sampling": [OPTIONAL NUMBER],
-    "sampling_minimum": [OPTIONAL NUMBER],
-    "minimum_unique": [OPTIONAL NUMBER],
-    "pseudo_unique": [OPTIONAL NUMBER],
-    "collation": [OPTIONAL STRING],
-    "create_table": [OPTIONAL BOOLEAN],
-    "insert_type": [OPTIONAL STRING],
-    "safe_mode": [OPTIONAL BOOLEAN],
-    "max_insert": [OPTIONAL NUMBER],
-    "insert_stack": [OPTIONAL NUMBER],
-    "max_insert_size": [OPTIONAL NUMBER]
+// Option 1: Direct insert if schema already exists or is managed externally
+await db.autoInsertData({ table: 'target_table', data });
 
-    // 
+// Option 2: Fully automated schema + insert workflow
+await db.autoSQL('target_table', data);
+
+await db.closeConnection();
+```
+
+AutoSQL will:
+- Infer metadata and key structure
+- Create or alter the target table
+- Batch insert rows
+- Handle dialect-specific quirks automatically
+- Automatically manage timestamps and optional history tracking (if configured)
+
+---
+
+## ⚙️ Configuration
+
+```ts
+export interface DatabaseConfig {
+  // Required connection settings
+  sqlDialect: 'mysql' | 'pgsql';
+  host?: string;
+  user?: string;
+  password?: string;
+  database?: string;
+  port?: number;
+
+  // Optional table target
+  // ALL SETTINGS BELOW HERE ARE OPTIONAL
+  schema?: string;
+  table?: string;
+
+  // Metadata control
+  metaData?: { [tableName: string]: MetadataHeader };
+  existingMetaData?: { [tableName: string]: MetadataHeader };
+  updatePrimaryKey?: boolean;
+  primaryKey?: string[];
+
+  // Table creation and charset settings
+  engine?: string;
+  charset?: string;
+  collate?: string;
+  encoding?: string;
+
+  // Type inference controls
+  pseudoUnique?: number; // The % of values that must be unique to be considered pseudoUnique. - defaults to 0.9 (90%)
+  autoIndexing?: boolean; // Automatically identify and add indexes to tables when altering / creating - defaults to TRUE
+  decimalMaxLength?: number; // Automatically round decimals to a maximum of X decimal places - defaults to 10
+  maxKeyLength?: number; // Limits indexes / primary keys from using columns that are longer than this length - defaults to 255
+  maxVarcharLength?: number; // Prevents varchar columns from exceeding this length, autoconverts this length of varchar to text columns -- defaults to 1024 characters
+
+  // Sampling controls
+  sampling?: number; // If provided data exceeds samplingMinimum rows, we sample this % of values for identifying uniques and column types — defaults to 0, allows values between 0 and 1
+  samplingMinimum?: number; // If provided data exceeds this row count, sampling kicks in — defaults to 100
+
+  // Insert strategy
+  insertType?: 'UPDATE' | 'INSERT'; // UPDATE automatically replaces non-primary key values with new values that are found
+  insertStack?: number; // Maximum number of rows to insert in one query - defaults to 100
+  safeMode?: boolean; // Prevent the altering of tables if needed - defaults to false
+  deleteColumns?: boolean; // Drop columns if needed - defaults to false
+
+  // Timestamp columns
+  addTimestamps?: boolean; // If TRUE, runs function ensureTimestamps as part of AutoSQL function. Which adds a dwh_created_at, dwh_modified_at and dwh_loaded_at timestamp columns that are automatically filled. -- defaults to TRUE
+
+    // Optional advanced insert modes
+  useStagingInsert?: boolean; // Enable temporary staging table insert pattern (if supported) -- defaults to TRUE
+  addHistory?: boolean; // Automatically duplicate rows into history tables before overwrites -- defaults to FALSE
+  historyTables?: string[]; // Names of the tables to have history tracked -- pairs with addHistory above
+  autoSplit?: boolean; // Automatically split large datasets (columns) across multiple tables if needed
+  addNested?: boolean; // Extracts nested JSON values into separate tables with composite primary keys -- defaults to FALSE
+  nestedTables?: string[]; // Nested Table names to apply nested extraction on -- if nesting `columnA` on `tableB`, this would be [`tableB_columnA`]
+
+  // Performance scaling
+  useWorkers?: boolean;
+  maxWorkers?: number;
+
+  // SSH tunneling support
+  sshConfig?: SSHKeys;
+  sshStream?: ClientChannel | null;
+  sshClient?: SSHClient;
 }
 ```
 
-<details>
-<summary>meta_data - is a list of each column to be inserted and is an array of objects</summary>
+---
 
-```js
-    [
-        {
-            COLUMN_1: {
-            type: 'datetime',
-            length: 0,
-            allowNull: true,
-            unique: false,
-            index: true,
-            pseudounique: false,
-            primary: false,
-            auto_increment: false,
-            default: "CURRENT_TIMESTAMP",
-            decimal: 0
-            }
-        },
-        {
-            COLUMN_2: {
-            type: 'varchar',
-            length: 8,
-            allowNull: false,
-            unique: true,
-            index: true,
-            pseudounique: true,
-            primary: true,
-            auto_increment: false,
-            default: undefined,
-            decimal: 0
-            }
-        }
-    ]
-```
+## 🧠 Metadata Format
 
-</details>  
+AutoSQL can infer metadata from your data, or you can specify it manually:
 
-<details>
-<summary>primary - is an optional array, listing column names used for the primary key</summary>
-
-EXAMPLE: 
-
-```js
-    config.primary = ["column_1", "column_2"]
-```
-
-DEFAULTS TO:
-
-```js
-    config.primary = ["ID"]
-```
-
-
-</details>  
-
-<details>
-<summary>ssh_config - is an optional object, used for connecting with the SSH tunnel that should be used as a stream with the SQL server connection</summary>
-
-EXAMPLE: 
-
-```js
-    config.ssh_config = {
-      username: 'Username',
-      host: 'hostname/IP',
-      port: port,
-      password: 'Password (OPTIONAL)',
-      private_key: 'Private Key as String (OPTIONAL)',
-      private_key_path: 'Private Key file path as String (OPTIONAL)',
-      source_address: 'hostname/IP',
-      source_port: port,
-      destination_address: 'hostname/IP',
-      destination_port: port
+```ts
+meta_data: [
+  {
+    created_at: {
+      type: 'datetime',
+      length: 0,
+      allowNull: true,
+      default: 'CURRENT_TIMESTAMP',
+      index: true
     }
+  },
+  {
+    name: {
+      type: 'varchar',
+      length: 50,
+      allowNull: false,
+      unique: true,
+      primary: true
+    }
+  }
+]
 ```
 
-Uses optional dependency 'ssh2' to create the stream.
-If the private key has been provided as a file, uses optional dependency 'fs' to read this file.
+---
 
-</details>  
+## 🔐 SSH Support
+AutoSQL supports SSH tunneling for connecting to remote MySQL or PostgreSQL servers via an intermediate gateway.
 
-<details>
-<summary>The remaining optional settings change small aspects of how this repository affects the data insertion</summary>
+Include the SSH configuration inside your `DatabaseConfig` object under the `sshConfig` key. AutoSQL will automatically establish the tunnel when `establishConnection()` is called.
 
- - minimum_unique: changes the minimum number of rows needed to identify a column as unique
-    -- defaults to 50
- - pseudo_unique: changes the percentage of rows that are unique to be considered to be pseudo_unique
-    -- defaults to 0.95 (95% | two standard deviations)
+```ts
+const config: DatabaseConfig = {
+  ...
+  sshConfig: {
+    username: 'ssh_user',
+    host: 'remote_host',
+    port: 22,
+    password: 'password',
+    private_key: 'PRIVATE_KEY_STRING',
+    private_key_path: '/path/to/key.pem',
+    source_address: 'localhost',
+    source_port: 3306,
+    destination_address: 'remote_sql_host',
+    destination_port: 3306
+  }
+}
 
- - sampling: option to only check/sample a percentage of all data provided. Provided a float between 0 and 1, this will then select a number of random rows to use in finding data types/lengths/uniqueness etc
-    -- defaults to 0 (or off/sample everything)
-        --- if you are inserting 1000 rows and sampling is set to 0.5, 500 random rows will be selected and used for checks
- - sampling_minimum: minimum number of data required for sampling to be enabled
-    -- defaults to 100 
-        --- if provided less than X rows or if sampling is set to a % where the selected number of sampled rows would be less than this row count, disables sampling
-    
- - max_key_length: maximum key length - used for preventing unique long-text fields from being included in an automatically predicted primary key
-    -- defaults to 255
- - auto_indexing: toggles the prediction and creation of indexes
-    -- defaults to true
- - auto_id: toggles the creation of an auto_incremental ID column - if an ID column is also provided, will not have any action
-    -- defaults to false
-
- - insert_type: changes action of insert on duplicate key error
-    -- defaults to "REPLACE"
-        --- available options: 
-            ---- "REPLACE" - replace/update all non-primary-key columns
-            ---- "IGNORE" - ignore and do not replace/update
-    
- - collation: collation of the databases/tables to use on creation
-    -- defaults to "utf8mb4_unicode_ci"
-
- - max_insert: maximum number of rows to insert per query
-    -- defaults to 5000
- - max_insert_size: maximum amount of data (bytes) to attempt to insert per query
-    -- defaults to 1048576 (default max-allowed-packet for MySQL servers)
- - insert_stack: minimum number of rows to stack up per query
-    -- defaults to 100
-        --- e.g. if provided 6000 rows of data and at row 4444 the data being sent would exceed max_insert_size, the data will be split into two stacks (4400 and 1600) to be inserted as separate queries
-
- - safe_mode: toggles the usage of transactions, rollback on any single error and commit only on no errors
-    -- defaults to true
-
- - wait_for_approval: 
-    -- defaults to false
-    locale: en-US,
-    timezone: UTC,
-    convert_timezone: true
-</p>
-</details>  
-
-<details>
-<summary>These configuration options (included within the defaults.json file) are not yet used and are included for planned future features</summary>
-
- - wait_for_approval: before any change to table structure - output changes and wait for approval
-    -- defaults to false
-
- - convert_timezone: convert all datetime values (with timezone) to a specific timezone using Date.prototype.toLocaleString()
-    -- defaults to true
- - convert_all_timezone: convert all datetime values (even if no timezone is provided - assuming UTC) to a specific timezone using Date.prototype.toLocaleString()
-    -- defaults to false
- - locale: sets the output format used for Date.prototype.toLocaleString()
-    -- defaults to "en-US"
- - timezone: sets the output timezone used for Date.prototype.toLocaleString()
-    -- defaults to "UTC"
-</p>
-</details>  
-
-[back to top](#table-of-contents)
-
+  const db = Database.create(config);
+  await db.establishConnection();
+  // Tunnel is now active and DB connection is routed through it
+```
 
 ---
 
+## 📑 Insert Options
 
-## Convenience methods
+These control how data is batched, inserted, and optionally how schema alterations are handled.
 
-Currently AutoSQL exposes a number of functions to help automate certain aspects of the data insertion process.
-auto_sql (automatic insertion) relies on each of these used in conjunction however there are cases where separating out these functions may be useful.
+### Basic Insert Options
 
- - ***auto_sql***
-    -- runs each of these other functions in conjunction to automatically insert provided data
-    -- in order of operation:
-        --- get_meta_data
-        --- auto_configure_table
-        --- insert_data
- - **get_meta_data**
-    -- when provided data, this function uses predict_type, collate_types, get_headers, initialize_meta_data, predict_indexes to create a meta_data object (for more information on the meta_data object please check (#Configuration and defaults))
- - predict_type
-    -- when provided a single data point, predicts the type of data that has been provided.
-    -- relies on regex (./helpers/regex.js)
- - collate_types
-    -- when provided two types of data, compares the two types provided to determine the additive column type that should be able to handle both data sets.
- - get_headers
-    -- when provided data - creates an array of column names
- - initialize_meta_data
-    -- creates an initial config.meta_data object from provided headers
- - predict_indexes
-    -- when provided the meta_data object (or list of columns with types, lengths, unique-ness, nullability), provides a list of columns that should be combined into a primary key, list of unique columns and probable index columns
- - **auto_configure_table**
-    -- checks existence of tables/databases and creates them if they do not exist (using auto_create_table) or alters them if they do exist (using auto_alter_table)
- - auto_alter_table
-    -- when provided with meta_data, checks the existing table to determine changes required to allow this new data set to be inserted
- - auto_create_table
-    -- when provided with meta_data, creates (if does not exist) a table that would allow this data set to be inserted
- - **insert_data**
-    -- when provided with data, creates a set of insert statements and runs them
-    -- returns the number of rows affected
- - validate_database
-    -- attempt to connect to the provided database connection and run 'SELECT 1 as SOLUTION'
- - validate_query
-    -- attempt to connect to the provided database connection and run 'EXPLAIN ' + provided SQL query
- - run_sql_query
-    -- runs a provided SQL query on the provided database connection
+- `insertType`: `'UPDATE' | 'INSERT'`  
+  Determines behaviour on duplicate keys. `UPDATE` replaces non-primary key values with new ones. Defaults to `'INSERT'`.
 
+- `insertStack`: `number`  
+  Maximum number of rows to insert in a single query. Defaults to `100`.
+
+- `safeMode`: `boolean`  
+  If `true`, prevents any table alterations during runtime. Defaults to `false`.
+
+- `deleteColumns`: `boolean`  
+  Allows dropping of existing columns when altering tables. Defaults to `false`.
 
 ---
 
-[back to top](#table-of-contents)
+### ⏱ Timestamp Columns
+
+- `addTimestamps`: `boolean`  
+  If `true`, automatically adds and manages the following timestamp columns:  
+  - `dwh_created_at`,  
+  - `dwh_modified_at`,  
+  - `dwh_loaded_at`  
+  These are injected and updated during insert operations. Defaults to `true`.
+  This will also check a variety of common timestamp columns and will only add the equivalent if they do not exist in the existing data. As an example, modified timestamps will check modified_at, modify_at, modified_date, update_date etc.
+
+---
+
+### 🧪 Advanced Insert Modes
+
+- `useStagingInsert`: `boolean`  
+  Enables a staging table strategy where data is first inserted into a temporary table before being merged into the target. Useful for large or high-concurrency environments. Defaults to `true`.
+
+- `addHistory`: `boolean`  
+  If enabled, before overwriting rows (in `UPDATE` mode), AutoSQL writes the previous version into a corresponding history table. Defaults to `false`.
+
+- `historyTables`: `string[]`  
+  List of table names to track with history inserts. Used in conjunction with `addHistory`.
+
+- `autoSplit`: `boolean`  
+  Automatically splits datasets across multiple tables when the row size or column count exceeds allowed limits. Prevents failed inserts due to row size limits. Defaults to `false`
+
+- `addNested`: `boolean`  
+If enabled, AutoSQL will extract nested objects or arrays from a field and insert them into a separate table.  
+Defaults to `false`.
+
+- `nestedTables`: `string[]`  
+  Used in conjunction with `addNested`. Specifies which nested structures should be extracted and written into their own relational tables.  
+
+  **Format:** Each entry should follow the pattern: `"<tableName>_<columnName>"`  
+
+  For each entry:
+  - If the dataset includes a table that matches `<tableName>`,
+  - And that table contains a column named `<columnName>`,
+  - And the column contains a JSON object or an array of JSON objects,
+  - AutoSQL will extract the nested structure into a new table named `<tableName>_<columnName>`
+
+  **Behavior:**
+  - The new nested table will include the parent row’s primary key (e.g., `row1_id`) to maintain relationships
+  - The nested object will define the child table’s schema
+  - Arrays will be flattened—each item becomes a separate row in the nested table
+
+### 🧵 Scaling & Workers
+
+- `useWorkers`: `boolean`  
+  Enables parallel worker threads for inserting batches. Improves performance with large datasets. Defaults to `true`
+
+- `maxWorkers`: `number`  
+  Maximum number of concurrent workers to use during insertion. Must be used with `useWorkers`. Defaults to `8`
+
+## 🏁 Core Classes: `Database` (with AutoSQL Utilities)
+
+The `Database` class is the primary entry point into AutoSQL's workflow. It handles connection management and exposes high-level `autoSQL` methods for automated insertions, table creation, and metadata handling.
+
+```ts
+import { Database } from 'autosql';
+
+const db = Database.create(config);
+await db.establishConnection();
+
+await db.autoConfigureTable(
+  'target_table', // table name
+  sampleData,     // raw input data
+  null,           // optional existing metadata
+  initialMeta     // optional manually defined metadata
+);
+```
+
+This is the core interface for managing connections, generating queries, and executing inserts.
+
+### ⚙️ `Database` Class
+
+#### 🔸 Static Method
+- **`Database.create(config)`** – Returns an instance of either `MySQLDatabase` or `PostgresDatabase` based on config.
+
+#### 🔹 Core Methods
+- **`getConfig()`** – Returns the full `DatabaseConfig` used to initialise this instance.
+- **`updateSchema(schema: string)`** – Updates the current schema name being used.
+- **`getDialect()`** – Returns the SQL dialect (`mysql` or `pgsql`).
+- **`establishConnection()`** – Creates and stores a live database connection.
+- **`testConnection()`** – Attempts to connect and returns success as a boolean.
+- **`runQuery(queryOrParams: QueryInput | QueryInput[])`** – Executes a SQL query or list of queries.
+- **`startTransaction()` / `commit()` / `rollback()`** – Manages manual transaction blocks.
+- **`runTransaction(queries: QueryInput[])`** – Runs multiple queries inside a single transaction.
+- **`runTransactionsWithConcurrency(queryGroups: QueryInput[][])`** – Runs multiple query batches in parallel.
+- **`closeConnection()`** – Safely closes the active DB connection.
+
+#### 🔹 Table and Schema Methods
+- **`checkSchemaExists(schemaName: string)`** – Returns whether the given schema exists.
+- **`createSchema(schemaName: string)`** – Creates the schema if it doesn't exist already.
+- **`createTableQuery(table: string, headers: MetadataHeader)`** – Returns `QueryInput[]` to create a table.
+- **`alterTableQuery(table: string, oldHeaders: MetadataHeader, newHeaders: MetadataHeader)`** – Returns `QueryInput[]` to alter an existing table.
+- **`dropTableQuery(table: string)`** – Returns a `QueryInput` to drop a table.
+- **`getTableMetaData(schema: string, table: string)`** – Fetches current metadata from the DB for a given table.
+
+#### 🔹 AutoSQL Methods (Exposed on `db`)
+
+- **`autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[])`**  
+  The simplest way to handle everything — metadata inference, schema changes, batching, inserting, history, workers, and nested structures — in one call.  
+  Designed for production-ready automation and one-liner ingestion.
+
+- **`autoInsertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery = true, inputInsertType?: 'UPDATE' | 'INSERT')`**  
+  Executes a full insert using the dialect-aware batching engine.  
+  If `inputRunQuery` is `true`, queries are executed via `runTransactionsWithConcurrency()`.  
+  If `false`, a list of insert queries (`QueryInput[]`) is returned without running them.
+
+- **`autoConfigureTable(inputOrTable: InsertInput | string, data?: Record<string, any>[], currentMeta?: MetadataHeader, newMeta?: MetadataHeader, runQuery = true)`**  
+  Determines whether a table should be created or altered based on metadata comparison.  
+  If `runQuery` is `true`, schema changes are applied immediately via `runTransactionsWithConcurrency()`.  
+  If `false`, queries are returned for inspection.
+
+- **`autoCreateTable(table: string, newMetaData: MetadataHeader, tableExists?: boolean, runQuery = true)`**  
+  Creates a new table with the provided metadata.  
+  If `runQuery` is `false`, returns the `CREATE TABLE` queries without executing them.
+
+- **`autoAlterTable(table: string, tableChanges: AlterTableChanges, tableExists?: boolean, runQuery = true)`**  
+  Alters an existing table using a computed diff.  
+  Like above, `runQuery` controls whether to return or execute the queries.
+
+- **`fetchTableMetadata(table: string)`**  
+  Looks up metadata for the given table and returns `{ currentMetaData, tableExists }`.  
+  Used internally for decisions about schema creation or alteration.
+
+- **`splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader)`**  
+  If `autoSplit` is enabled, splits a wide dataset across multiple smaller tables.  
+  Returns an array of `InsertInput` instructions for multi-table insert execution.
+
+- **`handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[])`**  
+  Combines metadata inference and comparison into one call.  
+  Returns an object with:
+  - `currentMetaData`: existing table metadata from the DB  
+  - `newMetaData`: metadata inferred from new data  
+  - `mergedMetaData`: result of merging existing and new metadata  
+  - `initialComparedMetaData`: diff result, if any  
+  - `changes`: schema changes needed for alignment
+
+- **`getMetaData(config: DatabaseConfig, data: Record<string, any>[], primaryKey?: string[])`**  
+  Analyses sample data and returns a metadata map with type, length, nullability, uniqueness, and key suggestions.
+
+- **`compareMetaData(oldMeta: MetadataHeader, newMeta: MetadataHeader)`**  
+  Compares two metadata structures and returns:
+  - `changes`: an `AlterTableChanges` diff object
+  - `updatedMetaData`: the merged metadata structure
+
+Each method is designed to work with the same `Database` instance.
+
+---
+
+## 🧰 Convenience Utilities
+
+AutoSQL exposes utilities that power `autoSQL` and can be used independently. These include metadata analysis, SQL formatting, batching, config validation, and more.
+
+### 🔍 Type Inference & Normalisation
+
+- **`predictType(value)`** – Predicts SQL-compatible type (`varchar`, `datetime`, `int`, etc.) based on a single input value.
+- **`collateTypes(typeSetOrArray)`** – Accepts a `Set` or `Array` of types and returns a single compatible SQL type.
+- **`normalizeNumber(input, thousands, decimal)`** – Standardises numeric values to SQL-safe format with optional locale indicators.
+- **`calculateColumnLength(column, value, sqlLookup)`** – Dynamically computes and updates column length and decimal precision based on input data.
+- **`shuffleArray(array)`** – Randomly reorders an array (used for sampling).
+- **`isObject(val)`** – Type-safe check to determine if a value is a non-null object.
+
+### ⚙️ Config & Metadata Tools
+
+- **`validateConfig(config)`** – Validates and merges the provided `DatabaseConfig` with default settings.
+- **`mergeColumnLengths(lengthA, lengthB)`** – Chooses the greater length definition between two metadata column states.
+- **`setToArray(set)`** – Converts a Set to a regular array.
+- **`normalizeKeysArray(keys)`** – Flattens and sanitizes arrays of key strings (e.g., for primary keys).
+- **`isValidDataFormat(data)`** – Checks if the input is a valid array of plain objects suitable for inserts.
+
+### 🧠 Metadata Inference & Preparation
+
+- **`initializeMetaData(headers)`** – Constructs a default metadata object from column headers with default flags and null types.
+- **`getDataHeaders(data, config)`** – Scans sample data to derive column names and infer initial metadata.
+- **`predictIndexes(metaData, maxKeyLength?, primaryKey?, sampleData?)`** – Suggests primary keys, unique constraints, and indexes based on uniqueness, length limits, or configured priorities.
+- **`updateColumnType(existingMeta, newValue)`** – Adjusts the type and attributes of a column based on new sample input.
+
+### 📦 Insert Planning & Execution
+
+- **`splitInsertData(data, config)`** – Splits large datasets into batches that meet size and row count constraints.
+- **`getInsertValues(metaData, row, dialectConfig)`** – Extracts a single row's values as a SQL-safe array, accounting for dialect-specific formatting.
+- **`organizeSplitData(data, splitMetaData)`** – Partitions the dataset by metadata groups for multiple table insert strategies.
+- **`organizeSplitTable(table, newMetaData, currentMetaData, dialectConfig)`** – Generates split metadata configurations based on structural divergence.
+- **`estimateRowSize(metaData, dialect)`** – Estimates the byte size of a row using provided metadata and flags potential overflows.
+- **`parseDatabaseMetaData(rows, dialectConfig?)`** – Transforms SQL column descriptions into AutoSQL-compatible metadata.
+- **`tableChangesExist(alterTableChanges)`** – Returns `true` if the proposed table changes indicate schema modification is needed.
+- **`isMetaDataHeader(obj)`** – Type guard to check if an object qualifies as a metadata header.
+- **`isValidDataFormat(data)`** – Validates that the input is an array of row objects suitable for processing.
+
+---
+
+## 📬 Feedback
+
+This library is under active development. Suggestions, issues, and contributions are welcome.
+
+Contact: **w@walterchoi.com**

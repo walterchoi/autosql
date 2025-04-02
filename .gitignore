@@ -1,2 +1,7 @@
-# ignore all logs
-/node_modules/
+node_modules
+.serverless
+dist
+coverage/
+docker-compose.yml
+tests/utils/config.local.json
+autosql-1.0.0.tgz
