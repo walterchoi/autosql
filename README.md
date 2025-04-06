@@ -10,13 +10,15 @@ AutoSQL is a TypeScript-powered tool that simplifies and automates the SQL inser
 
 ## 🌐 Overview
 
-AutoSQL helps engineers and analysts insert structured or semi-structured JSON into SQL databases (MySQL/PostgreSQL) with zero manual schema prep. It's ideal for:
+AutoSQL is a **zero-config ingest layer** for SQL databases. It helps engineers and analysts insert structured or semi-structured JSON into MySQL or PostgreSQL with no manual schema prep, modeling, or migrations.
+Built for modern ETL workflows, AutoSQL automatically infers the right schema—types, keys, indexes—and creates or updates tables on the fly. It’s ideal when working with unpredictable data sources like:
 
-- No-code/low-code tools that export data as raw JSON
-- Rapid data warehousing of API responses or flat files
-- Auto-generating schemas with correct types, keys, and indexes
+No-code/low-code tools that export raw JSON
+API responses and flat files used in data warehousing
+Rapid ingestion pipelines where structure evolves frequently
 
-It shines in modern ETL workflows where structure is unpredictable but SQL output is needed.
+Unlike traditional ORMs, AutoSQL doesn’t require boilerplate models or migration scripts. Just connect, stream in your data, and let AutoSQL handle the rest.
+If your goal is to get JSON into SQL fast, reliably, and without overthinking structure—AutoSQL is built for exactly that.
 
 ### 🔧 New in This Version:
 - Full **TypeScript** support
