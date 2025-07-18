@@ -1,0 +1,24 @@
+{
+  "mysql": {
+    "sqlDialect": "mysql",
+    "host": "localhost",
+    "user": "root",
+    "password": "root",
+    "database": "mysql",
+    "schema": "test_schema",
+    "port": 3306,
+    "updatePrimaryKey": true,
+    "addTimestamps": true
+  },
+  "pgsql": {
+    "sqlDialect": "pgsql",
+    "host": "localhost",
+    "user": "test_user",
+    "password": "test_password",
+    "database": "postgres",
+    "schema": "test_schema",
+    "port": 5432,
+    "updatePrimaryKey": true,
+    "addTimestamps": true
+  }
+}

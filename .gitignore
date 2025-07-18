@@ -1,7 +1,18 @@
-node_modules
-.serverless
-dist
+# Node & Dependency Folders
+node_modules/
+dist/
 coverage/
-docker-compose.yml
+.serverless
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment Variables
+.env
+
+# Compiled outputs
+*.tgz
+
+# Optional: Ignore local config (but keep a template)
 tests/utils/config.local.json
-autosql-1.0.0.tgz

@@ -1,12 +1,21 @@
+# Exclude test-related files and folders
 tests/
+*.test.ts
 *.log
+.env
+tests/utils/config.local.json
+tests/docker-init/
+
+# Exclude dev config/tools
 src/
 .github/
 jest.config.js
-.eslintrc.js
 tsconfig.json
-docker-compose.yml
-tests/utils/config.local.json
+.eslintrc.js
+
+# Ignore local package builds
 *.tgz
-.env
-*.test.ts
+
+# Ignore Git-related metadata if ever bundled
+.gitignore
+.npmignore
