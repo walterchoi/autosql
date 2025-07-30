@@ -17,7 +17,8 @@ export const defaults = {
     addTimestamps: true,
     addHistory: false,
     useStagingInsert: true,
-    addNested: false
+    addNested: false,
+    excludeBlankColumns: true,
 }
 
 export const maxQueryAttempts = 3;

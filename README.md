@@ -158,13 +158,14 @@ export interface DatabaseConfig {
   // Timestamp columns
   addTimestamps?: boolean; // If TRUE, runs function ensureTimestamps as part of AutoSQL function. Which adds a dwh_created_at, dwh_modified_at and dwh_loaded_at timestamp columns that are automatically filled. -- defaults to TRUE
 
-    // Optional advanced insert modes
+  // Optional advanced insert modes
   useStagingInsert?: boolean; // Enable temporary staging table insert pattern (if supported) -- defaults to TRUE
   addHistory?: boolean; // Automatically duplicate rows into history tables before overwrites -- defaults to FALSE
   historyTables?: string[]; // Names of the tables to have history tracked -- pairs with addHistory above
   autoSplit?: boolean; // Automatically split large datasets (columns) across multiple tables if needed
   addNested?: boolean; // Extracts nested JSON values into separate tables with composite primary keys -- defaults to FALSE
   nestedTables?: string[]; // Nested Table names to apply nested extraction on -- if nesting `columnA` on `tableB`, this would be [`tableB_columnA`]
+  excludeBlankColumns?: boolean; // Exclude columns from insert queries if all their values are null or undefined -- defaults to TRUE  
 
   // Performance scaling
   useWorkers?: boolean;
@@ -286,6 +287,11 @@ These control how data is batched, inserted, and optionally how schema alteratio
 - `addNested`: `boolean`  
 If enabled, AutoSQL will extract nested objects or arrays from a field and insert them into a separate table.  
 Defaults to `false`.
+
+- `excludeBlankColumns`: `boolean`  
+When enabled, columns that contain only null or undefined values across all rows are excluded from the generated insert queries and parameter lists. This helps to avoid inserting empty data unnecessarily. 
+Defaults to `true`.
+
 
 - `nestedTables`: `string[]`  
   Used in conjunction with `addNested`. Specifies which nested structures should be extracted and written into their own relational tables.  

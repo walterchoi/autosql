@@ -37,6 +37,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             addTimestamps: defaults.addTimestamps,
             decimalMaxLength: defaults.decimalMaxLength,
             addNested: defaults.addNested,
+            excludeBlankColumns: defaults.excludeBlankColumns,
         };
 
         // Merge provided config with defaults

@@ -171,6 +171,20 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         metaData[column].length = metaDataInterim[column].length || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
     }
+    
+    const excludeBlankColumns = databaseConfig.excludeBlankColumns;
+    if(excludeBlankColumns) {
+        const emptyOrNullKeys = Object.entries(metaDataInterim)
+        .filter(([_, meta]) => 
+            meta.uniqueSet.size === 0 &&
+            meta.valueCount === 0 &&
+            meta.nullCount > 0
+        )
+        .map(([key]) => key);
+        for (const key of emptyOrNullKeys) {
+            delete metaData[key];
+        }
+    }
     return metaData
 }
 

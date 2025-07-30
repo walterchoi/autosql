@@ -96,6 +96,7 @@ export interface DatabaseConfig {
       historyTables?: string[];
       addNested?: boolean;
       nestedTables?: string[];
+      excludeBlankColumns?: boolean;
 
       useWorkers?: boolean;
       maxWorkers?: number;
