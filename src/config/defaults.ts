@@ -63,4 +63,4 @@ export const CREATED_TIMESTAMP_NAMES = [
   ];
   
 
-export const nonCategoricalTypes = ["boolean", "tinyint", "smallint", "binary", "datetimetz", "datetime", "date"]
+export const nonCategoricalTypes = ["boolean", "tinyint", "smallint", "binary", "datetimetz", "datetime"]

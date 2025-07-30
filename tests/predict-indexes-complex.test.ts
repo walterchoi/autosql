@@ -1,5 +1,7 @@
 import { predictIndexes } from "../src/helpers/keys";
 import { MetadataHeader } from "../src/config/types";
+import { getMetaData } from "../src/helpers/metadata";
+import { DB_CONFIG, Database } from "./utils/testConfig";
 
 describe("predictIndexes function", () => {
     
@@ -79,7 +81,6 @@ describe("predictIndexes function", () => {
         expect(result.event_date.primary).toBe(true); // ✅ Date column assists but isn’t primary
     });
     
-    
     test("handles multiple date columns and selects the correct one for uniqueness", () => {
         const meta_data: MetadataHeader = {
             transaction_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
@@ -108,5 +109,93 @@ describe("predictIndexes function", () => {
         expect(result.purchase_date.primary).toBeUndefined(); // ✅ Required to form a unique composite key
         expect(result.refund_date.primary).toBeUndefined(); // ✅ Should not be primary
         expect(result.shipment_date.primary).toBe(true); // ✅ Should not be primary
-    });     
+    });
+
+    test("handles complex data with a multi-column", () => {
+        const meta_data: MetadataHeader = {
+            transaction_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
+            user_id: { type: "int", pseudounique: true, allowNull: false, length: 4 },
+            purchase_date: { type: "datetime", allowNull: false, length: 10 },
+            refund_date: { type: "datetime", allowNull: true, length: 10 },
+            shipment_date: { type: "datetime", allowNull: false, length: 10 } // ✅ New date column
+        }
+    
+        const data: Record<string, any>[] = [
+            { transaction_id: 3001, user_id: 1, purchase_date: "2024-03-01", refund_date: null, shipment_date: "2024-03-02" },
+            { transaction_id: 3001, user_id: 1, purchase_date: "2024-03-01", refund_date: "2024-03-05", shipment_date: "2024-03-08" },
+            { transaction_id: 3002, user_id: 1, purchase_date: "2024-03-02", refund_date: "2024-03-06", shipment_date: "2024-03-08" },
+            { transaction_id: 3002, user_id: 3, purchase_date: "2024-03-02", refund_date: "2024-03-07", shipment_date: "2024-03-04" },
+            { transaction_id: 3003, user_id: 4, purchase_date: "2024-03-03", refund_date: null, shipment_date: "2024-03-04" },
+            { transaction_id: 3003, user_id: 5, purchase_date: "2024-03-03", refund_date: null, shipment_date: "2024-03-04" },
+            { transaction_id: 3004, user_id: 6, purchase_date: "2024-03-04", refund_date: null, shipment_date: "2024-03-05" },
+            { transaction_id: 3005, user_id: 6, purchase_date: "2024-03-05", refund_date: null, shipment_date: "2024-03-06" },
+            { transaction_id: 3005, user_id: 7, purchase_date: "2024-03-05", refund_date: null, shipment_date: "2024-03-06" },
+            { transaction_id: 3006, user_id: 8, purchase_date: "2024-03-06", refund_date: null, shipment_date: "2024-03-07" }
+        ];
+    
+        const result = predictIndexes(meta_data, undefined, undefined, data);
+        expect(result.transaction_id.primary).toBe(true); // ✅ Composite PK
+        expect(result.user_id.primary).toBe(true); // ✅ Composite PK
+        expect(result.purchase_date.primary).toBeUndefined(); // ✅ Required to form a unique composite key
+        expect(result.refund_date.primary).toBeUndefined(); // ✅ Should not be primary
+        expect(result.shipment_date.primary).toBe(true); // ✅ Should not be primary
+    });
+
+    Object.values(DB_CONFIG).forEach((config) => {
+        test(`infers a multi-column composite key when the combination of fields is unique for ${config.sqlDialect.toUpperCase()}`, async () => {
+            const data: Record<string, any>[] = [
+                { date: "2024-07-01", channel: "Paid Social", campaign: "Summer Push A", sessions: 300, users: 240 },
+                { date: "2024-07-01", channel: "Paid Social", campaign: "Promo A", sessions: 180, users: 150 },
+                { date: "2024-07-01", channel: "Paid Social", campaign: "Summer Push B", sessions: 300, users: 240 },
+                { date: "2024-07-01", channel: "Paid Social", campaign: "Promo B", sessions: 180, users: 150 },
+                { date: "2024-07-01", channel: "Email", campaign: "Promo A", sessions: 200, users: 160 },
+                { date: "2024-07-01", channel: "Paid Search", campaign: "Promo A", sessions: 320, users: 300 },
+                { date: "2024-07-01", channel: "Paid Search", campaign: "Brand Awareness", sessions: 500, users: 420 },
+                { date: "2024-07-01", channel: "Paid Search", campaign: "Promo B", sessions: 320, users: 300 },
+                { date: "2024-07-01", channel: "Email", campaign: "Abandoned Cart", sessions: 80, users: 60 },
+                { date: "2024-07-01", channel: "Organic", campaign: "(not set)", sessions: 150, users: 110 },
+
+                { date: "2024-07-02", channel: "Paid Social", campaign: "Summer Push A", sessions: 300, users: 240 },
+                { date: "2024-07-02", channel: "Paid Social", campaign: "Promo A", sessions: 180, users: 150 },
+                { date: "2024-07-02", channel: "Paid Social", campaign: "Summer Push B", sessions: 300, users: 240 },
+                { date: "2024-07-02", channel: "Paid Social", campaign: "Promo B", sessions: 180, users: 150 },
+                { date: "2024-07-02", channel: "Email", campaign: "Promo A", sessions: 200, users: 160 },
+                { date: "2024-07-02", channel: "Paid Search", campaign: "Promo A", sessions: 320, users: 300 },
+                { date: "2024-07-02", channel: "Paid Search", campaign: "Brand Awareness", sessions: 500, users: 420 },
+                { date: "2024-07-02", channel: "Paid Search", campaign: "Promo B", sessions: 320, users: 300 },
+                { date: "2024-07-02", channel: "Email", campaign: "Abandoned Cart", sessions: 80, users: 60 },
+                { date: "2024-07-02", channel: "Organic", campaign: "(not set)", sessions: 150, users: 110 },
+
+                { date: "2024-07-03", channel: "Paid Social", campaign: "Summer Push A", sessions: 300, users: 240 },
+                { date: "2024-07-03", channel: "Paid Social", campaign: "Promo A", sessions: 180, users: 150 },
+                { date: "2024-07-03", channel: "Paid Social", campaign: "Summer Push B", sessions: 300, users: 240 },
+                { date: "2024-07-03", channel: "Paid Social", campaign: "Promo B", sessions: 180, users: 150 },
+                { date: "2024-07-03", channel: "Email", campaign: "Promo A", sessions: 200, users: 160 },
+                { date: "2024-07-03", channel: "Paid Search", campaign: "Promo A", sessions: 320, users: 300 },
+                { date: "2024-07-03", channel: "Paid Search", campaign: "Brand Awareness", sessions: 500, users: 420 },
+                { date: "2024-07-03", channel: "Paid Search", campaign: "Promo B", sessions: 320, users: 300 },
+                { date: "2024-07-03", channel: "Email", campaign: "Abandoned Cart", sessions: 80, users: 60 },
+                { date: "2024-07-03", channel: "Organic", campaign: "(not set)", sessions: 150, users: 110 },
+
+                { date: "2024-07-04", channel: "Paid Social", campaign: "Summer Push A", sessions: 300, users: 240 },
+                { date: "2024-07-04", channel: "Paid Social", campaign: "Promo A", sessions: 180, users: 150 },
+                { date: "2024-07-04", channel: "Paid Social", campaign: "Summer Push B", sessions: 300, users: 240 },
+                { date: "2024-07-04", channel: "Paid Social", campaign: "Promo B", sessions: 180, users: 150 },
+                { date: "2024-07-04", channel: "Email", campaign: "Promo A", sessions: 200, users: 160 },
+                { date: "2024-07-04", channel: "Paid Search", campaign: "Promo A", sessions: 320, users: 300 },
+                { date: "2024-07-04", channel: "Paid Search", campaign: "Brand Awareness", sessions: 500, users: 420 },
+                { date: "2024-07-04", channel: "Paid Search", campaign: "Promo B", sessions: 320, users: 300 },
+                { date: "2024-07-04", channel: "Email", campaign: "Abandoned Cart", sessions: 80, users: 60 },
+                { date: "2024-07-04", channel: "Organic", campaign: "(not set)", sessions: 150, users: 110 }
+            ];
+
+            const meta_data = await getMetaData(config, data);
+            const result = predictIndexes(meta_data, undefined, undefined, data);
+            expect(result.date.primary).toBe(true);      // ✅ part of composite PK
+            expect(result.channel.primary).toBe(true);   // ✅ part of composite PK
+            expect(result.campaign.primary).toBe(true);  // ✅ part of composite PK
+            expect(result.sessions.primary).toBeFalsy(); // ✅ not part of PK
+            expect(result.users.primary).toBeFalsy();    // ✅ not part of PK
+        });
+    });
 });
