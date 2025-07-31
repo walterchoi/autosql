@@ -49,7 +49,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     let sampleData = data;
     let remainingData: Record<string, any>[] = [];
 
-    if (sampling !== undefined && samplingMinimum !== undefined && data.length > samplingMinimum) {
+    if (sampling !== undefined && sampling > 0 && samplingMinimum !== undefined && data.length > samplingMinimum) {
         let sampleSize = Math.round(data.length * sampling);
         sampleSize = Math.max(sampleSize, samplingMinimum); // Ensure minimum sample size
 

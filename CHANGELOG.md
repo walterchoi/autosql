@@ -1,3 +1,14 @@
+## [1.0.2] - 2025-07-31
+### 🐛 Bug Fixes
+- Fixed issue where `package.json` dependencies were accidentally set to `^latest` instead of specific versions. This broke clean installs and has now been corrected.
+- Corrected sampling behavior: when `sampling = 0`, the engine mistakenly applied the `samplingMinimum` instead of returning the full dataset. This caused inaccurate index prediction on large datasets.
+
+## [1.0.1] - 2025-07-30
+### ✨ What's New
+- Added `excludeBlankColumns` feature to ignore completely empty columns across all rows.
+- Updated test suite and README to document the new configuration flag.
+- Upgraded all dependencies to their latest stable versions.
+
 ## [1.0.0] - 2025-04-02
 ### 🚨 Breaking Changes
 - This is a complete rewrite of the library.
