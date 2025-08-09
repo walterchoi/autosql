@@ -1,3 +1,8 @@
+## [1.0.3] - 2025-08-09
+### 🐛 Bug Fixes
+- Fixed issue where going from decimal column to varchar column would result in length that was insufficient by 1. This was due to not counting the decimal point (since length was just set to length + decimal)
+- Added a step before inserting data into staging table to alter the staging tables to reflect any other alterations that were made to the primary table.
+
 ## [1.0.2] - 2025-07-31
 ### 🐛 Bug Fixes
 - Fixed issue where `package.json` dependencies were accidentally set to `^latest` instead of specific versions. This broke clean installs and has now been corrected.

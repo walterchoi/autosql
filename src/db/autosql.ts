@@ -492,6 +492,8 @@ export class AutoSQLHandler {
             table: getTempTableName(input.table),
             insertType: "INSERT"
         }));
+        // Configure staging tables where necessary
+        await this.configureTables(stagingInputs)
         return await this.insertData(stagingInputs)
     }
 
@@ -630,7 +632,6 @@ export class AutoSQLHandler {
         );
         if(eligibleInputs.length == 0) {return []}
         // Check for current table meta data
-        // RIGHT HERE
         const historyInputs: InsertInput[] = await Promise.all(
             eligibleInputs.map(async (table) => {
               const historyName = getHistoryTableName(table);
