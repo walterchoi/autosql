@@ -120,6 +120,11 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     for (const column in metaDataInterim) {
         const type = collateTypes(metaDataInterim[column].types);
         metaData[column].type = type;
+        // If type is not decimal, but decimal is set, add + 1 (for the dot) to length and set decimal to 0. Do this to metaDataInterim[column] so that it can be used later.
+        if (!dialectConfig.decimals.includes(type)) {
+            metaDataInterim[column].length = metaDataInterim[column].length + (metaDataInterim[column].decimal > 0 ? 1 : 0);
+            metaDataInterim[column].decimal = 0;
+        }
         metaData[column].length = metaDataInterim[column].length || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
 

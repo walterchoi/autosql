@@ -145,5 +145,42 @@ Object.values(DB_CONFIG).forEach((config) => {
             const metadata = await getMetaData(config, jsonData);
             expect(metadata).toMatchObject(expectedMetadata);
         });
+
+        test("Extracts metadata for decimal + varchar columns correctly", async () => {
+            const jsonData = [
+                { id: 1, nondec: "667307317.17081678" },
+                { id: 2, nondec: "661217317.17281618" },
+                { id: 3, nondec: "value" },
+                { id: 4, nondec: "value" }
+            ];
+
+            const expectedMetadata: MetadataHeader = {
+                id: {
+                    type: "tinyint",
+                    length: 1,
+                    allowNull: false,
+                    unique: true,
+                    index: true,
+                    pseudounique: false,
+                    primary: true,
+                    autoIncrement: false,
+                    decimal: 0
+                },
+                nondec: {
+                    type: "varchar",
+                    length: 16,
+                    allowNull: false,
+                    unique: false,
+                    index: false,
+                    pseudounique: false,
+                    primary: false,
+                    autoIncrement: false,
+                    decimal: 0
+                }
+            };
+
+            const metadata = await getMetaData(config, jsonData);
+            expect(metadata).toEqual(expectedMetadata);
+        });
     });
 });
