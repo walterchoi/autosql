@@ -1,3 +1,9 @@
+## [1.0.4] - 2025-08-11
+### 🐛 Bug Fixes
+- Updated length calculation when converting from a decimal type to a non-decimal type.  
+  - In `1.0.3`, we added `+1` to account for the decimal point.  
+  - In `1.0.4`, we now add `trueMaxDecimal` as well, as we found that in cases where the decimal was rounded due to exceeding `databaseConfig.decimalMaxLength`, the resulting length on conversion to `varchar` could still mismatch. This ensures the length matches the literal string being stored after rounding.
+
 ## [1.0.3] - 2025-08-09
 ### 🐛 Bug Fixes
 - Fixed issue where going from decimal column to varchar column would result in length that was insufficient by 1. This was due to not counting the decimal point (since length was just set to length + decimal)

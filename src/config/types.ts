@@ -179,8 +179,10 @@ export interface metaDataInterim {
     valueCount: number;
     nullCount: number;
     types: Set<string>;
+    collated_type?: string;
     length: number;
     decimal: number;
+    trueMaxDecimal: number;
   }
 }
 

@@ -86,6 +86,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                     types: new Set(),
                     length: 0,
                     decimal: 0,
+                    trueMaxDecimal: 0
                 }
             }
 
@@ -108,6 +109,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 const decimalLen = valueStr.includes(".") ? valueStr.split(".")[1].length : 0;
                 const integerLen = valueStr.split(".")[0].length;
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
+                metaDataInterim[column].trueMaxDecimal = Math.max(metaDataInterim[column].trueMaxDecimal, metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
 
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal);
@@ -119,12 +121,8 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
 
     for (const column in metaDataInterim) {
         const type = collateTypes(metaDataInterim[column].types);
+        metaDataInterim[column].collated_type = type;
         metaData[column].type = type;
-        // If type is not decimal, but decimal is set, add + 1 (for the dot) to length and set decimal to 0. Do this to metaDataInterim[column] so that it can be used later.
-        if (!dialectConfig.decimals.includes(type)) {
-            metaDataInterim[column].length = metaDataInterim[column].length + (metaDataInterim[column].decimal > 0 ? 1 : 0);
-            metaDataInterim[column].decimal = 0;
-        }
         metaData[column].length = metaDataInterim[column].length || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
 
@@ -163,6 +161,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 const integerLen = valueStr.split(".")[0].length;
 
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
+                metaDataInterim[column].trueMaxDecimal = Math.max(metaDataInterim[column].trueMaxDecimal, metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
 
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal);
@@ -173,6 +172,12 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     for (const column in metaDataInterim) {
+        // If type is not decimal, but decimal is set, add + 1 (for the dot) to length and set decimal to 0. Do this to metaDataInterim[column] so that it can be used later.
+        // Also replace the metaDataInterim[column].decimal with metaDataInterim[column].trueMaxDecimal as if decimals were rounded due to exceeding the max decimal length, we want to keep the true max decimal length when converting to a non-decimal type.
+        if (!dialectConfig.decimals.includes(metaDataInterim[column].collated_type || 'varchar')) {
+            metaDataInterim[column].length = metaDataInterim[column].length + (metaDataInterim[column].decimal > 0 ? 1 : 0) - metaDataInterim[column].decimal + metaDataInterim[column].trueMaxDecimal;
+            metaDataInterim[column].decimal = 0;
+        }
         metaData[column].length = metaDataInterim[column].length || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
     }

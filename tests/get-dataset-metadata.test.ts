@@ -151,7 +151,8 @@ Object.values(DB_CONFIG).forEach((config) => {
                 { id: 1, nondec: "667307317.17081678" },
                 { id: 2, nondec: "661217317.17281618" },
                 { id: 3, nondec: "value" },
-                { id: 4, nondec: "value" }
+                { id: 4, nondec: "value" },
+                { id: 5, nondec: "377246198.62382112735452" },
             ];
 
             const expectedMetadata: MetadataHeader = {
@@ -168,7 +169,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 },
                 nondec: {
                     type: "varchar",
-                    length: 16,
+                    length: 24,
                     allowNull: false,
                     unique: false,
                     index: false,
