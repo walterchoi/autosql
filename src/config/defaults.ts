@@ -14,6 +14,8 @@ export const defaults = {
     autoSplit: false,
     useWorkers: true,
     maxWorkers: 8,
+    stagingPrefix: "temp_staging__",
+    historyTableSuffix: "__history",
     addTimestamps: true,
     addHistory: false,
     useStagingInsert: true,

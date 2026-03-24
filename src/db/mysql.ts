@@ -244,11 +244,11 @@ export class MySQLDatabase extends Database {
         return MySQLInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig())
     }
 
-    getCreateTempTableQuery(table: string): QueryInput {
-        return MySQLTableQueryBuilder.getCreateTempTableQuery(table, this.config.schema)
+    getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput {
+        return MySQLTableQueryBuilder.getCreateTempTableQuery(table, this.config.schema, stagingPrefix)
     }
 
-    getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }): QueryInput {
-        return MySQLIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.config.schema)
+    getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, stagingPrefix?: string): QueryInput {
+        return MySQLIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.config.schema, stagingPrefix)
     }
 }

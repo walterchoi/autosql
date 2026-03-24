@@ -1,33 +1,19 @@
-
-import { predictType, collateTypes } from "./helpers/columnTypes";
-import { getMetaData, compareMetaData, getDataHeaders, initializeMetaData } from "./helpers/metadata";
-import { predictIndexes } from "./helpers/keys";
-import { isObject, sqlize, shuffleArray, validateConfig, calculateColumnLength, 
-    normalizeNumber, mergeColumnLengths, setToArray, parseDatabaseLength, parseDatabaseMetaData, 
-    generateCombinations, isCombinationUnique, tableChangesExist, isMetaDataHeader, estimateRowSize, 
-    isValidDataFormat, normalizeKeysArray, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getNextTableName } from "./helpers/utilities";
-
-export {
-    predictType, collateTypes,
-    getMetaData, compareMetaData, getDataHeaders, initializeMetaData,
-    predictIndexes,
-    isObject, sqlize, shuffleArray, validateConfig, calculateColumnLength, 
-    normalizeNumber, mergeColumnLengths, setToArray, parseDatabaseLength, parseDatabaseMetaData, 
-    generateCombinations, isCombinationUnique, tableChangesExist, isMetaDataHeader, estimateRowSize, 
-    isValidDataFormat, normalizeKeysArray, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getNextTableName    
-};
-
 export { Database } from "./db/database";
+
+export { validateConfig } from "./helpers/utilities";
+
+export { getDataHeaders, compareMetaData, getMetaData, initializeMetaData } from "./helpers/metadata";
 
 export type {
     DatabaseConfig,
     DialectConfig,
     ColumnDefinition,
     MetadataHeader,
+    AlterTableChanges,
     InsertInput,
     QueryInput,
     QueryWithParams,
     QueryResult,
     InsertResult,
     SSHKeys
-  } from "./config/types";
+} from "./config/types";

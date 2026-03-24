@@ -373,7 +373,9 @@ export class AutoSQLHandler {
                 data,
                 previousMetaData: changes || currentMetaData,
                 metaData: mergedMetaData,
-                comparedMetaData
+                comparedMetaData,
+                stagingPrefix: this.db.getConfig().stagingPrefix,
+                historyTableSuffix: this.db.getConfig().historyTableSuffix
             }];
         }
     
@@ -474,11 +476,12 @@ export class AutoSQLHandler {
         return allInsertResults;
     }
 
-    private async prepareStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> { 
+    private async prepareStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
+        const stagingPrefix = insertInput[0]?.stagingPrefix;
         const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
 
         const stagingQueries: QueryInput[][] = uniqueTables.map(table => {
-            return [this.db.getCreateTempTableQuery(table)];
+            return [this.db.getCreateTempTableQuery(table, stagingPrefix)];
         });
         const allCreateResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingQueries);
 
@@ -489,7 +492,7 @@ export class AutoSQLHandler {
     private async insertStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
         const stagingInputs: InsertInput[] = insertInput.map(input => ({
             ...input,
-            table: getTempTableName(input.table),
+            table: getTempTableName(input.table, input.stagingPrefix),
             insertType: "INSERT"
         }));
         // Configure staging tables where necessary
@@ -497,11 +500,12 @@ export class AutoSQLHandler {
         return await this.insertData(stagingInputs)
     }
 
-    private async removeStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> { 
+    private async removeStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
+        const stagingPrefix = insertInput[0]?.stagingPrefix;
         const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
 
         const stagingQueries: QueryInput[][] = uniqueTables.map(table => {
-            const tempTableName = getTempTableName(table);
+            const tempTableName = getTempTableName(table, stagingPrefix);
             return [this.db.getDropTableQuery(tempTableName)];
         });
         const allDropResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingQueries);
@@ -511,6 +515,7 @@ export class AutoSQLHandler {
     }
 
     private async resolveConflicts(insertInput: InsertInput[]): Promise<void> {
+        const stagingPrefix = insertInput[0]?.stagingPrefix;
         const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
         const uniqueIndexesQuery = uniqueTables.map(table => {
             return [this.db.getUniqueIndexesQuery(table)]
@@ -565,7 +570,7 @@ export class AutoSQLHandler {
                 );
             })
             .map(table => {
-                return [this.db.getConstraintConflictQuery(table, tableStructure[table])];
+                return [this.db.getConstraintConflictQuery(table, tableStructure[table], stagingPrefix)];
             });
 
         const allConflicts : QueryResult[] = await this.db.runTransactionsWithConcurrency(conflictsQuery);

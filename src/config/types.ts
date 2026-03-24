@@ -102,6 +102,17 @@ export interface DatabaseConfig {
       maxWorkers?: number;
 
       /**
+       * Prefix for auto-created staging tables (default: "temp_staging__").
+       * Change this if your schema already has tables with that prefix.
+       */
+      stagingPrefix?: string;
+      /**
+       * Suffix for auto-created history tables (default: "__history").
+       * Change this if your schema already has tables with that suffix.
+       */
+      historyTableSuffix?: string;
+
+      /**
        * Optional logger. When omitted, the library writes nothing to stdout/stderr.
        * Pass `console` to restore the old behaviour, or supply your own structured logger.
        */
@@ -163,13 +174,15 @@ export interface InsertResult {
 }
 
 export interface InsertInput {
-  table: string, 
-  data: Record<string, any>[], 
+  table: string,
+  data: Record<string, any>[],
   metaData: MetadataHeader,
   previousMetaData: AlterTableChanges | MetadataHeader | null,
   comparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader },
   runQuery?: boolean,
-  insertType?: "UPDATE" | "INSERT"
+  insertType?: "UPDATE" | "INSERT",
+  stagingPrefix?: string,
+  historyTableSuffix?: string
 }
 
 export interface QueryResult {
@@ -186,6 +199,7 @@ export interface QueryResult {
 export interface metaDataInterim {
   [key: string]: {
     uniqueSet: Set<any>;
+    uniqueSaturated: boolean;
     valueCount: number;
     nullCount: number;
     types: Set<string>;

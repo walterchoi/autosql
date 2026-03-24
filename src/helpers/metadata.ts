@@ -57,6 +57,14 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         remainingData = shuffledData.slice(sampleSize); // Store remaining data
     }
 
+    // Cap uniqueSet per column to avoid unbounded memory on high-cardinality data.
+    // Threshold = minimum entries needed to confirm pseudounique (lower-bound approach):
+    // once uniqueSet.size / valueCount >= pseudoUnique, the column is definitively
+    // pseudounique and we stop inserting. Unique (100%) is only confirmed for columns
+    // that never saturate. For large datasets use sampling for full precision.
+    const pseudoUniqueThreshold = databaseConfig.pseudoUnique || defaults.pseudoUnique;
+    const uniqueSetCap = Math.ceil(pseudoUniqueThreshold * sampleData.length) + 1;
+
     for (const row of sampleData) {
         const rowColumns = Object.keys(row);
         rowColumns.forEach(column => allColumns.add(column))
@@ -80,6 +88,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
             if(metaDataInterim[column] == undefined) {
                 metaDataInterim[column] = {
                     uniqueSet: new Set(),
+                    uniqueSaturated: false,
                     valueCount: 0,
                     nullCount: 0,
                     types: new Set(),
@@ -98,7 +107,12 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
             if(!type) continue;
             const sqlizedValue = sqlize(value, type, dialectConfig, databaseConfig)
             metaDataInterim[column].valueCount++;
-            metaDataInterim[column].uniqueSet.add(sqlizedValue);
+            if (!metaDataInterim[column].uniqueSaturated) {
+                metaDataInterim[column].uniqueSet.add(sqlizedValue);
+                if (metaDataInterim[column].uniqueSet.size >= uniqueSetCap) {
+                    metaDataInterim[column].uniqueSaturated = true;
+                }
+            }
             metaDataInterim[column].types.add(type);
             if (groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) {
                 let valueStr = normalizeNumber(value);
@@ -125,14 +139,18 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         metaData[column].length = metaDataInterim[column].length || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
 
-        const uniquePercentage = metaDataInterim[column].uniqueSet.size / metaDataInterim[column].valueCount;
-        if(uniquePercentage == 1 && metaDataInterim[column].uniqueSet.size > 0) {
+        const uniqueSize = metaDataInterim[column].uniqueSet.size;
+        const valueCount = metaDataInterim[column].valueCount;
+        const saturated = metaDataInterim[column].uniqueSaturated;
+        // When saturated, uniqueSize/valueCount is a lower bound on the true unique percentage.
+        const uniquePercentage = uniqueSize / valueCount;
+        if (!saturated && uniquePercentage == 1 && uniqueSize > 0) {
             metaData[column].unique = true;
-        } else if (uniquePercentage >= (databaseConfig.pseudoUnique || defaults.pseudoUnique) && metaDataInterim[column].uniqueSet.size > 0) {
+        } else if (uniquePercentage >= (databaseConfig.pseudoUnique || defaults.pseudoUnique) && uniqueSize > 0) {
             metaData[column].pseudounique = true;
-        } else if (uniquePercentage <= (databaseConfig.categorical || defaults.categorical) && metaDataInterim[column].uniqueSet.size > 0 && !nonCategoricalTypes.includes(type)) {
+        } else if (!saturated && uniquePercentage <= (databaseConfig.categorical || defaults.categorical) && uniqueSize > 0 && !nonCategoricalTypes.includes(type)) {
             metaData[column].categorical = true;
-        } else if (metaDataInterim[column].uniqueSet.size == 1 && metaDataInterim[column].nullCount == 0 && metaDataInterim[column].valueCount > 0) {
+        } else if (!saturated && uniqueSize == 1 && metaDataInterim[column].nullCount == 0 && valueCount > 0) {
             metaData[column].singleValue = true;
         }
         if(metaDataInterim[column].nullCount !== 0) {

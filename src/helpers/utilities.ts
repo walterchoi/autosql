@@ -682,31 +682,23 @@ export function getNextTableName(tableName: string): string {
     return `${tableName}__part_001`; // If no number exists, start at __part_001
 };
 
-export function getTempTableName(tableName: string): string {
-    const TEMP_PREFIX = "temp_staging__";
-    return tableName.startsWith(TEMP_PREFIX) ? tableName : `${TEMP_PREFIX}${tableName}`;
+export function getTempTableName(tableName: string, stagingPrefix = "temp_staging__"): string {
+    return tableName.startsWith(stagingPrefix) ? tableName : `${stagingPrefix}${tableName}`;
 }
 
-export function getTrueTableName(tableName: string): string {
-    const TEMP_PREFIX = "temp_staging__";
-    const HISTORY_SUFFIX = "__history";
-  
+export function getTrueTableName(tableName: string, stagingPrefix = "temp_staging__", historyTableSuffix = "__history"): string {
     let result = tableName;
-  
-    if (result.startsWith(TEMP_PREFIX)) {
-      result = result.slice(TEMP_PREFIX.length);
+    if (result.startsWith(stagingPrefix)) {
+        result = result.slice(stagingPrefix.length);
     }
-  
-    if (result.endsWith(HISTORY_SUFFIX)) {
-      result = result.slice(0, -HISTORY_SUFFIX.length);
+    if (result.endsWith(historyTableSuffix)) {
+        result = result.slice(0, -historyTableSuffix.length);
     }
-  
     return result;
-}  
+}
 
-export function getHistoryTableName(tableName: string): string {
-    const HISTORY_SUFFIX = "__history";
-    return tableName.endsWith(HISTORY_SUFFIX) ? tableName : `${tableName}${HISTORY_SUFFIX}`;
+export function getHistoryTableName(tableName: string, historyTableSuffix = "__history"): string {
+    return tableName.endsWith(historyTableSuffix) ? tableName : `${tableName}${historyTableSuffix}`;
 }
 
 export async function wait_x_mseconds (x: number) {

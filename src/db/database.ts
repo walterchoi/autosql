@@ -415,8 +415,8 @@ export abstract class Database {
     public abstract getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT"): QueryInput; 
     public abstract getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT"): QueryInput; 
     public abstract getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader): QueryInput; 
-    public abstract getCreateTempTableQuery(table: string): QueryInput;
-    public abstract getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }): QueryInput;
+    public abstract getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput;
+    public abstract getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, stagingPrefix?: string): QueryInput;
 
     public abstract getMaxConnections(): number;
 

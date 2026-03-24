@@ -89,9 +89,9 @@ export class PostgresIndexQueryBuilder {
         return { query, params };
     }
 
-    static generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string): QueryInput {
+    static generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string, stagingPrefix?: string): QueryInput {
         const schemaPrefix = schema ? `"${schema}".` : "";
-        const tempTable = getTempTableName(table);
+        const tempTable = getTempTableName(table, stagingPrefix);
         const t1 = "t1";
         const t2 = "t2";
       

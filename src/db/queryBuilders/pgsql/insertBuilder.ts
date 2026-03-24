@@ -106,12 +106,13 @@ export class PostgresInsertQueryBuilder {
           insertType = inputInsertType || databaseConfig?.insertType || "UPDATE";
         }
       
-        const tempTable = getTempTableName(table);
-      
+        const stagingPrefix = typeof tableOrInput === "object" ? tableOrInput.stagingPrefix : undefined;
+        const tempTable = getTempTableName(table, stagingPrefix);
+
         const columns = Object.keys(header);
         const escapedCols = columns.map(col => `"${col}"`).join(", ");
         const selectCols = columns.map(col => `"${col}"`).join(", ");
-      
+
         let query = `INSERT INTO ${schemaPrefix}"${table}" (${escapedCols}) SELECT ${selectCols} FROM ${schemaPrefix}"${tempTable}"`;
       
         if (insertType === "UPDATE") {
@@ -147,16 +148,20 @@ export class PostgresInsertQueryBuilder {
     
       const schemaPrefix = databaseConfig?.schema ? `"${databaseConfig.schema}".` : "";
     
+      let stagingPrefix: string | undefined;
+      let historyTableSuffix: string | undefined;
       if (typeof tableOrInput === "object" && "table" in tableOrInput) {
-        table = getTrueTableName(tableOrInput.table);
+        stagingPrefix = tableOrInput.stagingPrefix;
+        historyTableSuffix = tableOrInput.historyTableSuffix;
+        table = getTrueTableName(tableOrInput.table, stagingPrefix, historyTableSuffix);
         header = tableOrInput.comparedMetaData?.updatedMetaData || tableOrInput.metaData;
       } else {
         table = getTrueTableName(tableOrInput);
         header = metaData!;
       }
-    
-      const historyTable = getHistoryTableName(table);
-      const tempTable = getTempTableName(table);
+
+      const historyTable = getHistoryTableName(table, historyTableSuffix);
+      const tempTable = getTempTableName(table, stagingPrefix);
     
       const filteredCols = Object.keys(header).filter(col => col !== "dwh_as_at");
       const primaryKeys = filteredCols.filter(col => header[col].primary);

@@ -182,8 +182,8 @@ export class PostgresTableQueryBuilder {
         return { query: `DROP TABLE IF EXISTS ${schemaPrefix}"${table}";`, params: []};
     }
 
-    static getCreateTempTableQuery(table: string, schema?: string): QueryInput {
-        const tempTableName = getTempTableName(table);
+    static getCreateTempTableQuery(table: string, schema?: string, stagingPrefix?: string): QueryInput {
+        const tempTableName = getTempTableName(table, stagingPrefix);
         const schemaPrefix = schema ? `"${schema}".` : "";
         return {query: `CREATE TABLE IF NOT EXISTS ${schemaPrefix}"${tempTableName}"
         AS SELECT * FROM ${schemaPrefix}"${table}" LIMIT 0;`, params: []};
