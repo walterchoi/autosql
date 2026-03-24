@@ -43,8 +43,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     const dialect = databaseConfig.sqlDialect;
-    const db = Database.create({sqlDialect: dialect})
-    const dialectConfig: DialectConfig = db.getDialectConfig()
+    const dialectConfig: DialectConfig = dialect === 'mysql' ? mysqlConfig : pgsqlConfig;
 
     let sampleData = data;
     let remainingData: Record<string, any>[] = [];

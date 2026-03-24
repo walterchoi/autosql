@@ -41,7 +41,23 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         };
 
         // Merge provided config with defaults
-        return { ...defaultConfig, ...config };
+        const merged = { ...defaultConfig, ...config };
+
+        // Validate numeric bounds
+        if (merged.insertStack !== undefined && merged.insertStack <= 0) {
+            throw new Error("insertStack must be greater than 0.");
+        }
+        if (merged.maxWorkers !== undefined && merged.maxWorkers < 1) {
+            throw new Error("maxWorkers must be at least 1.");
+        }
+        if (merged.pseudoUnique !== undefined && (merged.pseudoUnique <= 0 || merged.pseudoUnique > 1)) {
+            throw new Error("pseudoUnique must be between 0 (exclusive) and 1 (inclusive).");
+        }
+        if (merged.categorical !== undefined && (merged.categorical <= 0 || merged.categorical >= 1)) {
+            throw new Error("categorical must be between 0 (exclusive) and 1 (exclusive).");
+        }
+
+        return merged;
     } catch (error) {
         throw error;
     }
@@ -546,7 +562,7 @@ export function organizeSplitData(data: Record<string, any>[], splitMetaData: Re
 
 export function splitInsertData(data: Record<string, any>[], config: DatabaseConfig): Record<string, any>[][] {
     const {
-      insertStack = 1000
+      insertStack = 100
     } = config;
 
     const chunks: Record<string, any>[][] = [];
