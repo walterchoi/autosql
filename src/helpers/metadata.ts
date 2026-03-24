@@ -239,7 +239,7 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
     }
 }
 
-export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHeadersOriginal: MetadataHeader, dialectConfig?: DialectConfig): { changes: AlterTableChanges; updatedMetaData: MetadataHeader } {
+export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHeadersOriginal: MetadataHeader, dialectConfig?: DialectConfig, logger?: { warn?: (msg: string) => void }): { changes: AlterTableChanges; updatedMetaData: MetadataHeader } {
     if(!oldHeadersOriginal) {
         return { 
             changes: {
@@ -313,7 +313,7 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
             const recommendedType = collateTypes([oldType, newType]);
 
             if (recommendedType !== oldType) {
-                console.warn(`🔄 Converting ${columnName}: ${oldType} → ${recommendedType}`);
+                logger?.warn?.(`Converting ${columnName}: ${oldType} → ${recommendedType}`);
                 modifiedColumn.type = recommendedType;
                 modifiedColumn.previousType = oldType;
                 modified = true;

@@ -28,7 +28,6 @@ export function predictType(data: any): string | null {
             strData = normalizeNumber(strData);
 
             if (!strData) {
-                console.log('!strData - varchar')
                 return "varchar"; // Invalid format
             }
         }

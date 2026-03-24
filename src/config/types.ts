@@ -101,6 +101,16 @@ export interface DatabaseConfig {
       useWorkers?: boolean;
       maxWorkers?: number;
 
+      /**
+       * Optional logger. When omitted, the library writes nothing to stdout/stderr.
+       * Pass `console` to restore the old behaviour, or supply your own structured logger.
+       */
+      logger?: {
+          log?: (msg: string) => void;
+          warn?: (msg: string) => void;
+          error?: (msg: string) => void;
+      };
+
       sshConfig?: SSHKeys;
       sshStream?: ClientChannel | null;
       sshClient?: SSHClient;

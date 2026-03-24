@@ -623,10 +623,7 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
                     return JSON.stringify({ value });
                 }
             } catch (err: any) {
-                console.warn(`[sqlize] Failed to handle JSON value for column:`, {
-                    value,
-                    error: err.message || err
-                });
+                databaseConfig?.logger?.warn?.(`[sqlize] Failed to handle JSON value for column: ${JSON.stringify({ value, error: err.message || String(err) })}`);
                 return null; // ❌ Fallback to NULL if completely unusable
             }
         }

@@ -10,7 +10,6 @@ export abstract class Database {
     protected connection: any | null = null;
     protected config: DatabaseConfig;
     public autoSQLHandler!: AutoSQLHandler;
-    startDate : Date = new Date();
     protected abstract getPermanentErrors(): Promise<string[]>;
 
     constructor(config: DatabaseConfig) {
@@ -32,9 +31,13 @@ export abstract class Database {
         };
     }
 
-    public updateSchema(schema: string): void {
+    public updateSchema(schema: string | undefined): void {
         this.config.schema = schema;
     }
+
+    public log(msg: string): void { this.config.logger?.log?.(msg); }
+    public warn(msg: string): void { this.config.logger?.warn?.(msg); }
+    public error(msg: string): void { this.config.logger?.error?.(msg); }
 
     static create(config: DatabaseConfig): Database {
         const DIALECTS: Record<string, new (config: DatabaseConfig) => Database> = {
@@ -74,11 +77,11 @@ export abstract class Database {
                 await this.establishDatabaseConnection();
                 return;
             } catch (error: any) {
-                console.error(`Database connection attempt ${attempts + 1} failed:`, error.message);
+                this.error(`Database connection attempt ${attempts + 1} failed: ${error.message}`);
 
                 const permanentErrors = await this.getPermanentErrors();
                 if (permanentErrors.includes(error.code)) {
-                    console.error("Permanent error detected. Aborting retry.");
+                    this.error("Permanent error detected. Aborting retry.");
                     throw error;
                 }
 
@@ -98,7 +101,7 @@ export abstract class Database {
             const result = await this.runQuery({ query: "SELECT 1 AS solution;"});
             return !!result;
         } catch (error) {
-            console.error("Test connection failed:", error);
+            this.error(`Test connection failed: ${error}`);
             return false;
         }
     }
@@ -309,7 +312,7 @@ export abstract class Database {
                 results
             };
         } catch (error: any) {
-            console.log(error)
+            this.error(`Transaction error: ${error}`);
             await this.rollback();
             end = new Date();
             return {
@@ -336,7 +339,7 @@ export abstract class Database {
           const i = index++;
           if (i >= queryGroups.length) return;
       
-          console.log(`🔹 Running transaction for group #${i + 1}`);
+          this.log(`Running transaction for group #${i + 1}`);
           try {
             const result = await this.runTransaction(queryGroups[i]);
             results[i] = result;
@@ -389,7 +392,7 @@ export abstract class Database {
     
             throw new Error("Unexpected metadata format: Multiple tables returned for a single-table query.");
         } catch (error) {
-            console.error("Error fetching table metadata:", error);
+            this.error(`Error fetching table metadata: ${error}`);
             return null;
         }
     }

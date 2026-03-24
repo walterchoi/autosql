@@ -22,7 +22,7 @@ import { AutoSQLHandler } from "../db/autosql";
 
         if (method === "test") {
             const randomTimeInMs = Math.random() * 500;
-            const startTime = db.startDate
+            const startTime = new Date();
             const result = `${startTime}, ${params}`
             await new Promise(resolve => setTimeout(resolve, randomTimeInMs)); // Simulate async delay
             parentPort?.postMessage({ success: true, result: result });

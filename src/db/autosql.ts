@@ -76,6 +76,7 @@ export class AutoSQLHandler {
     }    
 
     async autoConfigureTable(inputOrTable: string | InsertInput, inputData?: Record<string, any>[] | null, inputCurrentMetaData?: MetadataHeader | AlterTableChanges | null, inputNewMetaData?: MetadataHeader | null, inputRunQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
+        const start = new Date();
         try {
             let table: string;
             let data: Record<string, any>[] | null = null;
@@ -97,7 +98,7 @@ export class AutoSQLHandler {
                 newMetaData = inputNewMetaData ?? null;
                 runQuery = inputRunQuery
             }
-            console.log(`⚡ [autoConfigureTable] Running for table: ${table}`);
+            this.db.log(`[autoConfigureTable] Running for table: ${table}`);
 
             if (!newMetaData && data?.length === 0) {
                 // ❌ Cannot configure table '${table}': No existing metadata and no data provided to infer structure.
@@ -116,7 +117,7 @@ export class AutoSQLHandler {
             if(!updatedMetadata) { throw new Error('An unexpected error occurred while getting metadata')}
 
             if(!currentMetaDataOrTableChanges) {
-                console.log("🔎 Fetching metadata since no current metadata was provided...");
+                this.db.log("Fetching metadata since no current metadata was provided...");
                 const { currentMetaData, tableExists: exists } = await this.fetchTableMetadata(table);
                 tableExists = exists;
 
@@ -125,7 +126,8 @@ export class AutoSQLHandler {
                     const { changes, updatedMetaData: mergedMetadata } = compareMetaData(
                         currentMetaData,
                         updatedMetadata,
-                        this.db.getDialectConfig()
+                        this.db.getDialectConfig(),
+                        this.db.getConfig().logger
                     );
                     tableChanges = changes;
                     updatedMetadata = mergedMetadata;
@@ -133,14 +135,14 @@ export class AutoSQLHandler {
                 }
             }
             else if(isMetaDataHeader(currentMetaDataOrTableChanges)) {
-                console.log("🔍 Comparing metadata for changes...");
+                this.db.log("Comparing metadata for changes...");
                 // ✅ If provided with metadata, compare changes
-                const { changes, updatedMetaData: mergedMetadata } = compareMetaData(currentMetaDataOrTableChanges, newMetaData, this.db.getDialectConfig());
+                const { changes, updatedMetaData: mergedMetadata } = compareMetaData(currentMetaDataOrTableChanges, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
                 tableChanges = changes;
                 updatedMetadata = mergedMetadata;
                 tableExists = true;
             } else {
-                console.log("🚀 Precomputed table changes detected, using them directly.");
+                this.db.log("Precomputed table changes detected, using them directly.");
                 // ✅ If provided with precomputed table changes, use directly
                 tableChanges = currentMetaDataOrTableChanges as AlterTableChanges;
                 updatedMetadata = newMetaData; // ✅ No merging needed
@@ -148,14 +150,13 @@ export class AutoSQLHandler {
             }
 
             if (!tableExists) {
-                console.log(`🔨 Creating table: ${table}`);
+                this.db.log(`Creating table: ${table}`);
                 return await this.autoCreateTable(table, updatedMetadata, false, runQuery);
             }
     
             // ✅ If table exists but no changes, return success
             if (!tableChanges || !tableChangesExist(tableChanges)) {
-                console.log(`✅ Table exists, no changes detected. Skipping ALTER TABLE.`);
-                const start = this.db.startDate;
+                this.db.log(`Table exists, no changes detected. Skipping ALTER TABLE.`);
                 const end = new Date();
                 const affectedRows = 0;
                 const rows: any[] = []
@@ -170,10 +171,9 @@ export class AutoSQLHandler {
             }
     
             // ✅ If table exists and changes exist, alter it
-            console.log(`✏️ Altering table: ${table} with changes:`, tableChanges);
+            this.db.log(`Altering table: ${table} with changes: ${JSON.stringify(tableChanges)}`);
             return await this.autoAlterTable(table, tableChanges, true, runQuery);
         } catch (error) {
-            const start = this.db.startDate;
             const end = new Date();
             const affectedRows = 0;
             return {
@@ -249,7 +249,7 @@ export class AutoSQLHandler {
             const transformedData = await Promise.all(
                 Object.keys(newGroupedByTable).map(async (tableName) => {
                     const newMetaData = await getMetaData(this.db.getConfig(), newGroupedData[tableName] || []);
-                    const mergedMetaData = compareMetaData(parsedSplitMetadata[tableName], newMetaData, this.db.getDialectConfig());
+                    const mergedMetaData = compareMetaData(parsedSplitMetadata[tableName], newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
             
                     return {
                         table: tableName,
@@ -329,13 +329,13 @@ export class AutoSQLHandler {
         let changes: AlterTableChanges | null = null;
     
         if (currentMetaData) {
-            initialComparedMetaData  = compareMetaData(currentMetaData, newMetaData, this.db.getDialectConfig());
+            initialComparedMetaData  = compareMetaData(currentMetaData, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
             changes = initialComparedMetaData .changes;
             mergedMetaData = initialComparedMetaData.updatedMetaData;
             this.db.updateTableMetadata(table, mergedMetaData, "metaData");
         }
     
-        mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData, this.db.startDate);
+        mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData, new Date());
     
         return { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData };
     }
@@ -365,7 +365,7 @@ export class AutoSQLHandler {
             // 🔹 Step 3.1: Handle metadata comparison if not split
             let comparedMetaData = initialComparedMetaData;
             if (comparedMetaData === undefined) {
-                comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig());
+                comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
             }
     
             insertInput = [{
@@ -425,7 +425,7 @@ export class AutoSQLHandler {
         // 🔹 Step 4: Handle failures
         throwIfFailedResults(allResults, "table configuring queries")
     
-        console.log("✅ All tables configured and executed successfully.");
+        this.db.log("All tables configured and executed successfully.");
         return allResults;
     }
 
@@ -740,7 +740,7 @@ export class AutoSQLHandler {
             const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(nestedTable, nestedRows, primaryMap[nestedTable]);
             let comparedMetaData = initialComparedMetaData;
             if (comparedMetaData === undefined) {
-                comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig());
+                comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
             }
             const insertInput : InsertInput = {
                 table: nestedTable,
@@ -755,9 +755,12 @@ export class AutoSQLHandler {
     } 
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[]): Promise<QueryResult> {
+        const start = new Date();
+        // Capture original schema so we can restore it after this call — prevents
+        // permanent config mutation when a per-call schema override is provided.
+        const originalSchema = this.db.getConfig().schema;
+        if (schema) { this.db.updateSchema(schema); }
         try {
-
-            if(schema) { this.db.updateSchema(schema) }
 
             let affectedRows : number;
             let insertResults : QueryResult[]
@@ -778,7 +781,6 @@ export class AutoSQLHandler {
                 insertResults = await this.insertData(insertInput);
             }
 
-            const start = new Date();
             affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
             const allResults = insertResults.flatMap(res => res.results || []);
             const end = new Date;
@@ -792,10 +794,9 @@ export class AutoSQLHandler {
                 table
             };
         } catch (error: any) {
-            const start = this.db.startDate;
             const end = new Date();
             const affectedRows = 0;
-        
+
             return {
                 start,
                 end,
@@ -804,6 +805,9 @@ export class AutoSQLHandler {
                 success: false,
                 error: error instanceof Error ? error.message : String(error) // Ensure error is a string
             };
+        } finally {
+            // Restore original schema so the Database instance isn't permanently altered.
+            if (schema) { this.db.updateSchema(originalSchema); }
         }
     }
 }

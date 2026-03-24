@@ -71,7 +71,7 @@ export class MySQLDatabase extends Database {
             return { success: true };
         } catch (error: any) {
             if(client) await client.query("ROLLBACK;");
-            console.error("MySQL testQuery failed:", error);
+            this.error(`MySQL testQuery failed: ${error}`);
             throw error;
         } finally {
             if (client) client.release();
@@ -144,7 +144,7 @@ export class MySQLDatabase extends Database {
             if (!newHeaders) {
                 throw new Error("Missing new headers for ALTER TABLE query");
             }
-            ({ changes: alterTableChanges, updatedMetaData }  = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig()));
+            ({ changes: alterTableChanges, updatedMetaData }  = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig(), this.config.logger));
             this.updateTableMetadata(table, updatedMetaData, "metaData")
         } else {
             alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
