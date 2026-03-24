@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { MetadataHeader, AlterTableChanges } from "../src/config/types";
+import { MetadataHeader, AlterTableChanges, InsertInput, QueryInput } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_auto_configure_table";
 
@@ -128,16 +128,35 @@ Object.values(DB_CONFIG).forEach((config) => {
             const dropQueryResults = await db.runQuery(dropQuery)
             // ✅ Ensure table exists
             await db.runQuery(`CREATE TABLE IF NOT EXISTS ${db.getConfig().schema || db.getConfig().database}.${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
-        
+
             // ✅ Provide sample data (though not required for precomputed changes)
             const sampleData = [{ id: 1, name: "Alice", email: "alice@example.com" }];
-        
+
             const result = await db.autoConfigureTable(TEST_TABLE_NAME, sampleData, ALTER_TABLE_CHANGES, UPDATED_METADATA);
             if (Array.isArray(result)) {
                 throw new Error("Expected QueryResult but received QueryInput[] (runQuery: false?)");
             }
             expect(result.success).toBe(true);
             console.log(`Test Result [${config.sqlDialect}]: Table altered using precomputed changes:`, result);
-        }); 
+        });
+
+        test("Returns QueryInput[] (dry-run) when runQuery is false via InsertInput object", async () => {
+            const dropQuery = db.dropTableQuery(TEST_TABLE_NAME);
+            await db.runQuery(dropQuery);
+
+            const insertInput: InsertInput = {
+                table: TEST_TABLE_NAME,
+                data: [{ id: 1, name: "Alice" }],
+                metaData: INITIAL_METADATA,
+                previousMetaData: null,
+                runQuery: false
+            };
+
+            const result = await db.autoSQLHandler.autoConfigureTable(insertInput);
+            expect(Array.isArray(result)).toBe(true);
+            const queries = result as QueryInput[];
+            expect(queries.length).toBeGreaterThan(0);
+            console.log(`Test Result [${config.sqlDialect}]: runQuery: false returns QueryInput[]:`, queries.length, "queries");
+        });
     });
 });

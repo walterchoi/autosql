@@ -95,9 +95,13 @@ export class MySQLDatabase extends Database {
     
             const rows = Array.isArray(rowsOrResult) ? rowsOrResult : [];
             let affectedRows = 0;
-    
-            if (maybeHeader && typeof maybeHeader === 'object' && 'affectedRows' in maybeHeader) {
-                affectedRows = maybeHeader.affectedRows;
+
+            // For INSERT/UPDATE/DELETE, mysql2 returns a ResultSetHeader as rowsOrResult (not an array).
+            // For SELECT, rowsOrResult is the rows array and maybeHeader is FieldPacket[].
+            if (!Array.isArray(rowsOrResult) && rowsOrResult != null && 'affectedRows' in rowsOrResult) {
+                affectedRows = (rowsOrResult as ResultSetHeader).affectedRows;
+            } else if (maybeHeader && !Array.isArray(maybeHeader) && 'affectedRows' in maybeHeader) {
+                affectedRows = (maybeHeader as ResultSetHeader).affectedRows;
             } else if (rows.length > 0) {
                 affectedRows = rows.length;
             }
