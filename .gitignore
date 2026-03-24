@@ -16,3 +16,7 @@ npm-debug.log*
 
 # Optional: Ignore local config (but keep a template)
 tests/utils/config.local.json
+
+# Local notes (not for version control)
+notes/
+.claude
