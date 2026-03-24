@@ -88,7 +88,7 @@ export class AutoSQLHandler {
                 data = inputOrTable.data;
                 currentMetaDataOrTableChanges = inputOrTable.previousMetaData;
                 newMetaData = inputOrTable.metaData;
-                runQuery = inputOrTable.runQuery || inputRunQuery || true
+                runQuery = inputOrTable.runQuery ?? inputRunQuery ?? true
             } else {
                 // ✅ Handle case where `input` is a `string` (table name)
                 table = inputOrTable;
@@ -778,9 +778,7 @@ export class AutoSQLHandler {
                 insertResults = await this.insertData(insertInput);
             }
 
-            insertResults = []
-
-            const start = this.db.startDate;
+            const start = new Date();
             affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
             const allResults = insertResults.flatMap(res => res.results || []);
             const end = new Date;
