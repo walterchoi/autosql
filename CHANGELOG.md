@@ -1,3 +1,45 @@
+## [1.1.0] - 2026-03-25
+### ✨ What's New
+
+#### Streaming inserts
+- **`openStream(table, schema?, primaryKey?)`** — new streaming API for writing large or incremental datasets without holding everything in memory.
+  - Returns an `AutoSQLStreamHandle` with `write(chunk)`, `end()`, and `abort()` methods.
+  - **Connectivity check on open** — a `SELECT 1` is issued immediately when the stream is opened so that bad credentials or unreachable hosts surface before any data is written.
+  - **Staging-table isolation** — each stream run gets its own staging table (e.g. `autosql_stream__users__a3f9b2c1`). All staging columns are untyped (`LONGTEXT` / `TEXT`) to accept arbitrary raw values. The actual target schema is inferred at merge time.
+  - **Lazy staging table creation** — the staging table is not created until the first `write()` call, when the column names of the incoming chunk are known.
+  - **Atomic merge on `end()`** — at close time, autosql reads the staging data, runs the full `getMetaData` → `compareMetaData` → `configureTables` pipeline, then issues a bulk `INSERT … SELECT` with dialect-specific type casts (`CAST(col AS …)` for MySQL, `col::type` for PostgreSQL).
+  - **Per-row fallback** — if the bulk merge fails, autosql retries each row individually. Failed rows trigger a schema widening pass (`compareMetaData`) before each retry round. Up to `streamMaxRetries` (default `3`) rounds are attempted.
+  - **Rejected-rows table (opt-in)** — if `rejectedRowsTable` is configured, rows that cannot be merged after all retries are written to that table instead of throwing. Without this option, unrecoverable rows throw.
+  - **`abort()`** — drops the staging table without merging. Safe to call even if no data has been written yet (no-op if staging table was never created).
+  - **`keepOrphanedStagingTables`** (default `false`) — on `openStream`, autosql scans for and drops leftover staging tables from previous runs that were never cleanly ended. Set to `true` to preserve them (useful for debugging).
+  - Works with `useSchemaLock: true` — the advisory lock is held only during the merge's DDL phase, then released before inserts begin.
+  - Works with `schemaHistory: true` — a history record is written for any DDL applied during the merge.
+  - New config options: `streamingStagingPrefix` (default `"autosql_stream__"`), `streamMaxRetries` (default `3`), `rejectedRowsTable`, `rejectedRowsSchema`, `keepOrphanedStagingTables` (default `false`).
+
+#### Schema history
+- **`schemaHistory: true`** — opt-in audit log of every DDL operation applied to a table.
+  - A `autosql_schema_history` table (configurable via `schemaHistoryTable` / `schemaHistorySchema`) is created automatically the first time a DDL event occurs.
+  - Each migration writes a `pending` record, then updates to `applied`, `failed`, or `rolled_back` as the operation completes. Includes the full before/after schema snapshot and a sha256 checksum.
+  - Version numbers are assigned atomically using `INSERT … SELECT MAX(version)+1` with a UNIQUE constraint, preventing duplicate version numbers under concurrent writers.
+  - MySQL schema: `BIGINT AUTO_INCREMENT`, `DATETIME`, `JSON` columns. PostgreSQL: `BIGSERIAL`, `TIMESTAMPTZ`, `JSONB`.
+- **Drift detection** — on every `autoSQL` call, autosql computes a sha256 checksum of the current live schema and compares it to the last `applied` history record.
+  - Enabled by default when `schemaHistory: true`. Disable with `detectDrift: false`.
+  - If drift is detected: warns by default. Set `strictDriftDetection: true` to throw `SchemaDriftError` instead.
+  - Checksums are computed over key-sorted JSON (`stableStringify`) so column insertion order never affects the result.
+- **`detectSchemaDrift(db, table)`** — exported standalone function for detecting schema drift outside of `autoSQL`.
+- **`getSchemaAt(db, table, at)`** — exported function for point-in-time schema reconstruction. Returns the `MetadataHeader` from the last `applied` history record before the given timestamp.
+- **`computeChecksum(schema)`** — exported function that returns the 64-char hex sha256 used internally for drift detection.
+- New config options: `schemaHistory` (default `false`), `schemaHistoryTable` (default `"autosql_schema_history"`), `schemaHistorySchema`, `detectDrift` (default `true`), `strictDriftDetection` (default `false`).
+
+### 🔧 Internal
+- `src/helpers/schemaHistory.ts` added — schema history bootstrap, migration record helpers, drift detection, and `getSchemaAt`.
+- `src/helpers/streamHelpers.ts` added — staging table creation, staging insert, merge-from-staging (with type casts), orphan search, and rejected-rows query builders.
+- `SchemaDriftError` added to `src/errors.ts` and exported from the package root.
+- `AutoSQLStreamHandle` exported as a type from the package root.
+- `getSchemaAt`, `detectSchemaDrift`, and `computeChecksum` added to the stable public API (`src/index.ts`).
+
+---
+
 ## [1.0.5] - 2026-03-25
 ### ✨ What's New
 
