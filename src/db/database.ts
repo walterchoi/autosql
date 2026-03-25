@@ -420,6 +420,20 @@ export abstract class Database {
 
     public abstract getMaxConnections(): number;
 
+    /**
+     * Acquire a database-native advisory lock scoped to the given table.
+     * MySQL: uses GET_LOCK on a dedicated pool connection.
+     * PostgreSQL: uses pg_try_advisory_lock on a dedicated pool client.
+     * The lock is held until `releaseSchemaLock` is called.
+     */
+    public abstract acquireSchemaLock(table: string, timeoutSeconds: number): Promise<void>;
+
+    /**
+     * Release the advisory lock previously acquired by `acquireSchemaLock`.
+     * Safe to call even if no lock is held (no-op).
+     */
+    public abstract releaseSchemaLock(table: string): Promise<void>;
+
     get autoSQL() {
         return this.autoSQLHandler.autoSQL.bind(this.autoSQLHandler);
     }
@@ -450,6 +464,10 @@ export abstract class Database {
 
     get autoConfigureTable() {
         return this.autoSQLHandler.autoConfigureTable.bind(this.autoSQLHandler);
+    }
+
+    get autoSQLChunked() {
+        return this.autoSQLHandler.autoSQLChunked.bind(this.autoSQLHandler);
     }
 }
 

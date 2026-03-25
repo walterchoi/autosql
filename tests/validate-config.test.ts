@@ -78,4 +78,16 @@ describe("validateConfig — numeric bounds", () => {
         const { sqlDialect, ...withoutDialect } = BASE_CONFIG;
         expect(() => validateConfig(withoutDialect as DatabaseConfig)).toThrow();
     });
+
+    test("throws when addHistory is true but useStagingInsert is false", () => {
+        expect(() =>
+            validateConfig({ ...BASE_CONFIG, addHistory: true, useStagingInsert: false })
+        ).toThrow("addHistory requires useStagingInsert");
+    });
+
+    test("accepts addHistory: true when useStagingInsert is true", () => {
+        expect(() =>
+            validateConfig({ ...BASE_CONFIG, addHistory: true, useStagingInsert: true })
+        ).not.toThrow();
+    });
 });

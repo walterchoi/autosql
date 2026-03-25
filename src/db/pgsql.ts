@@ -1,7 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader, InsertInput, QueryResult } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { pgsqlConfig } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareMetaData } from '../helpers/metadata';
@@ -9,10 +9,13 @@ import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
 import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
 import { PostgresInsertQueryBuilder } from "./queryBuilders/pgsql/insertBuilder";
 import { AutoSQLHandler } from "./autosql";
-import { normalizeResultKeys } from "../helpers/utilities";
+import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
+import { SchemaLockTimeoutError } from "../errors";
 const dialectConfig = pgsqlConfig
 
 export class PostgresDatabase extends Database {
+    private schemaLockConnections: Map<string, PoolClient> = new Map();
+
     constructor(config: DatabaseConfig) {
         super(config);
         this.autoSQLHandler = new AutoSQLHandler(this);
@@ -39,6 +42,58 @@ export class PostgresDatabase extends Database {
 
     public getMaxConnections(): number {
         return (this.connection as Pool)?.options?.max ?? 5;
+    }
+
+    /** djb2 hash → 32-bit signed integer suitable for pg_advisory_lock(bigint) */
+    private getLockKey(table: string): number {
+        let hash = 5381;
+        for (let i = 0; i < table.length; i++) {
+            hash = ((hash << 5) + hash) + table.charCodeAt(i);
+            hash |= 0; // truncate to 32-bit signed int
+        }
+        return hash;
+    }
+
+    public async acquireSchemaLock(table: string, timeoutSeconds: number): Promise<void> {
+        const lockKey = this.getLockKey(table);
+        if (!this.connection) await this.establishConnection();
+        let client: PoolClient | undefined;
+        try {
+            client = await (this.connection as Pool).connect();
+            const deadline = Date.now() + timeoutSeconds * 1000;
+            let acquired = false;
+            while (Date.now() < deadline) {
+                const result = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [lockKey]);
+                if (result.rows[0]?.acquired === true) {
+                    acquired = true;
+                    break;
+                }
+                await new Promise(r => setTimeout(r, 500));
+            }
+            if (!acquired) {
+                client.release();
+                throw new SchemaLockTimeoutError(
+                    `Could not acquire schema lock for table '${table}' within ${timeoutSeconds}s. ` +
+                    `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
+                );
+            }
+            this.schemaLockConnections.set(table, client);
+        } catch (error) {
+            if (client && !this.schemaLockConnections.has(table)) client.release();
+            throw error;
+        }
+    }
+
+    public async releaseSchemaLock(table: string): Promise<void> {
+        const lockKey = this.getLockKey(table);
+        const client = this.schemaLockConnections.get(table);
+        if (!client) return;
+        try {
+            await client.query('SELECT pg_advisory_unlock($1)', [lockKey]);
+        } finally {
+            client.release();
+            this.schemaLockConnections.delete(table);
+        }
     }
 
     public getDialectConfig() {

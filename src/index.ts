@@ -1,4 +1,5 @@
 export { Database } from "./db/database";
+export { SchemaLockTimeoutError } from "./errors";
 
 export { validateConfig } from "./helpers/utilities";
 

@@ -6,7 +6,7 @@ import { predictType } from './columnTypes';
 import { defaults, nonCategoricalTypes } from '../config/defaults';
 import { predictIndexes } from './keys';
 import { Database } from '../db/database';
-import { supportedDialects, DialectConfig, ColumnDefinition, MetadataHeader, metaDataInterim, AlterTableChanges } from '../config/types';
+import { DialectConfig, ColumnDefinition, MetadataHeader, metaDataInterim, AlterTableChanges } from '../config/types';
 import { mysqlConfig } from "../db/config/mysqlConfig";
 import { pgsqlConfig } from "../db/config/pgsqlConfig";
 
@@ -64,6 +64,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     // that never saturate. For large datasets use sampling for full precision.
     const pseudoUniqueThreshold = databaseConfig.pseudoUnique || defaults.pseudoUnique;
     const uniqueSetCap = Math.ceil(pseudoUniqueThreshold * sampleData.length) + 1;
+    const forceStringSet = new Set<string>(databaseConfig.forceStringColumns ?? []);
 
     for (const row of sampleData) {
         const rowColumns = Object.keys(row);
@@ -103,6 +104,21 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 metaDataInterim[column].nullCount++;
                 continue;
             }
+
+            // forceStringColumns: skip type inference, track only raw string length
+            if (forceStringSet.has(column)) {
+                const strValue = String(value);
+                metaDataInterim[column].valueCount++;
+                if (!metaDataInterim[column].uniqueSaturated) {
+                    metaDataInterim[column].uniqueSet.add(strValue);
+                    if (metaDataInterim[column].uniqueSet.size >= uniqueSetCap) {
+                        metaDataInterim[column].uniqueSaturated = true;
+                    }
+                }
+                metaDataInterim[column].length = Math.max(metaDataInterim[column].length, strValue.length);
+                continue;
+            }
+
             const type = predictType(value)
             if(!type) continue;
             const sqlizedValue = sqlize(value, type, dialectConfig, databaseConfig)
@@ -133,7 +149,8 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     for (const column in metaDataInterim) {
-        const type = collateTypes(metaDataInterim[column].types);
+        // forceStringColumns always resolve to varchar regardless of observed types
+        const type = forceStringSet.has(column) ? "varchar" : collateTypes(metaDataInterim[column].types);
         metaDataInterim[column].collated_type = type;
         metaData[column].type = type;
         metaData[column].length = metaDataInterim[column].length || 0;
@@ -197,8 +214,22 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         }
         metaData[column].length = metaDataInterim[column].length || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
+
+        // Re-apply length-based text promotion: remainingData may contain longer values
+        // than the sample, so the varchar→text (and wider) thresholds must be re-checked
+        // after the final length is known.
+        const finalLen = metaData[column].length || 0;
+        if (metaData[column].type === 'varchar' && finalLen > (databaseConfig.maxVarcharLength || defaults.maxVarcharLength)) {
+            metaData[column].type = 'text';
+        }
+        if (metaData[column].type === 'text' && finalLen >= 65535) {
+            metaData[column].type = 'mediumtext';
+        }
+        if (metaData[column].type === 'mediumtext' && finalLen >= 16777215) {
+            metaData[column].type = 'longtext';
+        }
     }
-    
+
     const excludeBlankColumns = databaseConfig.excludeBlankColumns;
     if(excludeBlankColumns) {
         const emptyOrNullKeys = Object.entries(metaDataInterim)
@@ -235,11 +266,6 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
             } else {
                 throw new Error(`Unsupported SQL dialect: ${validatedConfig.sqlDialect}`);
             }
-        }
-        
-        const sqlDialect = validatedConfig.sqlDialect as supportedDialects
-        if (!sqlDialect) {
-            throw new Error(`Unsupported SQL dialect: ${sqlDialect}`);
         }
         
         const headers = await getDataHeaders(data, validatedConfig)
@@ -292,26 +318,41 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
         }
     }
 
-    // ✅ Identify renamed columns
-    for (const oldColumnName of Object.keys(oldHeaders)) {
-        for (const newColumnName of Object.keys(newHeaders)) {
-            const oldColumn = oldHeaders[oldColumnName];
-            const newColumn = newHeaders[newColumnName];
+    // ✅ Identify renamed columns — O(n) fingerprint approach.
+    // A rename is inferred only when exactly one removed column matches exactly one added
+    // column by definition. Ambiguous cases (multiple columns with identical definitions
+    // on either side) are left as drop+add to avoid wrong-column renames.
+    const fingerprint = (col: ColumnDefinition): string =>
+        JSON.stringify(Object.fromEntries(Object.entries(col).sort()));
 
-            if (oldColumnName !== newColumnName &&
-                !(oldColumnName in newHeaders) &&
-                !(newColumnName in oldHeaders) &&
-                JSON.stringify(oldColumn) === JSON.stringify(newColumn)) {
-                renameColumns.push({ oldName: oldColumnName, newName: newColumnName });
+    const removedOldCols = dropColumns.slice();
+    const addedNewColNames = Object.keys(newHeaders).filter(col => !(col in oldHeaders));
 
-                if (oldColumn.primary && newColumn.primary) {
-                    renamedPrimaryKeys.push({ oldName: oldColumnName, newName: newColumnName });
-                }
+    const addedByFp = new Map<string, string[]>();
+    for (const col of addedNewColNames) {
+        const fp = fingerprint(newHeaders[col]);
+        if (!addedByFp.has(fp)) addedByFp.set(fp, []);
+        addedByFp.get(fp)!.push(col);
+    }
 
-                dropColumns.splice(dropColumns.indexOf(oldColumnName), 1);
-                delete newHeaders[newColumnName];
-            }
+    const removedByFp = new Map<string, string[]>();
+    for (const col of removedOldCols) {
+        const fp = fingerprint(oldHeaders[col]);
+        if (!removedByFp.has(fp)) removedByFp.set(fp, []);
+        removedByFp.get(fp)!.push(col);
+    }
+
+    for (const [fp, oldCols] of removedByFp) {
+        const newCols = addedByFp.get(fp) ?? [];
+        if (oldCols.length !== 1 || newCols.length !== 1) continue;
+        const oldColumnName = oldCols[0];
+        const newColumnName = newCols[0];
+        renameColumns.push({ oldName: oldColumnName, newName: newColumnName });
+        if (oldHeaders[oldColumnName].primary && newHeaders[newColumnName].primary) {
+            renamedPrimaryKeys.push({ oldName: oldColumnName, newName: newColumnName });
         }
+        dropColumns.splice(dropColumns.indexOf(oldColumnName), 1);
+        delete newHeaders[newColumnName];
     }
 
     // ✅ Identify added & modified columns

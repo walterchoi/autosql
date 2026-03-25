@@ -42,6 +42,40 @@ describe("compareMetaData", () => {
         expect(result.renameColumns).toEqual([{ oldName: "old_name", newName: "new_name" }]);
     });
 
+    test("Treats ambiguous renames (multiple columns with identical definitions) as drop+add", () => {
+        // col_a and col_b are both dropped; new_x and new_y both have the same definition.
+        // Cannot determine which is a rename of which, so both should be drop+add.
+        const oldMetaData: MetadataHeader = {
+            col_a: { type: "varchar", length: 50, allowNull: false },
+            col_b: { type: "varchar", length: 50, allowNull: false }
+        };
+        const newMetaData: MetadataHeader = {
+            new_x: { type: "varchar", length: 50, allowNull: false },
+            new_y: { type: "varchar", length: 50, allowNull: false }
+        };
+        const { changes: result } = compareMetaData(oldMetaData, newMetaData);
+        expect(result.renameColumns).toEqual([]);
+        expect(result.dropColumns).toEqual(expect.arrayContaining(["col_a", "col_b"]));
+        expect(result.addColumns).toHaveProperty("new_x");
+        expect(result.addColumns).toHaveProperty("new_y");
+    });
+
+    test("Renames unambiguous column even when another column has same definition on one side only", () => {
+        // col_a dropped, new_x added — both have definition A. col_b also has definition A but is retained.
+        // Only one dropped col matches one added col → unambiguous rename.
+        const oldMetaData: MetadataHeader = {
+            col_a: { type: "int", length: 11, allowNull: false },
+            col_b: { type: "int", length: 11, allowNull: false }
+        };
+        const newMetaData: MetadataHeader = {
+            col_b: { type: "int", length: 11, allowNull: false },
+            new_x: { type: "int", length: 11, allowNull: false }
+        };
+        const { changes: result } = compareMetaData(oldMetaData, newMetaData);
+        expect(result.renameColumns).toEqual([{ oldName: "col_a", newName: "new_x" }]);
+        expect(result.dropColumns).toEqual([]);
+    });
+
     test("Detects safe type changes (smallint → int)", () => {
         const oldMetaData: MetadataHeader = {
             age: { type: "smallint", allowNull: false }

@@ -21,6 +21,8 @@ export const defaults = {
     useStagingInsert: true,
     addNested: false,
     excludeBlankColumns: true,
+    useSchemaLock: false,
+    schemaLockTimeout: 30,
 }
 
 export const maxQueryAttempts = 3;

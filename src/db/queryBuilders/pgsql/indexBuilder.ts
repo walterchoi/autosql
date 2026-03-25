@@ -29,15 +29,11 @@ export class PostgresIndexQueryBuilder {
     }
 
     static getViewDependenciesQuery(table: string, schema?: string): QueryInput {
-        const schemaPrefix = schema ? `"${schema}".` : "";
         return {
-            query: `
-                SELECT viewname 
-                FROM pg_views 
-                WHERE schemaname = '${schema}' 
-                AND definition LIKE '%' || $1 || '%';
-            `,
-            params: [table]
+            query: schema
+                ? `SELECT viewname FROM pg_views WHERE schemaname = $1 AND definition LIKE '%' || $2 || '%';`
+                : `SELECT viewname FROM pg_views WHERE definition LIKE '%' || $1 || '%';`,
+            params: schema ? [schema, table] : [table]
         };
     }
 

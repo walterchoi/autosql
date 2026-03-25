@@ -22,20 +22,6 @@ export interface ColumnDefinition {
 
 export type MetadataHeader = Record<string, ColumnDefinition>;
 
-export function isMetadataHeader(obj: any): obj is MetadataHeader {
-  return (
-      obj !== null &&
-      typeof obj === "object" &&
-      !Array.isArray(obj) &&
-      Object.values(obj).every(
-          (col) =>
-              typeof col === "object" &&
-              col !== null &&
-              "type" in col &&
-              typeof col.type === "string"
-      )
-  );
-}
 
 export type supportedDialects = "mysql" | "pgsql";
 
@@ -100,6 +86,26 @@ export interface DatabaseConfig {
 
       useWorkers?: boolean;
       maxWorkers?: number;
+
+      /**
+       * Column names that should always be stored as varchar regardless of their
+       * content. Use this for string-encoded identifiers (phone numbers, zip codes,
+       * padded codes) that would otherwise be inferred as numeric types.
+       */
+      forceStringColumns?: string[];
+
+      /**
+       * Acquire a per-table advisory lock before running schema inference and
+       * ALTER TABLE.  Set to `true` when the same table may be written by multiple
+       * concurrent processes to prevent race conditions in compareMetaData.
+       * Defaults to `false`.
+       */
+      useSchemaLock?: boolean;
+      /**
+       * How long (in seconds) to wait for the advisory lock before throwing
+       * `SchemaLockTimeoutError`.  Defaults to 30.
+       */
+      schemaLockTimeout?: number;
 
       /**
        * Prefix for auto-created staging tables (default: "temp_staging__").

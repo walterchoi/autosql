@@ -124,7 +124,7 @@ export function predictType(data: any): string | null {
 export function collateTypes(typeSetOrArray: Set<string | null> | (string | null)[]): string {
     try {
         if (!typeSetOrArray || (typeSetOrArray instanceof Set ? typeSetOrArray.size === 0 : typeSetOrArray.length === 0)) {
-            return 'binary'
+            return 'varchar'
         }
         let types: string[]
         // Convert set to array and filter out nulls
@@ -135,7 +135,7 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
         }
 
         if (types.length === 0) {
-            return "binary"; // Default fallback if all inputs were null
+            return "varchar"; // Default fallback if all inputs were null
         }
 
         // If there's only one unique type, return it

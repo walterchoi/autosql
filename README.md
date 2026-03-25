@@ -2,29 +2,19 @@
 
 ![NPM](https://nodei.co/npm/autosql.png)
 
-> **Now rewritten in TypeScript with an entirely new class-based structure!**
-
 ## 🚀 AutoSQL — A Smarter Way to Insert Data
 
-AutoSQL is a TypeScript-powered tool that simplifies and automates the SQL insertion process with intelligent schema prediction, safe table handling, batching, and dialect-specific optimisations for MySQL and PostgreSQL.
+AutoSQL is a TypeScript-powered **zero-config ingest layer** for SQL databases. It helps engineers and analysts insert structured or semi-structured JSON into MySQL or PostgreSQL with no manual schema prep, modelling, or migrations.
 
-## 🌐 Overview
+Built for modern ELT workflows, AutoSQL automatically infers the right schema — types, keys, indexes — and creates or updates tables on the fly. It’s ideal for:
 
-AutoSQL is a **zero-config ingest layer** for SQL databases. It helps engineers and analysts insert structured or semi-structured JSON into MySQL or PostgreSQL with no manual schema prep, modeling, or migrations.
-Built for modern ETL workflows, AutoSQL automatically infers the right schema—types, keys, indexes—and creates or updates tables on the fly. It’s ideal when working with unpredictable data sources like:
+- API responses and flat files used in data warehousing
+- No-code/low-code tool exports
+- Rapid ingestion pipelines where structure evolves frequently
 
-No-code/low-code tools that export raw JSON
-API responses and flat files used in data warehousing
-Rapid ingestion pipelines where structure evolves frequently
+Unlike traditional ORMs, AutoSQL doesn’t require boilerplate models or migration scripts. Just connect, pass in your data, and let AutoSQL handle the rest.
 
-Unlike traditional ORMs, AutoSQL doesn’t require boilerplate models or migration scripts. Just connect, stream in your data, and let AutoSQL handle the rest.
-If your goal is to get JSON into SQL fast, reliably, and without overthinking structure—AutoSQL is built for exactly that.
-
-### 🔧 New in This Version:
-- Full **TypeScript** support
-- Core logic restructured into a reusable `Database` **class-based architecture**
-- Robust error handling and logging support
-- Modular utilities for type prediction, metadata inference, batching, and SSH tunneling
+See [CHANGELOG.md](./CHANGELOG.md) for release history.
 
 ---
 
@@ -139,11 +129,17 @@ export interface DatabaseConfig {
   encoding?: string;
 
   // Type inference controls
-  pseudoUnique?: number; // The % of values that must be unique to be considered pseudoUnique. - defaults to 0.9 (90%)
-  autoIndexing?: boolean; // Automatically identify and add indexes to tables when altering / creating - defaults to TRUE
-  decimalMaxLength?: number; // Automatically round decimals to a maximum of X decimal places - defaults to 10
-  maxKeyLength?: number; // Limits indexes / primary keys from using columns that are longer than this length - defaults to 255
-  maxVarcharLength?: number; // Prevents varchar columns from exceeding this length, autoconverts this length of varchar to text columns -- defaults to 1024 characters
+  pseudoUnique?: number;      // The % of values that must be unique to be considered pseudoUnique — defaults to 0.9 (90%)
+  categorical?: number;       // The % of values that must be repeated to be considered categorical — defaults to 0.20 (20%)
+  autoIndexing?: boolean;     // Automatically identify and add indexes to tables when altering / creating — defaults to TRUE
+  decimalMaxLength?: number;  // Automatically round decimals to a maximum of X decimal places — defaults to 10
+  maxKeyLength?: number;      // Limits indexes / primary keys from using columns that are longer than this length — defaults to 255
+  maxVarcharLength?: number;  // Prevents varchar columns from exceeding this length, autoconverts to text — defaults to 1024
+
+  // Force specific columns to always be stored as varchar regardless of their content.
+  // Use this for string-encoded identifiers that would otherwise be inferred as numeric
+  // types: phone numbers, zip codes, padded codes (e.g. "007"), account numbers, etc.
+  forceStringColumns?: string[];
 
   // Sampling controls
   sampling?: number; // If provided data exceeds samplingMinimum rows, we sample this % of values for identifying uniques and column types — defaults to 0, allows values between 0 and 1
@@ -168,8 +164,21 @@ export interface DatabaseConfig {
   excludeBlankColumns?: boolean; // Exclude columns from insert queries if all their values are null or undefined -- defaults to TRUE  
 
   // Performance scaling
-  useWorkers?: boolean;
-  maxWorkers?: number;
+  useWorkers?: boolean;   // Enables parallel worker threads — defaults to true
+  maxWorkers?: number;    // Maximum concurrent workers — defaults to 8
+
+  // Table naming
+  // Change these if your schema already has tables that use the default prefixes/suffixes.
+  stagingPrefix?: string;       // Prefix for auto-created staging tables — defaults to "temp_staging__"
+  historyTableSuffix?: string;  // Suffix for auto-created history tables — defaults to "__history"
+
+  // Logging — omit to suppress all output, pass `console` to restore default behaviour,
+  // or supply a structured logger ({ log, warn, error }).
+  logger?: {
+    log?: (msg: string) => void;
+    warn?: (msg: string) => void;
+    error?: (msg: string) => void;
+  };
 
   // SSH tunneling support
   sshConfig?: SSHKeys;
@@ -309,12 +318,52 @@ Defaults to `true`.
   - The nested object will define the child table’s schema
   - Arrays will be flattened—each item becomes a separate row in the nested table
 
+### 🏷 Table Naming
+
+- `stagingPrefix`: `string`
+  Prefix applied to auto-created staging tables. Change this if your schema already has tables starting with the default prefix. Defaults to `"temp_staging__"`.
+
+- `historyTableSuffix`: `string`
+  Suffix applied to auto-created history tables. Change this if your schema already has tables ending with the default suffix. Defaults to `"__history"`.
+
+---
+
+### 🔬 Type Inference Overrides
+
+- `forceStringColumns`: `string[]`
+  Column names that should always be stored as `varchar` regardless of their content. Use this for string-encoded identifiers that would otherwise be inferred as numeric types:
+
+  ```ts
+  forceStringColumns: ['phone', 'zip_code', 'account_number', 'product_code']
+  ```
+
+  Without this, a column containing `"14155550100"` would be inferred as `bigint`. With it, the column stays `varchar` and leading zeros, formatting, and string semantics are preserved.
+
+---
+
+### 🛡 DDL Safety
+
+AutoSQL automatically attempts to compensate for failed `ALTER TABLE` operations to keep your schema in a consistent state.
+
+**PostgreSQL:** DDL is fully transactional. If an `ALTER TABLE` fails, the database rolls it back automatically as part of the transaction. No additional action is needed.
+
+**MySQL:** DDL is non-transactional. If an `ALTER TABLE` fails, AutoSQL runs a best-effort compensating pass:
+- Newly added columns are dropped (`DROP COLUMN IF EXISTS` — safe to run even if the column was never created)
+- Modified columns are restored to their previous type
+- Renamed columns are renamed back
+- Dropped columns **cannot be recovered** — a warning is logged and no compensation is attempted
+
+Warnings about irrecoverable changes (dropped columns, nullable changes) are always emitted via the configured `logger`.
+
+---
+
 ### 🧵 Scaling & Workers
 
-- `useWorkers`: `boolean`  
-  Enables parallel worker threads for inserting batches. Improves performance with large datasets. Defaults to `true`
+- `useWorkers`: `boolean`
+  Enables parallel worker threads for inserting batches. Improves performance with large datasets. Defaults to `true`.
+  **Note:** Workers require a compiled `worker.js` file. When running via `ts-node` or from TypeScript source, the compiled file may not exist — AutoSQL detects this automatically and falls back to direct execution with a warning.
 
-- `maxWorkers`: `number`  
+- `maxWorkers`: `number`
   Maximum number of concurrent workers to use during insertion. Must be used with `useWorkers`. Defaults to `8`
 
 ## 🏁 Core Classes: `Database` (with AutoSQL Utilities)

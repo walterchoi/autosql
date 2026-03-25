@@ -1,7 +1,8 @@
 import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, isMetadataHeader, InsertInput } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput } from "../config/types";
+import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
 import { mysqlConfig } from "./config/mysqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { compareMetaData } from '../helpers/metadata';
@@ -9,10 +10,12 @@ import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
 import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
 import { MySQLInsertQueryBuilder } from "./queryBuilders/mysql/insertBuilder";
 import { AutoSQLHandler } from "./autosql";
-import { normalizeResultKeys } from "../helpers/utilities";
+import { SchemaLockTimeoutError } from "../errors";
 const dialectConfig = mysqlConfig
 
 export class MySQLDatabase extends Database {
+    private schemaLockConnections: Map<string, PoolConnection> = new Map();
+
     constructor(config: DatabaseConfig) {
         super(config);
         this.autoSQLHandler = new AutoSQLHandler(this);
@@ -38,6 +41,40 @@ export class MySQLDatabase extends Database {
 
     public getMaxConnections(): number {
         return (this.connection as any)?.config?.connectionLimit ?? 5;
+    }
+
+    public async acquireSchemaLock(table: string, timeoutSeconds: number): Promise<void> {
+        const lockKey = `autosql_schema__${table}`;
+        if (!this.connection) await this.establishConnection();
+        let client: PoolConnection | undefined;
+        try {
+            client = await (this.connection as Pool).getConnection();
+            const [rows] = await client.query('SELECT GET_LOCK(?, ?) AS acquired', [lockKey, timeoutSeconds]) as [any[], any];
+            const acquired = (rows as any[])[0]?.acquired;
+            if (!acquired) {
+                client.release();
+                throw new SchemaLockTimeoutError(
+                    `Could not acquire schema lock for table '${table}' within ${timeoutSeconds}s. ` +
+                    `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
+                );
+            }
+            this.schemaLockConnections.set(table, client);
+        } catch (error) {
+            if (client && !this.schemaLockConnections.has(table)) client.release();
+            throw error;
+        }
+    }
+
+    public async releaseSchemaLock(table: string): Promise<void> {
+        const lockKey = `autosql_schema__${table}`;
+        const client = this.schemaLockConnections.get(table);
+        if (!client) return;
+        try {
+            await client.query('SELECT RELEASE_LOCK(?)', [lockKey]);
+        } finally {
+            client.release();
+            this.schemaLockConnections.delete(table);
+        }
     }
 
     public getDialectConfig() {

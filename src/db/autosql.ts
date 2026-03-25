@@ -3,10 +3,11 @@ import { PostgresDatabase } from "./pgsql";
 import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
-import { parseDatabaseMetaData, tableChangesExist, isMetaDataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults } from "../helpers/utilities";
+import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
+import { buildCompensatingDDL } from "../helpers/compensatingDDL";
 
 export class AutoSQLHandler {
     private db: Database;
@@ -134,7 +135,7 @@ export class AutoSQLHandler {
                     this.db.updateTableMetadata(table, updatedMetadata, "metaData");
                 }
             }
-            else if(isMetaDataHeader(currentMetaDataOrTableChanges)) {
+            else if(isMetadataHeader(currentMetaDataOrTableChanges)) {
                 this.db.log("Comparing metadata for changes...");
                 // ✅ If provided with metadata, compare changes
                 const { changes, updatedMetaData: mergedMetadata } = compareMetaData(currentMetaDataOrTableChanges, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
@@ -288,7 +289,8 @@ export class AutoSQLHandler {
           // ✅ Support individual parameters
           table = inputOrTable;
           data = inputData ?? [];
-          metaData = inputMetaData!;
+          if (!inputMetaData) throw new Error(`autoInsertData: metaData is required when called with individual parameters`);
+          metaData = inputMetaData;
           previousMetaData = inputPreviousMetaData ?? null;
           comparedMetaData = inputComparedMetaData;
           runQuery = inputRunQuery ?? true
@@ -390,40 +392,83 @@ export class AutoSQLHandler {
         // 🔹 Step 1: Auto-configure tables (with Workers or Directly)
         if (this.db.getConfig().useWorkers) {
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
-            
-            const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
-    
-            const failed = workerResults.filter(w => !w.success);
-            if (failed.length > 0) {
-                throw new Error(
-                    `Worker execution failed for ${failed.length} task(s):\n` +
-                    failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
-                );
+            try {
+                const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
+
+                const failed = workerResults.filter(w => !w.success);
+                if (failed.length > 0) {
+                    throw new Error(
+                        `Worker execution failed for ${failed.length} task(s):\n` +
+                        failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
+                    );
+                }
+
+                configuredTables = workerResults.map(w => w.result);
+            } catch (err) {
+                if (err instanceof Error && err.message.startsWith("WORKER_UNAVAILABLE:")) {
+                    this.db.warn(err.message + " Falling back to direct execution.");
+                    configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[];
+                } else {
+                    throw err;
+                }
             }
-    
-            configuredTables = workerResults.map(w => w.result);
         } else {
             configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[];
         }
     
-        // 🔹 Step 2: Split successful results and queries to execute
-        const initialResults: QueryResult[] = configuredTables.filter(
-            (result): result is QueryResult => "success" in result
-        );
-    
-        const queryInputs: QueryInput[][] = configuredTables.filter(
-            (result): result is QueryInput[] => Array.isArray(result)
-        );
-    
-        // 🔹 Step 3: Execute Transactions (if needed)
+        // 🔹 Step 2: Split immediate results from deferred DDL queries, preserving
+        //    index correspondence with insertInput for rollback correlation.
+        const initialResults: QueryResult[] = [];
+        const pendingDDL: Array<{ queries: QueryInput[]; inputIndex: number }> = [];
+
+        configuredTables.forEach((result, i) => {
+            if (Array.isArray(result)) {
+                pendingDDL.push({ queries: result, inputIndex: i });
+            } else {
+                initialResults.push(result as QueryResult);
+            }
+        });
+
+        // 🔹 Step 3: Execute DDL transactions and attempt compensating rollback on failure
         let allResults: QueryResult[];
-        if (queryInputs.length > 0) {
-            const transactionResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(queryInputs);
+        if (pendingDDL.length > 0) {
+            const transactionResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(
+                pendingDDL.map(d => d.queries)
+            );
+
+            // Attempt best-effort compensating DDL for any failed transactions.
+            // For PostgreSQL this is a no-op (transactional DDL already rolled back).
+            // For MySQL this reverses any partial schema changes as a safety net.
+            const failedDDL = transactionResults
+                .map((result, j) => (!result.success ? pendingDDL[j] : null))
+                .filter((x): x is { queries: QueryInput[]; inputIndex: number } => x !== null);
+
+            if (failedDDL.length > 0) {
+                for (const { inputIndex } of failedDDL) {
+                    const input = insertInput[inputIndex];
+                    if (input?.comparedMetaData) {
+                        const { queries: compQueries, warnings } = buildCompensatingDDL(
+                            input.table,
+                            input.comparedMetaData.changes,
+                            input.comparedMetaData.updatedMetaData,
+                            this.db.getDialectConfig(),
+                            this.db.getConfig().schema
+                        );
+                        for (const w of warnings) this.db.warn(w);
+                        if (compQueries.length > 0) {
+                            await this.db.runTransaction(compQueries).catch(e =>
+                                this.db.error(`DDL compensation failed for '${input.table}': ${e.message}`)
+                            );
+                        }
+                    }
+                }
+            }
+
             allResults = [...initialResults, ...transactionResults];
         } else {
             allResults = [...initialResults];
         }
-    
+
         // 🔹 Step 4: Handle failures
         throwIfFailedResults(allResults, "table configuring queries")
     
@@ -448,17 +493,28 @@ export class AutoSQLHandler {
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
     
             if (this.db.getConfig().useWorkers) {
-                const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoInsertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
-    
-                const failed = workerResults.filter(w => !w.success);
-                if (failed.length > 0) {
-                    throw new Error(
-                        `Worker execution failed for ${failed.length} task(s):\n` +
-                        failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
-                    );
+                try {
+                    const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoInsertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
+
+                    const failed = workerResults.filter(w => !w.success);
+                    if (failed.length > 0) {
+                        throw new Error(
+                            `Worker execution failed for ${failed.length} task(s):\n` +
+                            failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
+                        );
+                    }
+
+                    insertQueries = workerResults.map(w => w.result);
+                } catch (err) {
+                    if (err instanceof Error && err.message.startsWith("WORKER_UNAVAILABLE:")) {
+                        this.db.warn(err.message + " Falling back to direct execution.");
+                        insertQueries = await Promise.all(
+                            insertInput.map((input) => this.autoInsertData({ ...input, runQuery: false }))
+                        ) as (QueryResult | QueryInput[])[];
+                    } else {
+                        throw err;
+                    }
                 }
-    
-                insertQueries = workerResults.map(w => w.result);
             } else {
                 insertQueries = await Promise.all(
                     insertInput.map((input) => this.autoInsertData({ ...input, runQuery: false }))
@@ -639,7 +695,8 @@ export class AutoSQLHandler {
         // Check for current table meta data
         const historyInputs: InsertInput[] = await Promise.all(
             eligibleInputs.map(async (table) => {
-              const historyName = getHistoryTableName(table);
+              const matchingInput = insertInput.find(i => i.table === table);
+              const historyName = getHistoryTableName(table, matchingInput?.historyTableSuffix);
           
               // Run both metadata fetches in parallel
               const [currentStatus, historyStatus] = await Promise.all([
@@ -752,7 +809,9 @@ export class AutoSQLHandler {
                 data: nestedRows,
                 previousMetaData: changes || currentMetaData,
                 metaData: mergedMetaData,
-                comparedMetaData
+                comparedMetaData,
+                stagingPrefix: this.db.getConfig().stagingPrefix,
+                historyTableSuffix: this.db.getConfig().historyTableSuffix,
             };
             nestedInputs.push(insertInput);
         }
@@ -765,15 +824,27 @@ export class AutoSQLHandler {
         // permanent config mutation when a per-call schema override is provided.
         const originalSchema = this.db.getConfig().schema;
         if (schema) { this.db.updateSchema(schema); }
-        try {
 
+        const useSchemaLock = this.db.getConfig().useSchemaLock;
+        const lockTimeout = this.db.getConfig().schemaLockTimeout ?? defaults.schemaLockTimeout;
+
+        try {
             let affectedRows : number;
             let insertResults : QueryResult[]
-            let insertInput = await this.prepareInsertData(table, data, schema, primaryKey);
-            let nestedInputs = await this.extractNestedInputs(insertInput)
-            insertInput = [...insertInput, ...nestedInputs];
-            
-            await this.configureTables(insertInput)
+            let insertInput: InsertInput[];
+
+            // Acquire advisory lock before schema inference + DDL to prevent
+            // concurrent writers from racing on compareMetaData / ALTER TABLE.
+            if (useSchemaLock) await this.db.acquireSchemaLock(table, lockTimeout);
+            try {
+                insertInput = await this.prepareInsertData(table, data, schema, primaryKey);
+                let nestedInputs = await this.extractNestedInputs(insertInput);
+                insertInput = [...insertInput, ...nestedInputs];
+                await this.configureTables(insertInput);
+            } finally {
+                // Release lock after DDL so inserts proceed without blocking others.
+                if (useSchemaLock) await this.db.releaseSchemaLock(table);
+            }
 
             if(this.db.getConfig().useStagingInsert) {
                 await this.prepareStagingTables(insertInput);
@@ -808,11 +879,104 @@ export class AutoSQLHandler {
                 duration: end.getTime() - start.getTime(),
                 affectedRows,
                 success: false,
-                error: error instanceof Error ? error.message : String(error) // Ensure error is a string
+                error: error instanceof Error ? error.message : String(error)
             };
         } finally {
             // Restore original schema so the Database instance isn't permanently altered.
             if (schema) { this.db.updateSchema(originalSchema); }
+        }
+    }
+
+    /**
+     * Insert data from an async iterable of chunks into a table.
+     *
+     * The first chunk drives full schema inference and table configuration.
+     * Subsequent chunks reuse the schema established by the first chunk,
+     * bypassing inference and DDL entirely — making them significantly faster.
+     *
+     * When `useSchemaLock: true`, the advisory lock is held only during the
+     * first-chunk schema inference + DDL phase, then released before inserts begin.
+     *
+     * @param table     Target table name
+     * @param chunks    Async iterable of row arrays (each array is one chunk)
+     * @param schema    Optional schema/database override for this call
+     * @param primaryKey Optional primary key hint passed to schema inference
+     */
+    async autoSQLChunked(
+        table: string,
+        chunks: AsyncIterable<Record<string, any>[]>,
+        schema?: string,
+        primaryKey?: string[]
+    ): Promise<QueryResult> {
+        const start = new Date();
+        const originalSchema = this.db.getConfig().schema;
+        if (schema) this.db.updateSchema(schema);
+
+        const useSchemaLock = this.db.getConfig().useSchemaLock;
+        const lockTimeout = this.db.getConfig().schemaLockTimeout ?? defaults.schemaLockTimeout;
+
+        let totalAffectedRows = 0;
+        let lockedInsertInput: InsertInput[] | null = null;
+
+        try {
+            for await (const chunk of chunks) {
+                if (chunk.length === 0) continue;
+
+                let chunkInsertInput: InsertInput[];
+
+                if (lockedInsertInput === null) {
+                    // First chunk: full schema inference + table configuration.
+                    if (useSchemaLock) await this.db.acquireSchemaLock(table, lockTimeout);
+                    try {
+                        chunkInsertInput = await this.prepareInsertData(table, chunk, schema, primaryKey);
+                        const nestedInputs = await this.extractNestedInputs(chunkInsertInput);
+                        chunkInsertInput = [...chunkInsertInput, ...nestedInputs];
+                        await this.configureTables(chunkInsertInput);
+                    } finally {
+                        if (useSchemaLock) await this.db.releaseSchemaLock(table);
+                    }
+                    lockedInsertInput = chunkInsertInput;
+                } else {
+                    // Subsequent chunks: reuse locked schema, skip inference + DDL.
+                    chunkInsertInput = lockedInsertInput.map(input => ({ ...input, data: chunk }));
+                }
+
+                let insertResults: QueryResult[];
+                if (this.db.getConfig().useStagingInsert) {
+                    await this.prepareStagingTables(chunkInsertInput);
+                    await this.insertStagingTables(chunkInsertInput);
+                    await this.resolveConflicts(chunkInsertInput);
+                    await this.insertHistory(chunkInsertInput);
+                    insertResults = await this.insertFromStagingTables(chunkInsertInput);
+                    await this.removeStagingTables(chunkInsertInput);
+                } else {
+                    insertResults = await this.insertData(chunkInsertInput);
+                }
+
+                totalAffectedRows += insertResults.reduce((s, r) => s + (r.affectedRows || 0), 0);
+            }
+
+            const end = new Date();
+            return {
+                start,
+                end,
+                success: true,
+                duration: end.getTime() - start.getTime(),
+                affectedRows: totalAffectedRows,
+                table
+            };
+        } catch (error: any) {
+            const end = new Date();
+            return {
+                start,
+                end,
+                duration: end.getTime() - start.getTime(),
+                affectedRows: 0,
+                success: false,
+                error: error instanceof Error ? error.message : String(error)
+            };
+        } finally {
+            if (schema) this.db.updateSchema(originalSchema);
         }
     }
 }

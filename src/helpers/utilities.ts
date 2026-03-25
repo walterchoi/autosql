@@ -24,12 +24,18 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         const defaultConfig: DatabaseConfig = {
             sqlDialect: config.sqlDialect, // Keep required field
             pseudoUnique: defaults.pseudoUnique,
+            categorical: defaults.categorical,
             autoIndexing: defaults.autoIndexing,
             sampling: defaults.sampling,
             samplingMinimum: defaults.samplingMinimum,
             metaData: config.metaData || {}, // Ensuring headers remain intact
             maxKeyLength: defaults.maxKeyLength,
+            maxVarcharLength: defaults.maxVarcharLength,
             autoSplit: defaults.autoSplit,
+            insertStack: defaults.insertStack,
+            insertType: defaults.insertType as "UPDATE" | "INSERT",
+            safeMode: defaults.safeMode,
+            deleteColumns: defaults.deleteColumns,
             useWorkers: defaults.useWorkers,
             maxWorkers: defaults.maxWorkers,
             useStagingInsert: defaults.useStagingInsert,
@@ -38,6 +44,10 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             decimalMaxLength: defaults.decimalMaxLength,
             addNested: defaults.addNested,
             excludeBlankColumns: defaults.excludeBlankColumns,
+            stagingPrefix: defaults.stagingPrefix,
+            historyTableSuffix: defaults.historyTableSuffix,
+            useSchemaLock: defaults.useSchemaLock,
+            schemaLockTimeout: defaults.schemaLockTimeout,
         };
 
         // Merge provided config with defaults
@@ -55,6 +65,12 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         }
         if (merged.categorical !== undefined && (merged.categorical <= 0 || merged.categorical >= 1)) {
             throw new Error("categorical must be between 0 (exclusive) and 1 (exclusive).");
+        }
+        if (merged.addHistory && !merged.useStagingInsert) {
+            throw new Error("addHistory requires useStagingInsert to be enabled.");
+        }
+        if (merged.schemaLockTimeout !== undefined && merged.schemaLockTimeout <= 0) {
+            throw new Error("schemaLockTimeout must be greater than 0.");
         }
 
         return merged;
@@ -341,7 +357,7 @@ export function tableChangesExist(alterTableChanges: AlterTableChanges): boolean
     }
 }
 
-export function isMetaDataHeader(input: any): input is MetadataHeader {
+export function isMetadataHeader(input: any): input is MetadataHeader {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
         return false; // ❌ Must be a non-null object
     }

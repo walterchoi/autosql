@@ -1,5 +1,6 @@
 import { Worker } from "worker_threads";
 import { resolve } from "path";
+import { existsSync } from "fs";
 
 class WorkerPool {
   private workers: Worker[] = [];
@@ -10,6 +11,13 @@ class WorkerPool {
 
   constructor(size: number, private dbConfig: any) {
     this.workerFile = resolve(__dirname, "worker.js");
+
+    if (!existsSync(this.workerFile)) {
+      throw new Error(
+        `WORKER_UNAVAILABLE: compiled worker not found at ${this.workerFile}. ` +
+        `Run the TypeScript compiler first, or set useWorkers: false to skip worker threads.`
+      );
+    }
 
     for (let i = 0; i < size; i++) {
       const worker = new Worker(this.workerFile, {
@@ -29,6 +37,19 @@ class WorkerPool {
           worker.postMessage({ method: nextTask.method, params: nextTask.params });
         } else {
           this.idleWorkers.push(worker);
+        }
+      });
+
+      worker.on("error", (err) => {
+        const pendingResolve = this.workerPending.get(worker);
+        if (pendingResolve) {
+          this.workerPending.delete(worker);
+          pendingResolve({ success: false, error: err.message });
+        }
+        // Drain any remaining queued tasks for this worker with an error result
+        const nextTask = this.pendingTasks.shift();
+        if (nextTask) {
+          nextTask.resolve({ success: false, error: err.message });
         }
       });
 
