@@ -41,6 +41,10 @@ npm install autosql
   - [Config & Metadata Tools](#%EF%B8%8F-config--metadata-tools)
   - [Metadata Inference & Preparation](#-metadata-inference--preparation)
   - [Insert Planning & Execution](#-insert-planning--execution)
+- [Streaming Inserts](#-streaming-inserts)
+- [Schema History & Drift Detection](#-schema-history--drift-detection)
+- [Multi-writer Safety](#-multi-writer-safety)
+- [Large-dataset Support](#-large-dataset-support)
 
 ---
 
@@ -179,6 +183,24 @@ export interface DatabaseConfig {
     warn?: (msg: string) => void;
     error?: (msg: string) => void;
   };
+
+  // Multi-writer safety (v1.0.5+)
+  useSchemaLock?: boolean;      // Acquire a per-table advisory lock during schema inference + DDL — defaults to false
+  schemaLockTimeout?: number;   // Seconds to wait for the advisory lock before throwing SchemaLockTimeoutError — defaults to 30
+
+  // Schema history & drift detection (v1.1.0+)
+  schemaHistory?: boolean;          // Record every DDL operation to an audit log table — defaults to false
+  schemaHistoryTable?: string;      // Name of the audit log table — defaults to "autosql_schema_history"
+  schemaHistorySchema?: string;     // Schema/database to place the audit log table in — defaults to the current schema
+  detectDrift?: boolean;            // Check for out-of-band schema changes on every autoSQL call — defaults to true (when schemaHistory is enabled)
+  strictDriftDetection?: boolean;   // Throw SchemaDriftError instead of warning when drift is detected — defaults to false
+
+  // Streaming (v1.1.0+)
+  streamingStagingPrefix?: string;      // Prefix for per-run stream staging tables — defaults to "autosql_stream__"
+  streamMaxRetries?: number;            // Max per-row retry rounds after a bulk merge failure — defaults to 3
+  rejectedRowsTable?: string;           // If set, unrecoverable rows are written here instead of throwing
+  rejectedRowsSchema?: string;          // Schema to place the rejected rows table in — defaults to current schema
+  keepOrphanedStagingTables?: boolean;  // Skip orphaned stream staging table cleanup on openStream — defaults to false
 
   // SSH tunneling support
   sshConfig?: SSHKeys;
@@ -443,22 +465,28 @@ This is the core interface for managing connections, generating queries, and exe
   If `autoSplit` is enabled, splits a wide dataset across multiple smaller tables.  
   Returns an array of `InsertInput` instructions for multi-table insert execution.
 
-- **`handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[])`**  
-  Combines metadata inference and comparison into one call.  
+- **`handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[])`**
+  Combines metadata inference and comparison into one call.
   Returns an object with:
-  - `currentMetaData`: existing table metadata from the DB  
-  - `newMetaData`: metadata inferred from new data  
-  - `mergedMetaData`: result of merging existing and new metadata  
-  - `initialComparedMetaData`: diff result, if any  
+  - `currentMetaData`: existing table metadata from the DB
+  - `newMetaData`: metadata inferred from new data
+  - `mergedMetaData`: result of merging existing and new metadata
+  - `initialComparedMetaData`: diff result, if any
   - `changes`: schema changes needed for alignment
 
-- **`getMetaData(config: DatabaseConfig, data: Record<string, any>[], primaryKey?: string[])`**  
+- **`getMetaData(config: DatabaseConfig, data: Record<string, any>[], primaryKey?: string[])`**
   Analyses sample data and returns a metadata map with type, length, nullability, uniqueness, and key suggestions.
 
-- **`compareMetaData(oldMeta: MetadataHeader, newMeta: MetadataHeader)`**  
+- **`compareMetaData(oldMeta: MetadataHeader, newMeta: MetadataHeader)`**
   Compares two metadata structures and returns:
   - `changes`: an `AlterTableChanges` diff object
   - `updatedMetaData`: the merged metadata structure
+
+- **`autoSQLChunked(table: string, iterable: AsyncIterable<Record<string, any>[]>, schema?: string, primaryKey?: string[])`** *(v1.0.5+)*
+  Streaming-friendly variant of `autoSQL` that accepts an `AsyncIterable` of row chunks. Schema inference and DDL run once on the first non-empty chunk; subsequent chunks skip straight to insert. Compatible with `useSchemaLock` and `useStagingInsert`.
+
+- **`openStream(table: string, schema?: string, primaryKey?: string[])`** *(v1.1.0+)*
+  Opens a streaming session and returns an `AutoSQLStreamHandle`. See [Streaming Inserts](#-streaming-inserts) for full details.
 
 Each method is designed to work with the same `Database` instance.
 
@@ -503,6 +531,143 @@ AutoSQL exposes utilities that power `autoSQL` and can be used independently. Th
 - **`tableChangesExist(alterTableChanges)`** – Returns `true` if the proposed table changes indicate schema modification is needed.
 - **`isMetaDataHeader(obj)`** – Type guard to check if an object qualifies as a metadata header.
 - **`isValidDataFormat(data)`** – Validates that the input is an array of row objects suitable for processing.
+
+---
+
+## 🌊 Streaming Inserts
+
+For large or incremental datasets, use `openStream` to avoid loading everything into memory at once. Each stream session uses its own isolated staging table so concurrent writes never interfere.
+
+```ts
+const stream = await db.openStream('events', 'my_schema', ['id']);
+
+// Write data in as many chunks as you like
+await stream.write(chunk1);
+await stream.write(chunk2);
+
+// Merge staged data into the target table, then clean up
+const result = await stream.end();
+console.log(result.affectedRows);
+
+// Or abandon without merging
+await stream.abort();
+```
+
+### How it works
+
+1. **`openStream(table, schema?, primaryKey?)`** — runs a connectivity check and cleans up any orphaned staging tables from previous crashed runs (configurable with `keepOrphanedStagingTables`).
+2. **`write(chunk)`** — on the first call, creates an all-text (`LONGTEXT` / `TEXT`) staging table unique to this run. Each subsequent call appends rows to it.
+3. **`end()`** — reads all staged rows, infers the schema with `getMetaData`, applies any necessary DDL via `configureTables`, then issues a bulk `INSERT … SELECT` with dialect-specific type casts. If the bulk merge fails, a per-row fallback fires — failed rows trigger a schema widening pass before each retry round (up to `streamMaxRetries`). The staging table is always dropped in the `finally` block.
+4. **`abort()`** — drops the staging table without merging. Safe to call even if `write()` was never called.
+
+### Rejected rows
+
+If `rejectedRowsTable` is configured, rows that cannot be merged after all retries are written to that table instead of throwing:
+
+```ts
+const db = Database.create({
+  ...,
+  rejectedRowsTable: 'autosql_rejected_rows',
+  streamMaxRetries: 5,
+});
+```
+
+### Works with advisory locks and schema history
+
+```ts
+const db = Database.create({
+  ...,
+  useSchemaLock: true,      // holds lock only during DDL phase
+  schemaHistory: true,      // records a migration entry for any DDL at merge time
+});
+```
+
+---
+
+## 📜 Schema History & Drift Detection
+
+Enable `schemaHistory` to keep a full audit trail of every DDL operation AutoSQL applies.
+
+```ts
+const db = Database.create({
+  ...,
+  schemaHistory: true,
+  schemaHistoryTable: 'autosql_schema_history', // default
+  detectDrift: true,           // warn if the live schema diverges from the recorded one
+  strictDriftDetection: false, // set true to throw SchemaDriftError instead of warning
+});
+```
+
+AutoSQL creates the history table automatically on first use. Each migration writes a `pending` record, then updates to `applied`, `failed`, or `rolled_back`.
+
+### Exported functions
+
+```ts
+import { detectSchemaDrift, getSchemaAt, computeChecksum } from 'autosql';
+import { SchemaDriftError } from 'autosql';
+
+// Check whether the live schema matches the last recorded checksum
+const { drifted, expected, actual } = await detectSchemaDrift(db, 'users');
+
+// Reconstruct what the schema looked like at a point in time
+const historicSchema = await getSchemaAt(db, 'users', new Date('2025-06-01'));
+
+// Compute the sha256 checksum used internally for drift comparison
+const checksum = computeChecksum(metaData);
+```
+
+### Error types
+
+- **`SchemaLockTimeoutError`** — thrown when `useSchemaLock: true` and the advisory lock could not be acquired within `schemaLockTimeout` seconds.
+- **`SchemaDriftError`** — thrown when `strictDriftDetection: true` and the live schema checksum does not match the last recorded checksum.
+
+Both are exported from the package root:
+
+```ts
+import { SchemaLockTimeoutError, SchemaDriftError } from 'autosql';
+```
+
+---
+
+## 🔒 Multi-writer Safety
+
+When multiple processes call `autoSQL` on the same table simultaneously, schema inference and DDL can race. Enable advisory locks to serialize the DDL phase:
+
+```ts
+const db = Database.create({
+  ...,
+  useSchemaLock: true,
+  schemaLockTimeout: 30, // seconds
+});
+```
+
+- **MySQL** — uses `GET_LOCK('autosql_schema__<table>', timeout)` on a dedicated pool connection.
+- **PostgreSQL** — uses `pg_try_advisory_lock(hash(<table>))` polled every 500 ms on a dedicated pool client.
+
+The lock is held only during schema inference and DDL, then released before any inserts begin — concurrent inserts are never blocked. If the lock cannot be acquired within the timeout, `SchemaLockTimeoutError` is thrown.
+
+---
+
+## 📦 Large-dataset Support
+
+### `autoSQLChunked`
+
+For datasets too large to hold in memory, use `autoSQLChunked` with any `AsyncIterable`:
+
+```ts
+async function* pageRows() {
+  let page = 0;
+  while (true) {
+    const rows = await fetchPage(page++);
+    if (rows.length === 0) break;
+    yield rows;
+  }
+}
+
+const result = await db.autoSQLChunked('events', pageRows());
+```
+
+The first non-empty chunk runs the full inference + DDL pipeline. All subsequent chunks skip directly to insert — no repeated schema work. Compatible with `useSchemaLock: true` and `useStagingInsert: true`.
 
 ---
 

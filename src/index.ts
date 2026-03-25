@@ -18,3 +18,7 @@ export type {
     InsertResult,
     SSHKeys
 } from "./config/types";
+
+export { getSchemaAt, detectSchemaDrift, computeChecksum } from "./helpers/schemaHistory";
+export { SchemaDriftError } from "./errors";
+export type { AutoSQLStreamHandle } from "./db/autosql";

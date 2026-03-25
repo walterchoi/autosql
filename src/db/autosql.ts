@@ -8,6 +8,27 @@ import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
 import { buildCompensatingDDL } from "../helpers/compensatingDDL";
+import {
+    bootstrapSchemaHistoryTable,
+    recordMigrationStart,
+    recordMigrationSuccess,
+    recordMigrationRolledBack,
+    recordMigrationFailed,
+    detectSchemaDrift as _detectSchemaDrift,
+} from '../helpers/schemaHistory';
+import {
+    generateRunId,
+    buildStreamStagingTableName,
+    isAutosqlStreamTable,
+    buildCreateStreamStagingTableQuery,
+    buildInsertIntoStreamStagingQuery,
+    buildSelectFromStreamStagingQuery,
+    buildDropStreamStagingTableQuery,
+    buildOrphanSearchQuery,
+    buildMergeFromStreamQuery,
+    buildBootstrapRejectedRowsQuery,
+    buildInsertRejectedRowsQuery,
+} from '../helpers/streamHelpers';
 
 export class AutoSQLHandler {
     private db: Database;
@@ -820,33 +841,60 @@ export class AutoSQLHandler {
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[]): Promise<QueryResult> {
         const start = new Date();
-        // Capture original schema so we can restore it after this call — prevents
-        // permanent config mutation when a per-call schema override is provided.
         const originalSchema = this.db.getConfig().schema;
         if (schema) { this.db.updateSchema(schema); }
 
-        const useSchemaLock = this.db.getConfig().useSchemaLock;
-        const lockTimeout = this.db.getConfig().schemaLockTimeout ?? defaults.schemaLockTimeout;
+        const config = this.db.getConfig();
+        const useSchemaLock = config.useSchemaLock;
+        const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
+        const useHistory = config.schemaHistory;
 
         try {
-            let affectedRows : number;
-            let insertResults : QueryResult[]
+            let affectedRows: number;
+            let insertResults: QueryResult[];
             let insertInput: InsertInput[];
 
-            // Acquire advisory lock before schema inference + DDL to prevent
-            // concurrent writers from racing on compareMetaData / ALTER TABLE.
             if (useSchemaLock) await this.db.acquireSchemaLock(table, lockTimeout);
+            let historyId: number | undefined;
             try {
                 insertInput = await this.prepareInsertData(table, data, schema, primaryKey);
                 let nestedInputs = await this.extractNestedInputs(insertInput);
                 insertInput = [...insertInput, ...nestedInputs];
-                await this.configureTables(insertInput);
+
+                // Schema history: drift detection + record start
+                if (useHistory) {
+                    if (config.detectDrift ?? true) {
+                        await _detectSchemaDrift(this.db, table).catch(e => { throw e; });
+                    }
+                    await bootstrapSchemaHistoryTable(this.db);
+                    const primary = insertInput[0];
+                    if (primary?.comparedMetaData && tableChangesExist(primary.comparedMetaData.changes)) {
+                        historyId = await recordMigrationStart(
+                            this.db, table,
+                            (primary.previousMetaData && !Array.isArray(primary.previousMetaData) && 'addColumns' in primary.previousMetaData ? {} : primary.previousMetaData) as any || {},
+                            primary.comparedMetaData.changes
+                        );
+                    }
+                }
+
+                try {
+                    await this.configureTables(insertInput);
+                    if (historyId !== undefined) {
+                        const updatedMeta = insertInput[0]?.comparedMetaData?.updatedMetaData;
+                        if (updatedMeta) await recordMigrationSuccess(this.db, historyId, updatedMeta);
+                        else await recordMigrationRolledBack(this.db, historyId);
+                    }
+                } catch (ddlErr) {
+                    if (historyId !== undefined) {
+                        await recordMigrationFailed(this.db, historyId).catch(() => {});
+                    }
+                    throw ddlErr;
+                }
             } finally {
-                // Release lock after DDL so inserts proceed without blocking others.
                 if (useSchemaLock) await this.db.releaseSchemaLock(table);
             }
 
-            if(this.db.getConfig().useStagingInsert) {
+            if (config.useStagingInsert) {
                 await this.prepareStagingTables(insertInput);
                 await this.insertStagingTables(insertInput);
                 await this.resolveConflicts(insertInput);
@@ -859,30 +907,12 @@ export class AutoSQLHandler {
 
             affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
             const allResults = insertResults.flatMap(res => res.results || []);
-            const end = new Date;
-            return {
-                start,
-                end,
-                success: true,
-                duration: end.getTime() - start.getTime(),
-                affectedRows,
-                results: allResults,
-                table
-            };
+            const end = new Date();
+            return { start, end, success: true, duration: end.getTime() - start.getTime(), affectedRows, results: allResults, table };
         } catch (error: any) {
             const end = new Date();
-            const affectedRows = 0;
-
-            return {
-                start,
-                end,
-                duration: end.getTime() - start.getTime(),
-                affectedRows,
-                success: false,
-                error: error instanceof Error ? error.message : String(error)
-            };
+            return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error) };
         } finally {
-            // Restore original schema so the Database instance isn't permanently altered.
             if (schema) { this.db.updateSchema(originalSchema); }
         }
     }
@@ -978,5 +1008,290 @@ export class AutoSQLHandler {
         } finally {
             if (schema) this.db.updateSchema(originalSchema);
         }
+    }
+
+    async openStream(
+        table: string,
+        schema?: string,
+        primaryKey?: string[]
+    ): Promise<AutoSQLStreamHandle> {
+        const originalSchema = this.db.getConfig().schema;
+        if (schema) this.db.updateSchema(schema);
+
+        // Connectivity check — surfaces auth/connection errors before first write
+        const ping = await this.db.runQuery({ query: 'SELECT 1', params: [] });
+        if (!ping.success) {
+            if (schema) this.db.updateSchema(originalSchema);
+            throw new Error(`openStream: cannot connect to database — ${ping.error}`);
+        }
+
+        const config = this.db.getConfig();
+        const prefix = config.streamingStagingPrefix ?? defaults.streamingStagingPrefix;
+
+        // Clean up orphaned staging tables unless configured to keep them
+        if (!config.keepOrphanedStagingTables) {
+            await this._cleanupOrphanedStreamTables(table, prefix);
+        }
+
+        const runId = generateRunId();
+        const stagingTable = buildStreamStagingTableName(table, prefix, runId);
+
+        return new AutoSQLStreamHandle(this, this.db, table, stagingTable, schema, primaryKey, originalSchema);
+    }
+
+    async _cleanupOrphanedStreamTables(table: string, prefix: string): Promise<void> {
+        const config = this.db.getConfig();
+        const dialect = config.sqlDialect;
+        const schema = config.schema || config.database || '';
+        const pattern = `${prefix}${table}__%`;
+        const q = dialect === 'mysql'
+            ? { query: `SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name LIKE ?`, params: [schema, pattern] }
+            : { query: `SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name LIKE $2`, params: [schema, pattern] };
+
+        const result = await this.db.runQuery(q);
+        if (!result.success || !result.results?.length) return;
+
+        for (const row of result.results) {
+            const name: string = row.table_name || row.TABLE_NAME;
+            if (!isAutosqlStreamTable(name, table, prefix)) continue;
+            this.db.warn(`autoSQLStream: dropping orphaned stream staging table '${name}' from a previous crashed run.`);
+            const dropQ = buildDropStreamStagingTableQuery(name, config);
+            await this.db.runTransaction([dropQ]).catch(e =>
+                this.db.error(`Failed to drop orphaned stream staging table '${name}': ${e.message}`)
+            );
+        }
+    }
+}
+
+export class AutoSQLStreamHandle {
+    private handler: AutoSQLHandler;
+    private db: Database;
+    private table: string;
+    private stagingTable: string;
+    private schema: string | undefined;
+    private primaryKey: string[] | undefined;
+    private originalSchema: string | undefined;
+    private columns: string[] | null = null;
+    private stagingCreated = false;
+    private ended = false;
+
+    constructor(
+        handler: AutoSQLHandler,
+        db: Database,
+        table: string,
+        stagingTable: string,
+        schema: string | undefined,
+        primaryKey: string[] | undefined,
+        originalSchema: string | undefined
+    ) {
+        this.handler = handler;
+        this.db = db;
+        this.table = table;
+        this.stagingTable = stagingTable;
+        this.schema = schema;
+        this.primaryKey = primaryKey;
+        this.originalSchema = originalSchema;
+    }
+
+    async write(chunk: Record<string, any>[]): Promise<void> {
+        if (this.ended) throw new Error(`autoSQLStream: write() called after end()/abort()`);
+        if (chunk.length === 0) return;
+
+        const config = this.db.getConfig();
+
+        if (!this.stagingCreated) {
+            // Derive columns from first row
+            this.columns = Object.keys(chunk[0]);
+            const createQ = buildCreateStreamStagingTableQuery(this.stagingTable, this.columns, config);
+            const createResult = await this.db.runTransaction([createQ]);
+            if (!createResult.success) {
+                throw new Error(`autoSQLStream: failed to create stream staging table '${this.stagingTable}': ${createResult.error}`);
+            }
+            this.stagingCreated = true;
+        }
+
+        const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, chunk, config);
+        const insertResult = await this.db.runTransaction([insertQ]);
+        if (!insertResult.success) {
+            throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error}`);
+        }
+    }
+
+    async end(): Promise<QueryResult> {
+        const start = new Date();
+        this.ended = true;
+        const config = this.db.getConfig();
+        const insertType = config.insertType ?? 'UPDATE';
+        const maxRetries = config.streamMaxRetries ?? defaults.streamMaxRetries;
+
+        try {
+            if (!this.stagingCreated) {
+                // Nothing was written
+                return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
+            }
+
+            // Read all staging rows
+            const selectQ = buildSelectFromStreamStagingQuery(this.stagingTable, config);
+            const selectResult = await this.db.runQuery(selectQ);
+            if (!selectResult.success || !selectResult.results) {
+                throw new Error(`autoSQLStream: failed to read staging data: ${selectResult.error}`);
+            }
+            const stagingRows: Record<string, any>[] = selectResult.results;
+            if (stagingRows.length === 0) {
+                return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
+            }
+
+            // Infer schema from staging data
+            const inferredMeta = await getMetaData(config, stagingRows, this.primaryKey);
+            const { currentMetaData } = await this.handler.fetchTableMetadata(this.table);
+            const { changes, updatedMetaData } = compareMetaData(currentMetaData, inferredMeta, this.db.getDialectConfig(), config.logger);
+
+            // Configure main table (with schema lock + history if enabled)
+            const insertInput = [{
+                table: this.table,
+                data: stagingRows,
+                metaData: updatedMetaData,
+                previousMetaData: currentMetaData,
+                comparedMetaData: { changes, updatedMetaData },
+                stagingPrefix: config.stagingPrefix,
+                historyTableSuffix: config.historyTableSuffix,
+            }];
+
+            const useSchemaLock = config.useSchemaLock;
+            const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
+            const useHistory = config.schemaHistory;
+            let historyId: number | undefined;
+
+            if (useSchemaLock) await this.db.acquireSchemaLock(this.table, lockTimeout);
+            try {
+                if (useHistory) {
+                    await bootstrapSchemaHistoryTable(this.db);
+                    if (tableChangesExist(changes)) {
+                        historyId = await recordMigrationStart(this.db, this.table, currentMetaData || {}, changes);
+                    }
+                }
+                try {
+                    await this.handler['configureTables'](insertInput);
+                    if (historyId !== undefined) await recordMigrationSuccess(this.db, historyId, updatedMetaData);
+                } catch (ddlErr) {
+                    if (historyId !== undefined) await recordMigrationFailed(this.db, historyId).catch(() => {});
+                    throw ddlErr;
+                }
+            } finally {
+                if (useSchemaLock) await this.db.releaseSchemaLock(this.table);
+            }
+
+            // Attempt bulk merge with casts
+            const mergeQ = buildMergeFromStreamQuery(this.table, this.stagingTable, updatedMetaData, insertType as 'UPDATE' | 'INSERT', config);
+            const mergeResult = await this.db.runTransaction([mergeQ]);
+
+            let affectedRows = mergeResult.affectedRows ?? 0;
+
+            if (!mergeResult.success) {
+                // Fallback: per-row retry with schema widening
+                affectedRows = await this._perRowMerge(stagingRows, updatedMetaData, insertType as 'UPDATE' | 'INSERT', maxRetries);
+            }
+
+            const end = new Date();
+            return { start, end, success: true, duration: end.getTime() - start.getTime(), affectedRows, table: this.table };
+        } catch (error: any) {
+            const end = new Date();
+            return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error) };
+        } finally {
+            // Always drop staging table
+            if (this.stagingCreated) {
+                const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
+                await this.db.runTransaction([dropQ]).catch(e =>
+                    this.db.error(`autoSQLStream: failed to drop staging table '${this.stagingTable}': ${e.message}`)
+                );
+            }
+            if (this.schema) this.db.updateSchema(this.originalSchema);
+        }
+    }
+
+    private async _perRowMerge(
+        rows: Record<string, any>[],
+        metaData: MetadataHeader,
+        insertType: 'UPDATE' | 'INSERT',
+        maxRetries: number
+    ): Promise<number> {
+        const config = this.db.getConfig();
+        let pendingRows = rows;
+        let totalInserted = 0;
+        let round = 0;
+
+        while (pendingRows.length > 0 && round < maxRetries) {
+            round++;
+            const failures: { row: Record<string, any>; error: string }[] = [];
+
+            for (const row of pendingRows) {
+                const insertQ = this.db.getInsertStatementQuery(
+                    this.table,
+                    [row],
+                    metaData,
+                    insertType
+                );
+                const result = await this.db.runQuery(insertQ);
+                if (result.success) {
+                    totalInserted += result.affectedRows ?? 1;
+                } else {
+                    failures.push({ row, error: result.error ?? 'unknown error' });
+                }
+            }
+
+            if (failures.length === 0) break;
+
+            if (round < maxRetries) {
+                // Try to widen schema for the failing rows
+                const failedData = failures.map(f => f.row);
+                const failedMeta = await getMetaData(config, failedData, this.primaryKey);
+                const { changes, updatedMetaData } = compareMetaData(metaData, failedMeta, this.db.getDialectConfig(), config.logger);
+                if (tableChangesExist(changes)) {
+                    const widenInput = [{
+                        table: this.table,
+                        data: failedData,
+                        metaData: updatedMetaData,
+                        previousMetaData: metaData,
+                        comparedMetaData: { changes, updatedMetaData },
+                        stagingPrefix: config.stagingPrefix,
+                        historyTableSuffix: config.historyTableSuffix,
+                    }];
+                    await this.handler['configureTables'](widenInput).catch(e =>
+                        this.db.warn(`autoSQLStream: schema widening attempt failed: ${e.message}`)
+                    );
+                    metaData = updatedMetaData;
+                }
+            }
+            pendingRows = failures.map(f => f.row);
+        }
+
+        // Handle remaining failures
+        if (pendingRows.length > 0) {
+            if (config.rejectedRowsTable) {
+                await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
+                const rejQ = buildInsertRejectedRowsQuery(
+                    config,
+                    this.table,
+                    pendingRows.map(row => ({ row, error: 'failed after max retries' }))
+                );
+                await this.db.runTransaction([rejQ]);
+                this.db.warn(`autoSQLStream: ${pendingRows.length} row(s) could not be merged and were written to '${config.rejectedRowsTable}'.`);
+            } else {
+                throw new Error(`autoSQLStream: ${pendingRows.length} row(s) failed to merge after ${maxRetries} retry round(s). Configure rejectedRowsTable to capture them instead of throwing.`);
+            }
+        }
+
+        return totalInserted;
+    }
+
+    async abort(): Promise<void> {
+        this.ended = true;
+        if (this.stagingCreated) {
+            const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
+            await this.db.runTransaction([dropQ]).catch(e =>
+                this.db.error(`autoSQLStream: failed to drop staging table during abort: ${e.message}`)
+            );
+        }
+        if (this.schema) this.db.updateSchema(this.originalSchema);
     }
 }

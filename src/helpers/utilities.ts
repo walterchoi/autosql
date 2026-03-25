@@ -48,6 +48,13 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             historyTableSuffix: defaults.historyTableSuffix,
             useSchemaLock: defaults.useSchemaLock,
             schemaLockTimeout: defaults.schemaLockTimeout,
+            schemaHistory: defaults.schemaHistory,
+            schemaHistoryTable: defaults.schemaHistoryTable,
+            strictDriftDetection: defaults.strictDriftDetection,
+            detectDrift: defaults.detectDrift,
+            streamingStagingPrefix: defaults.streamingStagingPrefix,
+            streamMaxRetries: defaults.streamMaxRetries,
+            keepOrphanedStagingTables: defaults.keepOrphanedStagingTables,
         };
 
         // Merge provided config with defaults
@@ -71,6 +78,9 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         }
         if (merged.schemaLockTimeout !== undefined && merged.schemaLockTimeout <= 0) {
             throw new Error("schemaLockTimeout must be greater than 0.");
+        }
+        if (merged.streamMaxRetries !== undefined && merged.streamMaxRetries < 1) {
+            throw new Error("streamMaxRetries must be at least 1.");
         }
 
         return merged;

@@ -107,6 +107,30 @@ export interface DatabaseConfig {
        */
       schemaLockTimeout?: number;
 
+      // --- Schema history ---
+      /** Record every DDL event to an audit table. Default: false. */
+      schemaHistory?: boolean;
+      /** Name of the history table. Default: "autosql_schema_history". */
+      schemaHistoryTable?: string;
+      /** Schema containing the history table (same DB, different schema). Default: same as config.schema. */
+      schemaHistorySchema?: string;
+      /** Throw SchemaDriftError when drift is detected. Default: false (warn only). */
+      strictDriftDetection?: boolean;
+      /** Run drift detection on every autoSQL call when schemaHistory: true. Default: true. */
+      detectDrift?: boolean;
+
+      // --- Streaming ---
+      /** Prefix for per-run stream staging tables. Default: "autosql_stream__". */
+      streamingStagingPrefix?: string;
+      /** Max widening retry rounds during stream merge. Default: 3. */
+      streamMaxRetries?: number;
+      /** Opt-in rejected rows table name. When set, unresolvable rows are written here instead of throwing. */
+      rejectedRowsTable?: string;
+      /** Schema for the rejected rows table. Default: same as config.schema. */
+      rejectedRowsSchema?: string;
+      /** When true, orphaned stream staging tables are preserved instead of dropped. Default: false. */
+      keepOrphanedStagingTables?: boolean;
+
       /**
        * Prefix for auto-created staging tables (default: "temp_staging__").
        * Change this if your schema already has tables with that prefix.

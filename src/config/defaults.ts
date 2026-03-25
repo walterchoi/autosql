@@ -23,6 +23,13 @@ export const defaults = {
     excludeBlankColumns: true,
     useSchemaLock: false,
     schemaLockTimeout: 30,
+    schemaHistory: false,
+    schemaHistoryTable: 'autosql_schema_history',
+    strictDriftDetection: false,
+    detectDrift: true,
+    streamingStagingPrefix: 'autosql_stream__',
+    streamMaxRetries: 3,
+    keepOrphanedStagingTables: false,
 }
 
 export const maxQueryAttempts = 3;

@@ -469,6 +469,10 @@ export abstract class Database {
     get autoSQLChunked() {
         return this.autoSQLHandler.autoSQLChunked.bind(this.autoSQLHandler);
     }
+
+    get openStream() {
+        return this.autoSQLHandler.openStream.bind(this.autoSQLHandler);
+    }
 }
 
 import { MySQLDatabase } from "./mysql";
