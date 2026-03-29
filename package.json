@@ -49,6 +49,9 @@
     "pg": "^8.16.3",
     "ssh2": "^1.16.0"
   },
+  "overrides": {
+    "handlebars": "4.7.9"
+  },
   "bugs": {
     "url": "https://github.com/walterchoi/autosql/issues"
   },
