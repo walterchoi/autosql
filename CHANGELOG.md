@@ -1,3 +1,16 @@
+## [1.1.1] - 2026-03-29
+### 🔒 Security
+- Pinned transitive dev dependency `handlebars` to `4.7.9` (via `npm overrides`) to resolve a high-severity JavaScript injection advisory (GHSA-xjpj-3mr7-gcpf and related). Handlebars is used only by `ts-jest` at build/test time and is not present in the published package.
+
+### 🐛 Bug Fixes
+- Increased Jest `testTimeout` from 5 s to 30 s. Integration tests that connect to MySQL/PostgreSQL were flaking with the default timeout when multiple test suites competed for DB connections under parallel Jest workers.
+
+### 📖 Documentation
+- README updated with full documentation for all features introduced in v1.0.5 and v1.1.0: streaming inserts, schema history, drift detection, advisory locks, `autoSQLChunked`, new config options, and exported error types.
+- Added `test:unit` npm script (`jest --config jest.unit.config.js`) for fast, no-DB unit test runs during development. `prepublishOnly` continues to run the full suite including integration tests.
+
+---
+
 ## [1.1.0] - 2026-03-25
 ### ✨ What's New
 
