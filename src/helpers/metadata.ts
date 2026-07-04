@@ -94,6 +94,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                     nullCount: 0,
                     types: new Set(),
                     length: 0,
+                    byteLength: 0,
                     decimal: 0,
                     trueMaxDecimal: 0
                 }
@@ -116,6 +117,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                     }
                 }
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, strValue.length);
+                metaDataInterim[column].byteLength = Math.max(metaDataInterim[column].byteLength, Buffer.byteLength(strValue, "utf8"));
                 continue;
             }
 
@@ -144,6 +146,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal);
             } else {
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, String(value).length);
+                metaDataInterim[column].byteLength = Math.max(metaDataInterim[column].byteLength, Buffer.byteLength(String(value), "utf8"));
             }
         }
     }
@@ -173,7 +176,10 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         if(metaDataInterim[column].nullCount !== 0) {
             metaData[column].allowNull = true;
         }
-        if(metaData[column].length > (databaseConfig.maxKeyLength || defaults.maxKeyLength) && metaData[column].unique) {
+        // Key length limits are enforced in bytes, so use the max byte length for multibyte
+        // (e.g. CJK/emoji) data — a 200-char value can still exceed the byte key limit.
+        const keyByteLen = Math.max(metaData[column].length, metaDataInterim[column].byteLength);
+        if(keyByteLen > (databaseConfig.maxKeyLength || defaults.maxKeyLength) && metaData[column].unique) {
             metaData[column].unique = false
         }
         if(metaData[column].type === 'varchar' && metaData[column].length > (databaseConfig.maxVarcharLength || defaults.maxVarcharLength)) {
@@ -201,6 +207,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal);
             } else {
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, String(value).length);
+                metaDataInterim[column].byteLength = Math.max(metaDataInterim[column].byteLength, Buffer.byteLength(String(value), "utf8"));
             }
         }
     }
@@ -219,13 +226,17 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         // than the sample, so the varchar→text (and wider) thresholds must be re-checked
         // after the final length is known.
         const finalLen = metaData[column].length || 0;
+        // TEXT/MEDIUMTEXT/LONGTEXT caps are byte limits, so promote on the byte length —
+        // otherwise a multibyte value under the char threshold overflows the column and the
+        // DB silently truncates it on insert.
+        const finalByteLen = Math.max(finalLen, metaDataInterim[column].byteLength);
         if (metaData[column].type === 'varchar' && finalLen > (databaseConfig.maxVarcharLength || defaults.maxVarcharLength)) {
             metaData[column].type = 'text';
         }
-        if (metaData[column].type === 'text' && finalLen >= 65535) {
+        if (metaData[column].type === 'text' && finalByteLen >= 65535) {
             metaData[column].type = 'mediumtext';
         }
-        if (metaData[column].type === 'mediumtext' && finalLen >= 16777215) {
+        if (metaData[column].type === 'mediumtext' && finalByteLen >= 16777215) {
             metaData[column].type = 'longtext';
         }
     }
@@ -322,6 +333,14 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
     // A rename is inferred only when exactly one removed column matches exactly one added
     // column by definition. Ambiguous cases (multiple columns with identical definitions
     // on either side) are left as drop+add to avoid wrong-column renames.
+    //
+    // NOTE: this is deliberately conservative. A rename cannot be known from metadata alone
+    // (incoming data just carries a new key), and when `oldHeaders` is DB-parsed and
+    // `newHeaders` is inferred their definitions rarely match exactly, so most evolutions
+    // fall through to drop+add. That is the correct fidelity-first outcome: `deleteColumns`
+    // defaults to false, so the old column and its data are preserved rather than a guess
+    // moving one column's data under another column's name. Do not loosen the match to
+    // type-only — that reintroduces wrong-column data association.
     const fingerprint = (col: ColumnDefinition): string =>
         JSON.stringify(Object.fromEntries(Object.entries(col).sort()));
 

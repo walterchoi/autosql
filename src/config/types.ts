@@ -235,6 +235,7 @@ export interface metaDataInterim {
     types: Set<string>;
     collated_type?: string;
     length: number;
+    byteLength: number;
     decimal: number;
     trueMaxDecimal: number;
   }

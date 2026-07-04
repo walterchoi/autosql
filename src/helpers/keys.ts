@@ -23,12 +23,17 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             const isText = groupings.textGroup.includes(columnType) && columnType !== "varchar";
             const isDate = groupings.dateGroup.includes(columnType);
 
+            // An explicitly requested primary key must be honored even if it is long/text/
+            // decimal — otherwise it is silently dropped and a different key (or none) is
+            // chosen. The auto-index exclusions below apply only to non-explicit columns.
+            const isExplicitPrimaryKey = !!(primaryKey && primaryKey.includes(columnName));
+
             // Exclude long text fields from indexing
-            if (isText) continue;
+            if (!isExplicitPrimaryKey && isText) continue;
             // Exclude any field longer than max key length
-            if (columnLength >= maxKeyLength) continue;
+            if (!isExplicitPrimaryKey && columnLength >= maxKeyLength) continue;
             // Exclude decimals from indexes
-            if (isDecimal) continue;
+            if (!isExplicitPrimaryKey && isDecimal) continue;
 
             // Include dates, unique values and pseudouniques as indexes
             if (isDate || column.unique || column.pseudounique) {
