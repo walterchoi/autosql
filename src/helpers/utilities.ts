@@ -82,6 +82,9 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         if (merged.streamMaxRetries !== undefined && merged.streamMaxRetries < 1) {
             throw new Error("streamMaxRetries must be at least 1.");
         }
+        if ((merged.thousandsSeparator === undefined) !== (merged.decimalSeparator === undefined)) {
+            throw new Error("thousandsSeparator and decimalSeparator must be provided together.");
+        }
 
         return merged;
     } catch (error) {
@@ -673,7 +676,7 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
 
         const isNumberLike = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
         if (isNumberLike) {
-            const normalised = normalizeNumber(value) || strValue;
+            const normalised = normalizeNumber(value, databaseConfig?.thousandsSeparator, databaseConfig?.decimalSeparator) || strValue;
             const precision = databaseConfig?.decimalMaxLength ?? defaults.decimalMaxLength;
             strValue = roundStringDecimal(normalised, precision);
         }

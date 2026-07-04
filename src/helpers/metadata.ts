@@ -121,7 +121,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 continue;
             }
 
-            const type = predictType(value)
+            const type = predictType(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator)
             if(!type) continue;
             const sqlizedValue = sqlize(value, type, dialectConfig, databaseConfig)
             metaDataInterim[column].valueCount++;
@@ -133,7 +133,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
             }
             metaDataInterim[column].types.add(type);
             if (groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) {
-                let valueStr = normalizeNumber(value);
+                let valueStr = normalizeNumber(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
                 if(!valueStr) {
                     valueStr = String(value).trim();
                 }
@@ -193,7 +193,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
             const type = metaData[column].type;
             if(!type) continue;
             if (groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) {
-                let valueStr = normalizeNumber(value);
+                let valueStr = normalizeNumber(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
                 if(!valueStr) {
                     valueStr = String(value).trim();
                 }

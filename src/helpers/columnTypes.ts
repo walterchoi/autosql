@@ -2,8 +2,10 @@ import { regexPatterns } from "../config/regex";
 import { groupings } from "../config/groupings";
 import { normalizeNumber, setToArray } from "./utilities";
 
-// Using regex, when provided a data point, predict what data type this will be
-export function predictType(data: any): string | null {
+// Using regex, when provided a data point, predict what data type this will be.
+// thousandsSeparator/decimalSeparator disambiguate locale-specific number formats (e.g.
+// whether "1.000" is 1 or 1000) — see normalizeNumber. Omit both to use the auto-heuristic.
+export function predictType(data: any, thousandsSeparator?: string, decimalSeparator?: string): string | null {
     try {
         if(data === undefined || data === null) {
             return null
@@ -32,7 +34,7 @@ export function predictType(data: any): string | null {
 
         // ✅ Detect and normalize numbers
         if (regexPatterns.number.test(strData) || regexPatterns.decimal.test(strData)) {
-            strData = normalizeNumber(strData);
+            strData = normalizeNumber(strData, thousandsSeparator, decimalSeparator);
 
             if (!strData) {
                 return "varchar"; // Invalid format
@@ -227,6 +229,11 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
             // Handle similar groupings
             if (overallTypeGroup === currentTypeGroup) {
                 if (overallTypeGroup === "specialInt") {
+                    // Widen toward the later group entry (decimal < double < exponent). This
+                    // deliberately resolves decimal+double -> double: "double" only enters via a
+                    // pre-existing DOUBLE column, and narrowing it back to decimal would be a
+                    // lossy/erroring ALTER. Pure inference never yields "double" (it yields
+                    // decimal/exponent), so exact decimals are not silently floated here.
                     for (let i = groupings.specialIntGroup.length - 1; i >= 0; i--) {
                         if (groupings.specialIntGroup[i] === currentType || groupings.specialIntGroup[i] === overallType) {
                             overallType = groupings.specialIntGroup[i];

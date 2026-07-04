@@ -69,8 +69,10 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                 for (const key of potentialPrimaryKeys) {
                   const type = headers[key]?.type ?? "";
               
-                  // Prefer key ending in 'id' or '_id'
-                  if (!idLikeKey && /(_id|id)$/i.test(key)) {
+                  // Prefer a key that is exactly "id" or ends in "_id". Anchored so ordinary
+                  // words ending in "id" (paid, void, valid, grid, rapid) are not mistaken for
+                  // identifier columns and wrongly preferred as the primary key.
+                  if (!idLikeKey && /(^id$|_id$)/i.test(key)) {
                     idLikeKey = key;
                   }
               

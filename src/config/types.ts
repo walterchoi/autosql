@@ -95,6 +95,15 @@ export interface DatabaseConfig {
       forceStringColumns?: string[];
 
       /**
+       * Explicit number-format separators for locale-aware ingestion. Set BOTH to
+       * disambiguate single-separator values (e.g. with `thousandsSeparator: "."` and
+       * `decimalSeparator: ","`, "1.000" is parsed as 1000, not 1). Omit both to use the
+       * auto-detection heuristic (a lone separator is treated as decimal).
+       */
+      thousandsSeparator?: string;
+      decimalSeparator?: string;
+
+      /**
        * Acquire a per-table advisory lock before running schema inference and
        * ALTER TABLE.  Set to `true` when the same table may be written by multiple
        * concurrent processes to prevent race conditions in compareMetaData.

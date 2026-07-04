@@ -1,8 +1,39 @@
 import { predictIndexes } from "../src/helpers/keys";
+import { predictType } from "../src/helpers/columnTypes";
 import { getDataHeaders } from "../src/helpers/metadata";
 import { MetadataHeader, DatabaseConfig } from "../src/config/types";
 
 const BASE_CONFIG: DatabaseConfig = { sqlDialect: "mysql", autoIndexing: false };
+
+describe("id-like primary key preference is anchored", () => {
+    test("an ordinary word ending in 'id' is not preferred over a real _id column", () => {
+        const meta: MetadataHeader = {
+            amount_paid: { type: "varchar", length: 10, unique: true, allowNull: false },
+            customer_id: { type: "int", length: 4, unique: true, allowNull: false },
+        };
+        const result = predictIndexes(meta);
+        expect(result.customer_id.primary).toBe(true);
+        expect(result.amount_paid.primary).toBeUndefined();
+    });
+});
+
+describe("configurable number-format separators", () => {
+    test("a lone separator defaults to decimal, but an explicit thousands separator overrides it", () => {
+        expect(predictType("1.000")).toBe("decimal"); // auto-heuristic: '.' is the decimal point
+        // With '.' declared as the thousands separator, "1.000" is the integer 1000.
+        expect(predictType("1.000", ".", ",")).toBe("smallint");
+    });
+
+    test("getDataHeaders honors the configured separators", async () => {
+        const data = [{ amount: "1.000" }, { amount: "2.000" }];
+        const result = await getDataHeaders(data, {
+            ...BASE_CONFIG,
+            thousandsSeparator: ".",
+            decimalSeparator: ",",
+        });
+        expect(["tinyint", "smallint", "int"]).toContain(result.amount.type);
+    });
+});
 
 describe("explicit primary key on a long column is honored", () => {
     test("a primaryKey longer than maxKeyLength still gets primary=true", () => {
