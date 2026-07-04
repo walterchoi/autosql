@@ -145,32 +145,47 @@ export class PostgresDatabase extends Database {
         }
     }    
 
-    protected async executeQuery(query: string): Promise<any>;
-    protected async executeQuery(QueryInput: QueryInput): Promise<any>;
-    protected async executeQuery(queryOrParams: QueryInput): Promise<{ rows: any[]; affectedRows: number }> {
+    protected async acquireConnection(): Promise<PoolClient> {
         if (!this.connection) {
             await this.establishConnection();
         }
-    
+        return await (this.connection as Pool).connect();
+    }
+
+    protected releaseConnection(client: PoolClient): void {
+        if (client) client.release();
+    }
+
+    protected async executeQuery(query: string, client?: PoolClient): Promise<any>;
+    protected async executeQuery(QueryInput: QueryInput, client?: PoolClient): Promise<any>;
+    protected async executeQuery(queryOrParams: QueryInput, client?: PoolClient): Promise<{ rows: any[]; affectedRows: number }> {
+        if (!this.connection) {
+            await this.establishConnection();
+        }
+
         const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
         const params = typeof queryOrParams === "string" ? [] : queryOrParams.params || [];
-    
-        let client: PoolClient | null = null;
+
+        const pinned = !!client;
+        let conn: PoolClient | null = client ?? null;
         try {
-            client = await (this.connection as Pool).connect();
-            const result = await client.query(query, params);
-    
+            if (!conn) conn = await (this.connection as Pool).connect();
+            const result = await conn.query(query, params);
+
             const rows = result.rows || [];
             const affectedRows = result.rowCount ?? rows.length ?? 0;
-    
+
             return { rows, affectedRows };
         } catch (error) {
-            if (client) await client.query("ROLLBACK;");
+            // Standalone query: roll back its throwaway connection. Pinned (transaction)
+            // connection: leave the ROLLBACK to runTransaction so the whole transaction aborts
+            // on this same connection.
+            if (!pinned && conn) { try { await conn.query("ROLLBACK;"); } catch { /* autocommit: nothing to roll back */ } }
             throw error;
         } finally {
-            if (client) client.release();
+            if (!pinned && conn) conn.release();
         }
-    }    
+    }
 
     getCreateSchemaQuery(schemaName: string): QueryInput {
         return { query: `CREATE SCHEMA IF NOT EXISTS "${schemaName}";`};
