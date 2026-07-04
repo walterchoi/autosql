@@ -2,6 +2,9 @@ import { escapeIdentifier, escapeLiteral, assertSafeTypeToken, assertSafeLength 
 import { MySQLTableQueryBuilder } from "../src/db/queryBuilders/mysql/tableBuilder";
 import { PostgresTableQueryBuilder } from "../src/db/queryBuilders/pgsql/tableBuilder";
 import { MetadataHeader, QueryInput } from "../src/config/types";
+import { getInsertValues } from "../src/helpers/utilities";
+import { mysqlConfig } from "../src/db/config/mysqlConfig";
+import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
 
 const sql = (qi: QueryInput): string => (typeof qi === "string" ? qi : qi.query);
 
@@ -63,6 +66,28 @@ describe("assertSafeLength", () => {
         expect(() => assertSafeLength("255) NOT NULL, ADD COLUMN evil TEXT" as any)).toThrow();
         expect(() => assertSafeLength(-1)).toThrow();
         expect(() => assertSafeLength(1.5)).toThrow();
+    });
+});
+
+describe("getInsertValues does not double-escape parameter-bound values", () => {
+    // These values are bound as `?`/`$n` params by the drivers, so sqlize must NOT apply
+    // quote/backslash escaping — otherwise O'Brien is stored as O''Brien.
+    test("MySQL: apostrophes and backslashes pass through untouched", () => {
+        const meta: MetadataHeader = { name: { type: "varchar", length: 50 } };
+        const [value] = getInsertValues(meta, { name: "O'Brien\\x" }, mysqlConfig, undefined, true);
+        expect(value).toBe("O'Brien\\x");
+    });
+
+    test("Postgres: apostrophes and backslashes pass through untouched", () => {
+        const meta: MetadataHeader = { name: { type: "varchar", length: 50 } };
+        const [value] = getInsertValues(meta, { name: "O'Brien\\x" }, pgsqlConfig, undefined, true);
+        expect(value).toBe("O'Brien\\x");
+    });
+
+    test("type normalization still applies (boolean string -> 1 for MySQL)", () => {
+        const meta: MetadataHeader = { flag: { type: "boolean" } };
+        const [value] = getInsertValues(meta, { flag: "true" }, mysqlConfig, undefined, true);
+        expect(value).toBe("1");
     });
 });
 

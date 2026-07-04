@@ -30,8 +30,9 @@ export const mysqlConfig: DialectConfig = {
     "FALSE": "0"
   },
   sqlize: [
-    { regex: "'", replace: "''", type: true },
-    { regex: "\\\\", replace: "\\\\\\\\", type: true },
+    // NOTE: no quote/backslash literal-escaping rules here. `sqlize` output is only ever
+    // parameter-bound (getInsertValues) or compared in memory (metadata sampling); escaping
+    // it would double-escape values that the driver then binds (storing O''Brien for O'Brien).
     { regex: "^true$", replace: "1", type: ["boolean", "tinyint"] },
     { regex: "^false$", replace: "0", type: ["boolean", "tinyint"] },
     { regex: "T", replace: " ", type: ["date", "datetime", "datetimetz"] },
