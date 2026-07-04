@@ -115,21 +115,33 @@ export class MySQLDatabase extends Database {
         }
     }
 
-    protected async executeQuery(query: string): Promise<any>;
-    protected async executeQuery(QueryInput: QueryInput): Promise<any>;
-    protected async executeQuery(queryOrParams: QueryInput): Promise<{ rows: any[]; affectedRows: number }> {
+    protected async acquireConnection(): Promise<PoolConnection> {
         if (!this.connection) {
             await this.establishConnection();
         }
-    
-        let client: PoolConnection | null = null;
+        return await (this.connection as Pool).getConnection();
+    }
+
+    protected releaseConnection(client: PoolConnection): void {
+        if (client) client.release();
+    }
+
+    protected async executeQuery(query: string, client?: PoolConnection): Promise<any>;
+    protected async executeQuery(QueryInput: QueryInput, client?: PoolConnection): Promise<any>;
+    protected async executeQuery(queryOrParams: QueryInput, client?: PoolConnection): Promise<{ rows: any[]; affectedRows: number }> {
+        if (!this.connection) {
+            await this.establishConnection();
+        }
+
+        const pinned = !!client;
+        let conn: PoolConnection | null = client ?? null;
         const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
         const params = typeof queryOrParams === "string" ? [] : queryOrParams.params || [];
-    
+
         try {
-            client = await (this.connection as Pool).getConnection();
-            const [rowsOrResult, maybeHeader] = await client.query(query, params) as [any, ResultSetHeader | FieldPacket[]];
-    
+            if (!conn) conn = await (this.connection as Pool).getConnection();
+            const [rowsOrResult, maybeHeader] = await conn.query(query, params) as [any, ResultSetHeader | FieldPacket[]];
+
             const rows = Array.isArray(rowsOrResult) ? rowsOrResult : [];
             let affectedRows = 0;
 
@@ -142,15 +154,18 @@ export class MySQLDatabase extends Database {
             } else if (rows.length > 0) {
                 affectedRows = rows.length;
             }
-    
+
             return { rows, affectedRows };
         } catch (error) {
-            if (client) await client.query("ROLLBACK;");
+            // Standalone query: roll back its throwaway connection. Pinned (transaction)
+            // connection: leave the ROLLBACK to runTransaction so the whole transaction aborts
+            // on this same connection.
+            if (!pinned && conn) { try { await conn.query("ROLLBACK;"); } catch { /* autocommit: nothing to roll back */ } }
             throw error;
         } finally {
-            if (client) client.release();
+            if (!pinned && conn) conn.release();
         }
-    }    
+    }
 
     getCreateSchemaQuery(schemaName: string): QueryInput {
         return { query: `CREATE SCHEMA IF NOT EXISTS \`${schemaName}\`;` };

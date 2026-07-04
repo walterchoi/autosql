@@ -61,7 +61,14 @@ export abstract class Database {
 
     public abstract establishDatabaseConnection(): Promise<void>;
     public abstract testQuery(queryOrParams: QueryInput): Promise<any>;
-    protected abstract executeQuery(queryOrParams: QueryInput): Promise<any>;
+    // When `client` is provided the query runs on that pinned connection and the connection is
+    // NOT released here (the transaction owner manages its lifecycle). Without a client, a
+    // throwaway pool connection is acquired and released per call (standalone queries).
+    protected abstract executeQuery(queryOrParams: QueryInput, client?: any): Promise<any>;
+    // Acquire/release a single pooled connection so a transaction can run all of its
+    // statements (START/…/COMMIT/ROLLBACK) on the same connection.
+    protected abstract acquireConnection(): Promise<any>;
+    protected abstract releaseConnection(client: any): void;
 
     public async establishConnection(): Promise<void> {
         let attempts = 0;
@@ -166,19 +173,22 @@ export abstract class Database {
     }
     
 
-    // Begin transaction.
-    public async startTransaction(): Promise<void> {
-        await this.executeQuery("START TRANSACTION;");
+    // Transaction control statements. These require a pinned connection (see runTransaction);
+    // a transaction spread across throwaway pool connections is not atomic. Call runTransaction
+    // for atomic multi-statement work rather than these directly.
+    public async startTransaction(client: any): Promise<void> {
+        if (!client) throw new Error("startTransaction requires a pinned connection; use runTransaction() for atomic transactions.");
+        await this.executeQuery("START TRANSACTION;", client);
     }
 
-    // Commit transaction.
-    public async commit(): Promise<void> {
-        await this.executeQuery("COMMIT;");
+    public async commit(client: any): Promise<void> {
+        if (!client) throw new Error("commit requires a pinned connection; use runTransaction().");
+        await this.executeQuery("COMMIT;", client);
     }
 
-    // Rollback transaction.
-    public async rollback(): Promise<void> {
-        await this.executeQuery("ROLLBACK;");
+    public async rollback(client: any): Promise<void> {
+        if (!client) throw new Error("rollback requires a pinned connection; use runTransaction().");
+        await this.executeQuery("ROLLBACK;", client);
     }
 
     public async closeConnection(): Promise<{ success: boolean; error?: string }> {
@@ -254,75 +264,74 @@ export abstract class Database {
         if (!this.connection) {
             await this.establishConnection();
         }
-        let results: any[] = [];
-        const maxAttempts = maxQueryAttempts || 3;
-        let _error: any;
         const start = new Date();
         let end: Date;
-        let totalAffectedRows = 0;
-    
+        let _error: any;
+
         // Convert string queries into QueryInput
         const queries = queriesOrStrings.map(query =>
             typeof query === "string" ? { query, params: [] } : query
         );
-    
-        try {
-            await this.startTransaction();
-    
-            for (const QueryInput of queries) {
-                if (!QueryInput?.query?.trim()) continue; // Skip empty queries
-                let attempts = 0;
-                while (attempts < maxAttempts) {
-                    try {
-                        const { rows, affectedRows } = await this.executeQuery(QueryInput);
 
-                        results = results.concat(rows);
-                        totalAffectedRows += affectedRows || 0;
+        // Retry the whole transaction (not individual statements) on transient errors: a
+        // deadlock/serialization failure aborts the entire transaction, so a per-statement
+        // retry on the same connection cannot succeed. Transactions that contain DDL run
+        // exactly once — MySQL implicitly commits before each DDL statement, so re-running a
+        // mixed DDL+DML batch would re-apply the already-committed (non-idempotent) DML.
+        const containsDDL = queries.some(q => /^\s*(create|alter|drop|truncate|rename)\b/i.test(q.query || ""));
+        const maxAttempts = containsDDL ? 1 : (maxQueryAttempts || 3);
 
-                        break; // Exit retry loop on success
-                    } catch (error: any) {
-                        attempts++;
-    
-                        const permanentErrors = await this.getPermanentErrors();
-                        if (permanentErrors.includes(error.code)) {
-                            throw error; // Stop retrying for permanent errors
-                        }
-    
-                        if (attempts >= maxAttempts) {
-                            _error = error;
-                        } else {
-                            await new Promise(res => setTimeout(res, 1000)); // Wait before retry
-                        }
-                    }
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            const client = await this.acquireConnection();
+            let results: any[] = [];
+            let totalAffectedRows = 0;
+            try {
+                await this.startTransaction(client);
+
+                for (const QueryInput of queries) {
+                    if (!QueryInput?.query?.trim()) continue; // Skip empty queries
+                    const { rows, affectedRows } = await this.executeQuery(QueryInput, client);
+                    results = results.concat(rows);
+                    totalAffectedRows += affectedRows || 0;
                 }
-    
-                if (_error) {
-                    throw _error;
+
+                await this.commit(client);
+                end = new Date();
+                return {
+                    start,
+                    end,
+                    duration: end.getTime() - start.getTime(),
+                    affectedRows: totalAffectedRows || results.length,
+                    success: true,
+                    results
+                };
+            } catch (error: any) {
+                this.error(`Transaction error (attempt ${attempt}/${maxAttempts}): ${error}`);
+                try {
+                    await this.rollback(client);
+                } catch (rollbackError) {
+                    this.error(`Rollback failed: ${rollbackError}`);
                 }
+
+                const permanentErrors = await this.getPermanentErrors();
+                if (permanentErrors.includes(error.code) || attempt >= maxAttempts) {
+                    _error = error;
+                    break;
+                }
+                await new Promise(res => setTimeout(res, 1000)); // Wait before retrying the whole transaction
+            } finally {
+                this.releaseConnection(client);
             }
-    
-            await this.commit();
-            end = new Date();
-            return {
-                start,
-                end,
-                duration: end.getTime() - start.getTime(),
-                affectedRows: totalAffectedRows || results.length,
-                success: true,
-                results
-            };
-        } catch (error: any) {
-            this.error(`Transaction error: ${error}`);
-            await this.rollback();
-            end = new Date();
-            return {
-                start,
-                end,
-                duration: end.getTime() - start.getTime(),
-                success: false,
-                error: error.message
-            };
         }
+
+        end = new Date();
+        return {
+            start,
+            end,
+            duration: end.getTime() - start.getTime(),
+            success: false,
+            error: _error?.message
+        };
     }
 
     public async runTransactionsWithConcurrency(queryGroups: QueryInput[][]): Promise<QueryResult[]> {
