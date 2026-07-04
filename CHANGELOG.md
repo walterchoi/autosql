@@ -1,3 +1,23 @@
+## [1.2.0] - 2026-07-05
+### 🔒 Security
+- **SQL identifier escaping.** All interpolated identifiers (table/column/schema/index/constraint names, which originate from arbitrary JSON keys and `metaData`) are now quote-escaped at generation time, and type tokens/lengths are validated. Closes DDL/DML injection via crafted column names. Output is byte-identical for well-formed identifiers.
+- **DEFAULT value validation.** Column defaults are validated (`assertSafeDefaultExpression`) to reject statement separators, comment introducers, commas, and unbalanced quotes before they reach the statement.
+- **No value double-escaping.** `getInsertValues(..., sqlize=true)` no longer applies quote/backslash escaping to values that are then parameter-bound, so `O'Brien` is stored correctly instead of `O''Brien`.
+
+### 🐛 Bug Fixes (type inference — fidelity-first)
+- Scientific-notation columns now emit the `exponent` type (→ `DOUBLE`/`NUMERIC`) instead of the invalid `exponential`, which produced invalid DDL.
+- Leading-zero digit strings (`"007"`, `"07030"`, phone numbers) stay `varchar` identifiers instead of being coerced to integers (which dropped the leading zeros).
+- Plain `0/1` digit strings (`"10"`, `"100"`) type as numbers, not `BINARY` (which right-pads with `\0`).
+- The date regex is fully anchored, so partial matches like `"2021-05-05 is my birthday"` are no longer coerced to `date`.
+- TEXT/MEDIUMTEXT/LONGTEXT promotion and max-key-length checks are now byte-aware, preventing silent truncation of multibyte (CJK/emoji) data. `VARCHAR(n)` sizing stays char-based.
+- An explicitly requested primary key on a long/text/decimal column is honored instead of being silently dropped by the auto-index length guard.
+- The id-like primary-key preference is anchored to `^id$`/`_id$`, so ordinary words ending in `id` (`paid`, `void`, `grid`) are no longer mistaken for identifier columns.
+
+### ✨ What's New
+- **`thousandsSeparator` / `decimalSeparator` config** — locale-aware number parsing. Set both to disambiguate values like `"1.000"` (1 vs 1000); omit both to use the existing auto-heuristic.
+
+---
+
 ## [1.1.0] - 2026-03-25
 ### ✨ What's New
 
