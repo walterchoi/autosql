@@ -41,7 +41,7 @@ export function predictType(data: any): string | null {
         } else if (regexPatterns.decimal.test(strData)) {
             currentType = "decimal";
         } else if (regexPatterns.exponential.test(strData)) {
-            currentType = "exponential";
+            currentType = "exponent";
         } else if (regexPatterns.datetimetz.test(strData)) {
             currentType = "datetimetz";
         } else if (regexPatterns.datetime.test(strData)) {
@@ -184,9 +184,9 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
                 continue;
             }
 
-            // ✅ Handle decimal + exponential → exponential
-            if ((currentType === "decimal" && overallType === "exponential") || (overallType === "decimal" && currentType === "exponential")) {
-                overallType = "exponential";
+            // ✅ Handle decimal + exponent → exponent
+            if ((currentType === "decimal" && overallType === "exponent") || (overallType === "decimal" && currentType === "exponent")) {
+                overallType = "exponent";
                 continue;
             }
 
@@ -198,8 +198,8 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
 
             // Handle different groupings
             if (currentTypeGroup !== overallTypeGroup) {
-                if ((currentType === "exponential" && overallTypeGroup === "int") || (overallType === "exponential" && currentTypeGroup === "int")) {
-                    collatedType = "exponential";
+                if ((currentType === "exponent" && overallTypeGroup === "int") || (overallType === "exponent" && currentTypeGroup === "int")) {
+                    collatedType = "exponent";
                 } else if ((currentType === "double" && overallTypeGroup === "int") || (overallType === "double" && currentTypeGroup === "int")) {
                     collatedType = "double";
                 } else if ((currentType === "decimal" && overallTypeGroup === "int") || (overallType === "decimal" && currentTypeGroup === "int")) {

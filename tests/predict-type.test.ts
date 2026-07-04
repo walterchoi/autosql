@@ -39,7 +39,7 @@ describe("predictType function", () => {
     });
 
     test("detects exponentials correctly", async () => {
-        expect(predictType("1.23e10")).toBe("exponential");
+        expect(predictType("1.23e10")).toBe("exponent");
     });
 
     /** ✅ Boolean Tests */
