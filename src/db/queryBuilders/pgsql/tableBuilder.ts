@@ -3,7 +3,7 @@ import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
-import { escapeIdentifier, assertSafeTypeToken, assertSafeLength } from "../../utils/escape";
+import { escapeIdentifier, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
 const dialectConfig = pgsqlConfig
 const q = (name: string) => escapeIdentifier(name, "pgsql");
 
@@ -45,8 +45,7 @@ export class PostgresTableQueryBuilder {
     
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined && !column.autoIncrement) {
-                const replacement = dialectConfig.defaultTranslation[column.default] || column.default;
-                columnDef += ` DEFAULT ${replacement}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
             }
     
             if (column.primary) primaryKeys.push(columnName);
@@ -120,7 +119,7 @@ export class PostgresTableQueryBuilder {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal ? `,${assertSafeLength(column.decimal)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
-            if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
+            if (column.default !== undefined) columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
     
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         };
@@ -155,7 +154,7 @@ export class PostgresTableQueryBuilder {
                 alterColumnMap[columnName].push(`DROP NOT NULL`);
             }
             if (column.default !== undefined) {
-                alterColumnMap[columnName].push(`SET DEFAULT '${column.default}'`);
+                alterColumnMap[columnName].push(`SET DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`);
             }
         };
     
@@ -313,4 +312,4 @@ export class PostgresTableQueryBuilder {
             params: [schema, table],
         }
     }
-}
+}

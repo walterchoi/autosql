@@ -3,7 +3,7 @@ import { mysqlConfig } from "../../config/mysqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
-import { escapeIdentifier, assertSafeTypeToken, assertSafeLength } from "../../utils/escape";
+import { escapeIdentifier, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
 const dialectConfig = mysqlConfig
 const q = (name: string) => escapeIdentifier(name, "mysql");
 
@@ -50,8 +50,7 @@ export class MySQLTableQueryBuilder {
     
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) {
-                const replacement = dialectConfig.defaultTranslation[column.default];
-                columnDef += ` DEFAULT ${replacement ? replacement : column.default}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
             }
     
             if (column.primary) primaryKeys.push(columnName);
@@ -128,7 +127,7 @@ export class MySQLTableQueryBuilder {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
-            if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
+            if (column.default !== undefined) columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
 
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         };
@@ -154,7 +153,7 @@ export class MySQLTableQueryBuilder {
             }
 
             if (column.default !== undefined) {
-                columnDef += ` DEFAULT '${column.default}'`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
             }
 
             if (column.previousType && column.previousType !== column.type) {
@@ -323,4 +322,4 @@ export class MySQLTableQueryBuilder {
             params: schema ? [table, table, schema] : [table, table],
         };
     }
-}
+}

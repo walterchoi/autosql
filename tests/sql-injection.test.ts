@@ -127,6 +127,28 @@ describe("CREATE TABLE identifier injection is neutralized", () => {
         expect(pg).toContain('PRIMARY KEY ("id")');
     });
 
+    test("DEFAULT values: expressions/booleans stay bare; compound expressions are preserved", () => {
+        const boolHeaders: MetadataHeader = { is_active: { type: "boolean", default: false } };
+        expect(sql(MySQLTableQueryBuilder.getCreateTableQuery("t", boolHeaders)[0])).toContain("DEFAULT false");
+        expect(sql(PostgresTableQueryBuilder.getCreateTableQuery("t", boolHeaders)[0])).toContain("DEFAULT false");
+
+        // Bare SQL expression defaults (incl. the compound ON UPDATE form) must not be quoted.
+        const tsHeaders: MetadataHeader = {
+            created: { type: "datetime", default: "CURRENT_TIMESTAMP" },
+            updated: { type: "datetime", default: "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" },
+        };
+        const my = sql(MySQLTableQueryBuilder.getCreateTableQuery("t", tsHeaders)[0]);
+        expect(my).toContain("DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
+        expect(my).not.toContain("DEFAULT 'CURRENT_TIMESTAMP");
+    });
+
+    test("a DEFAULT that could break out of the column definition is rejected", () => {
+        const evil: MetadataHeader = { s: { type: "varchar", length: 10, default: "x'); DROP TABLE t; --" } };
+        expect(() => PostgresTableQueryBuilder.getCreateTableQuery("t", evil)).toThrow();
+        const evilComma: MetadataHeader = { s: { type: "int", default: "0, ADD COLUMN evil TEXT" } };
+        expect(() => MySQLTableQueryBuilder.getCreateTableQuery("t", evilComma)).toThrow();
+    });
+
     test("an unsafe type token or length is rejected at generation time", () => {
         expect(() =>
             MySQLTableQueryBuilder.getCreateTableQuery("t", { c: { type: "text; DROP TABLE x" } } as any)

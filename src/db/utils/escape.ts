@@ -1,4 +1,4 @@
-import { supportedDialects } from "../../config/types";
+import { supportedDialects, DialectConfig } from "../../config/types";
 
 /**
  * SQL identifier / literal escaping helpers.
@@ -88,4 +88,38 @@ export function assertSafeLength(value: number, label = "length"): number {
         throw new Error(`Invalid SQL ${label}: expected a non-negative integer, received ${JSON.stringify(value)}`);
     }
     return n;
+}
+
+/**
+ * Reject a column DEFAULT expression that could terminate the column definition and inject
+ * further DDL. autosql's convention is that a default is a bare SQL expression — callers pass
+ * `CURRENT_TIMESTAMP`, `UUID()`, a number, or a self-quoted `'literal'` — so the value is
+ * emitted verbatim and must not contain a statement separator, comment introducer, a comma
+ * (which would start a new column/ALTER clause), a NUL byte, or an unbalanced single quote.
+ */
+export function assertSafeDefaultExpression(expr: string): void {
+    if (/[;,\0]|--|\/\*|\*\//.test(expr)) {
+        throw new Error(`Unsafe SQL DEFAULT expression: ${JSON.stringify(expr)}`);
+    }
+    if (((expr.match(/'/g) || []).length) % 2 !== 0) {
+        throw new Error(`Unsafe SQL DEFAULT expression (unbalanced quote): ${JSON.stringify(expr)}`);
+    }
+}
+
+/**
+ * Render a column DEFAULT for a DDL statement. Defaults are SQL expressions, not string
+ * literals: a per-dialect translation (e.g. UUID() -> (UUID())), null, booleans and numbers
+ * are emitted directly, and any other value is emitted bare after `assertSafeDefaultExpression`
+ * confirms it cannot break out of the column definition. A string-literal default must be
+ * self-quoted by the caller (e.g. `"'active'"`), matching the existing CREATE-path behavior.
+ */
+export function renderColumnDefault(value: unknown, dialectConfig: DialectConfig): string {
+    if (typeof value === "string" && dialectConfig.defaultTranslation[value] !== undefined) {
+        return dialectConfig.defaultTranslation[value];
+    }
+    if (value === null || value === undefined) return "NULL";
+    if (typeof value === "boolean" || typeof value === "number") return String(value);
+    const expr = String(value);
+    assertSafeDefaultExpression(expr);
+    return expr;
 }
