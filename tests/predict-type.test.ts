@@ -52,11 +52,17 @@ describe("predictType function", () => {
         expect(predictType("0")).toBe("boolean");
     });
 
-    /** ✅ Binary Tests */
-    test("detects binary correctly", async () => {
-        expect(predictType("01")).toBe("binary");
-        expect(predictType("10")).toBe("binary");
-        expect(predictType("1010001010")).toBe("binary");
+    /** ✅ Digit-string fidelity: numbers stay numbers; leading zeros stay identifiers */
+    test("plain digit strings type as numbers, not binary", async () => {
+        expect(predictType("10")).toBe("tinyint");
+        expect(predictType("1010001010")).toBe("int");
+    });
+
+    test("leading-zero digit strings stay varchar (identifiers, not integers)", async () => {
+        expect(predictType("01")).toBe("varchar");
+        expect(predictType("007")).toBe("varchar");
+        expect(predictType("07030")).toBe("varchar");
+        expect(predictType("0123456789")).toBe("varchar");
     });
 
     /** ✅ Date/Time Tests */
@@ -75,6 +81,11 @@ describe("predictType function", () => {
 
     test("handles invalid dates correctly", async () => {
         expect(predictType("Invalid Date")).toBe("varchar");
+    });
+
+    test("does not treat partial matches as dates (regex is fully anchored)", async () => {
+        expect(predictType("2021-05-05 is my birthday")).toBe("varchar");
+        expect(predictType("call me 12-31-2020")).toBe("varchar");
     });
 
     /** ✅ JSON Tests */

@@ -23,6 +23,13 @@ export function predictType(data: any): string | null {
             json = true
         } catch (e) {}
 
+        // Fidelity: a digit string with a leading zero (e.g. "007", "07030", phone numbers)
+        // is an identifier, not a number — coercing it to an integer would silently drop the
+        // leading zeros. Preserve the original representation as text.
+        if (/^0[0-9]+$/.test(strData)) {
+            return "varchar";
+        }
+
         // ✅ Detect and normalize numbers
         if (regexPatterns.number.test(strData) || regexPatterns.decimal.test(strData)) {
             strData = normalizeNumber(strData);
@@ -34,8 +41,6 @@ export function predictType(data: any): string | null {
 
         if (regexPatterns.boolean.test(strData)) {
             currentType = "boolean";
-        } else if (regexPatterns.binary.test(strData)) {
-            currentType = "binary";
         } else if (regexPatterns.number.test(strData)) {
             currentType = "int";
         } else if (regexPatterns.decimal.test(strData)) {
