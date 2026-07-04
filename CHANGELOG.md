@@ -1,3 +1,13 @@
+## [1.3.0] - 2026-07-05
+### 🐛 Bug Fixes (transaction atomicity)
+- **`runTransaction` is now atomic.** Previously `START TRANSACTION`, the statements, and `COMMIT`/`ROLLBACK` each ran through a freshly acquired/released pool connection, so a transaction's statements scattered across different connections in autocommit mode — atomicity held only by luck (sequential reuse of the same idle connection) and broke under `runTransactionsWithConcurrency`, with rollback running on an unrelated connection. Transactions now acquire **one** connection and run all statements plus BEGIN/COMMIT/ROLLBACK on it. **PostgreSQL transactional DDL rollback now actually works.**
+- **Transaction-level retry.** Transient errors (deadlock/serialization) now retry the whole transaction rather than a single statement (which can't succeed once the transaction is aborted). DDL-containing batches run exactly once, since MySQL implicitly commits before DDL and re-running would double-apply non-idempotent DML in mixed batches.
+
+### ⚠️ Behavior change
+- `startTransaction` / `commit` / `rollback` now require a pinned connection argument and throw otherwise (previously they were silent no-ops against throwaway connections). Use `runTransaction` for atomic multi-statement work.
+
+---
+
 ## [1.2.0] - 2026-07-05
 ### 🔒 Security
 - **SQL identifier escaping.** All interpolated identifiers (table/column/schema/index/constraint names, which originate from arbitrary JSON keys and `metaData`) are now quote-escaped at generation time, and type tokens/lengths are validated. Closes DDL/DML injection via crafted column names. Output is byte-identical for well-formed identifiers.
