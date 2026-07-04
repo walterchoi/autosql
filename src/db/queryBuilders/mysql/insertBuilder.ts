@@ -2,7 +2,9 @@ import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig, InsertIn
 import { mysqlConfig } from "../../config/mysqlConfig";
 import { getInsertValues, getTempTableName, getHistoryTableName, getTrueTableName } from "../../../helpers/utilities";
 import { compareMetaData } from '../../../helpers/metadata';
+import { escapeIdentifier } from "../../utils/escape";
 const dialectConfig = mysqlConfig
+const q = (name: string) => escapeIdentifier(name, "mysql");
 
 export class MySQLInsertQueryBuilder {
     static getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
@@ -11,7 +13,7 @@ export class MySQLInsertQueryBuilder {
         let header: MetadataHeader;
         let insertType: "UPDATE" | "INSERT";
         
-        const schemaPrefix = databaseConfig?.schema ? `\`${databaseConfig.schema}\`.` : "";
+        const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
 
         if (typeof tableOrInput === "object" && "table" in tableOrInput) {
             table = tableOrInput.table;
@@ -42,12 +44,12 @@ export class MySQLInsertQueryBuilder {
             params = rows.flat() as any[];
         }
 
-        const escapedCols = columns.map(col => `\`${col}\``).join(", ");
+        const escapedCols = columns.map(col => q(col)).join(", ");
         const valuePlaceholders = rows
             .map(() => `(${columns.map(() => `?`).join(", ")})`)
             .join(", ");
 
-        let query = `INSERT INTO ${schemaPrefix}\`${table}\` (${escapedCols}) VALUES ${valuePlaceholders}`;
+        let query = `INSERT INTO ${schemaPrefix}${q(table)} (${escapedCols}) VALUES ${valuePlaceholders}`;
 
         if (insertType === "UPDATE") {
             // Get primary key columns
@@ -67,7 +69,7 @@ export class MySQLInsertQueryBuilder {
           
             if (updateCols.length > 0) {
               const updateSet = updateCols
-                .map(col => `\`${col}\` = VALUES(\`${col}\`)`)
+                .map(col => `${q(col)} = VALUES(${q(col)})`)
                 .join(", ");
               query += ` ON DUPLICATE KEY UPDATE ${updateSet}`;
             }
@@ -85,7 +87,7 @@ export class MySQLInsertQueryBuilder {
         let header: MetadataHeader;
         let insertType: "UPDATE" | "INSERT";
         
-        const schemaPrefix = databaseConfig?.schema ? `\`${databaseConfig.schema}\`.` : "";
+        const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
 
         if (typeof tableOrInput === "object" && "table" in tableOrInput) {
             table = tableOrInput.table;
@@ -101,10 +103,10 @@ export class MySQLInsertQueryBuilder {
         const tempTable = getTempTableName(table, stagingPrefix);
 
         const columns = Object.keys(header);
-        const escapedCols = columns.map(col => `\`${col}\``).join(", ");
-        const selectCols = columns.map(col => `\`${col}\``).join(", ");
+        const escapedCols = columns.map(col => q(col)).join(", ");
+        const selectCols = columns.map(col => q(col)).join(", ");
 
-        let query = `INSERT INTO ${schemaPrefix}\`${table}\` (${escapedCols}) SELECT ${selectCols} FROM ${schemaPrefix}\`${tempTable}\``;
+        let query = `INSERT INTO ${schemaPrefix}${q(table)} (${escapedCols}) SELECT ${selectCols} FROM ${schemaPrefix}${q(tempTable)}`;
       
         if (insertType === "UPDATE") {
             const primaryKeys = Object.keys(header).filter(col => header[col].primary === true);
@@ -118,7 +120,7 @@ export class MySQLInsertQueryBuilder {
       
         if (updateCols.length > 0) {
             const updateSet = updateCols
-              .map(col => `\`${col}\` = VALUES(\`${col}\`)`)
+              .map(col => `${q(col)} = VALUES(${q(col)})`)
               .join(", ");
             query += ` ON DUPLICATE KEY UPDATE ${updateSet}`;
           }
@@ -134,7 +136,7 @@ export class MySQLInsertQueryBuilder {
           let table: string;
           let header: MetadataHeader;
         
-          const schemaPrefix = databaseConfig?.schema ? `\`${databaseConfig.schema}\`.` : "";
+          const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         
           let stagingPrefix: string | undefined;
           let historyTableSuffix: string | undefined;
@@ -159,22 +161,22 @@ export class MySQLInsertQueryBuilder {
           const t1 = "t1";
           const t2 = "t2";
         
-          const valuesCols = filteredCols.map(col => `\`${col}\``).join(", ");
-          const selectCols = filteredCols.map(col => `${t1}.\`${col}\``).join(", ");
-        
+          const valuesCols = filteredCols.map(col => q(col)).join(", ");
+          const selectCols = filteredCols.map(col => `${t1}.${q(col)}`).join(", ");
+
           const joinCondition = primaryKeys
-            .map(pk => `${t1}.\`${pk}\` = ${t2}.\`${pk}\``)
+            .map(pk => `${t1}.${q(pk)} = ${t2}.${q(pk)}`)
             .join(" AND ");
-        
+
           const diffCondition = nonPrimaryCols
-            .map(col => `${t1}.\`${col}\` <=> ${t2}.\`${col}\` = FALSE`)
+            .map(col => `${t1}.${q(col)} <=> ${t2}.${q(col)} = FALSE`)
             .join(" OR ");
-        
+
           const query = `
-            INSERT INTO ${schemaPrefix}\`${historyTable}\` (${valuesCols}, \`dwh_as_at\`)
+            INSERT INTO ${schemaPrefix}${q(historyTable)} (${valuesCols}, \`dwh_as_at\`)
             SELECT ${selectCols}, NOW()
-            FROM ${schemaPrefix}\`${table}\` ${t1}
-            LEFT JOIN ${schemaPrefix}\`${tempTable}\` ${t2}
+            FROM ${schemaPrefix}${q(table)} ${t1}
+            LEFT JOIN ${schemaPrefix}${q(tempTable)} ${t2}
               ON ${joinCondition}
             WHERE ${diffCondition};
             `.trim();

@@ -3,15 +3,17 @@ import { mysqlConfig } from "../../config/mysqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
+import { escapeIdentifier, assertSafeTypeToken, assertSafeLength } from "../../utils/escape";
 const dialectConfig = mysqlConfig
+const q = (name: string) => escapeIdentifier(name, "mysql");
 
 export class MySQLTableQueryBuilder {
     static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
         const maxIndexCount = dialectConfig.maxIndexCount || 64;
         let remainingIndexSlots = maxIndexCount;
         let sqlQueries: QueryInput[] = [];
-        const schemaPrefix = databaseConfig?.schema ? `\`${databaseConfig.schema}\`.` : "";
-        let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}\`${table}\` (\n`;
+        const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
+        let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}${q(table)} (\n`;
         let primaryKeys: string[] = [];
         let uniqueKeys: string[] = [];
         let indexes: string[] = [];
@@ -24,16 +26,17 @@ export class MySQLTableQueryBuilder {
                 columnType = dialectConfig.translate.localToServer[columnType];
             }
     
-            let columnDef = `\`${columnName}\` ${columnType}`;
-    
+            assertSafeTypeToken(columnType);
+            let columnDef = `${q(columnName)} ${columnType}`;
+
             // Handle column lengths
             if (column.length && !dialectConfig.noLength.includes(columnType)) {
-                columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
+                columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
-    
+
             // Convert BOOLEAN → TINYINT(1) for MySQL
             if (column.type === "boolean") {
-                columnDef = `\`${columnName}\` TINYINT(1)`;
+                columnDef = `${q(columnName)} TINYINT(1)`;
             }
     
             // Apply AUTO_INCREMENT only to valid integer types
@@ -51,20 +54,20 @@ export class MySQLTableQueryBuilder {
                 columnDef += ` DEFAULT ${replacement ? replacement : column.default}`;
             }
     
-            if (column.primary) primaryKeys.push(`\`${columnName}\``);
-            if (column.unique) uniqueKeys.push(`\`${columnName}\``);
-            if (column.index) indexes.push(`\`${columnName}\``);
+            if (column.primary) primaryKeys.push(columnName);
+            if (column.unique) uniqueKeys.push(columnName);
+            if (column.index) indexes.push(columnName);
     
             sqlQuery += `${columnDef},\n`;
         }
     
         if (primaryKeys.length) {
-            sqlQuery += `PRIMARY KEY (${primaryKeys.join(", ")}),\n`;
+            sqlQuery += `PRIMARY KEY (${primaryKeys.map(q).join(", ")}),\n`;
             remainingIndexSlots--; // 🔢 count primary key toward the limit
         }
         const includedUniqueKeys = uniqueKeys.slice(0, remainingIndexSlots);
         if (includedUniqueKeys.length) {
-            sqlQuery += `${includedUniqueKeys.map((key) => `UNIQUE(${key})`).join(", ")},\n`;
+            sqlQuery += `${includedUniqueKeys.map((key) => `UNIQUE(${q(key)})`).join(", ")},\n`;
             remainingIndexSlots -= includedUniqueKeys.length;
         }
     
@@ -77,9 +80,9 @@ export class MySQLTableQueryBuilder {
         // Create indexes separately
         const limitedIndexes = indexes.slice(0, remainingIndexSlots);
         for (const index of limitedIndexes) {
-            const indexName = generateSafeConstraintName(table, index, "index").replace(/`/g, "");
+            const indexName = generateSafeConstraintName(table, index, "index");
             sqlQueries.push({
-                query: `CREATE INDEX \`${indexName}\` ON ${schemaPrefix}\`${table}\` (\`${index.replace(/`/g, "")}\`);`,
+                query: `CREATE INDEX ${q(indexName)} ON ${schemaPrefix}${q(table)} (${q(index)});`,
                 params: []
             });
         }
@@ -94,7 +97,7 @@ export class MySQLTableQueryBuilder {
         // ✅ Handle `DROP COLUMN`
         if(databaseConfig?.deleteColumns) {
             changes.dropColumns.forEach(columnName => {
-                alterStatements.push(`DROP COLUMN \`${columnName}\``);
+                alterStatements.push(`DROP COLUMN ${q(columnName)}`);
             });
         }
     
@@ -106,9 +109,10 @@ export class MySQLTableQueryBuilder {
             const columnNullable : boolean = databaseConfig?.metaData?.[table]?.[newName]?.allowNull || databaseConfig?.metaData?.[table]?.[oldName]?.allowNull || false
             let columnLengthSQL: string = '';
             if (columnLength && !dialectConfig.noLength.includes(columnType || "")) {
-                columnLengthSQL += `(${columnLength}${columnDecimal ? `,${columnDecimal}` : ""})`;
+                columnLengthSQL += `(${assertSafeLength(columnLength)}${columnDecimal ? `,${assertSafeLength(columnDecimal)}` : ""})`;
             }
-            alterStatements.push(`CHANGE COLUMN \`${oldName}\` \`${newName}\` ${columnType}${columnLengthSQL} ${columnNullable ? 'NULL' : 'NOT NULL'}`);
+            assertSafeTypeToken(columnType);
+            alterStatements.push(`CHANGE COLUMN ${q(oldName)} ${q(newName)} ${columnType}${columnLengthSQL} ${columnNullable ? 'NULL' : 'NOT NULL'}`);
         });
     
         // ✅ Handle `ADD COLUMN`
@@ -118,13 +122,14 @@ export class MySQLTableQueryBuilder {
             if (dialectConfig.translate.localToServer[columnType]) {
                 columnType = dialectConfig.translate.localToServer[columnType];
             }
-            let columnDef = `\`${columnName}\` ${columnType}`;
+            assertSafeTypeToken(columnType);
+            let columnDef = `${q(columnName)} ${columnType}`;
             if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
-                columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
+                columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
-    
+
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         };
     
@@ -135,11 +140,12 @@ export class MySQLTableQueryBuilder {
             if (dialectConfig.translate.localToServer[columnType]) {
                 columnType = dialectConfig.translate.localToServer[columnType];
             }
-            let columnDef = `\`${columnName}\` ${columnType}`;
+            assertSafeTypeToken(columnType);
+            let columnDef = `${q(columnName)} ${columnType}`;
             if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
-                columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
+                columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
-            
+
             // ✅ Apply NULL or NOT NULL depending on whether the column is in nullableColumns
             if (changes.nullableColumns.includes(columnName)) {
                 columnDef += " NULL";
@@ -164,29 +170,29 @@ export class MySQLTableQueryBuilder {
         // ✅ Handle standalone `NULLABLE COLUMNS` not in modifyColumns
         changes.nullableColumns.forEach(columnName => {
             if (!Object.prototype.hasOwnProperty.call(changes.modifyColumns, columnName)) {
-                alterStatements.push(`MODIFY COLUMN \`${columnName}\` DROP NOT NULL`);
-            }            
+                alterStatements.push(`MODIFY COLUMN ${q(columnName)} DROP NOT NULL`);
+            }
         });
-        const schemaPrefix = schema ? `\`${schema}\`.` : "";
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
 
         // ✅ Combine all `ALTER TABLE` statements
         if (alterStatements.length > 0) {
-            queries.push({ query: `ALTER TABLE ${schemaPrefix}\`${table}\` ${alterStatements.join(", ")};`, params: [] });
+            queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} ${alterStatements.join(", ")};`, params: [] });
         }
     
         return queries;
     }
     
     static getDropTableQuery(table: string, schema?: string): QueryInput {
-        const schemaPrefix = schema ? `\`${schema}\`.` : "";
-        return {query: `DROP TABLE IF EXISTS ${schemaPrefix}\`${table}\`;`, params: []};
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
+        return {query: `DROP TABLE IF EXISTS ${schemaPrefix}${q(table)};`, params: []};
     }
 
     static getCreateTempTableQuery(table: string, schema?: string, stagingPrefix?: string): QueryInput {
         const tempTableName = getTempTableName(table, stagingPrefix);
-        const schemaPrefix = schema ? `\`${schema}\`.` : "";
-        return {query: `CREATE TABLE IF NOT EXISTS ${schemaPrefix}\`${tempTableName}\`
-        AS SELECT * FROM ${schemaPrefix}\`${table}\` LIMIT 0;`, params: []};
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
+        return {query: `CREATE TABLE IF NOT EXISTS ${schemaPrefix}${q(tempTableName)}
+        AS SELECT * FROM ${schemaPrefix}${q(table)} LIMIT 0;`, params: []};
     }
 
     static getTableExistsQuery(schema: string, table: string): QueryInput {

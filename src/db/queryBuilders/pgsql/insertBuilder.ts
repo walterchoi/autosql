@@ -2,7 +2,9 @@ import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig, InsertIn
 import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { getInsertValues, getTempTableName, getHistoryTableName, getTrueTableName } from "../../../helpers/utilities";
 import { compareMetaData } from '../../../helpers/metadata';
+import { escapeIdentifier } from "../../utils/escape";
 const dialectConfig = pgsqlConfig
+const q = (name: string) => escapeIdentifier(name, "pgsql");
 
 export class PostgresInsertQueryBuilder {
     static getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
@@ -11,7 +13,7 @@ export class PostgresInsertQueryBuilder {
         let header: MetadataHeader;
         let insertType: "UPDATE" | "INSERT";
 
-        const schemaPrefix = databaseConfig?.schema ? `"${databaseConfig.schema}".` : "";
+        const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
 
         if (typeof tableOrInput === "object" && "table" in tableOrInput) {
             table = tableOrInput.table;
@@ -42,7 +44,7 @@ export class PostgresInsertQueryBuilder {
             params = rows.flat() as any[];
         }
 
-        const quotedCols = columns.map(col => `"${col}"`).join(", ");
+        const quotedCols = columns.map(col => q(col)).join(", ");
         const valuePlaceholders = rows
             .map((_, rowIndex) => {
             const baseIndex = rowIndex * columns.length;
@@ -51,7 +53,7 @@ export class PostgresInsertQueryBuilder {
             })
             .join(", ");
 
-        let query = `INSERT INTO ${schemaPrefix}"${table}" (${quotedCols}) VALUES ${valuePlaceholders}`;
+        let query = `INSERT INTO ${schemaPrefix}${q(table)} (${quotedCols}) VALUES ${valuePlaceholders}`;
         if (insertType === "UPDATE") {
             const primaryKeys = Object.keys(header).filter(
             (col) => header[col].primary === true
@@ -69,11 +71,11 @@ export class PostgresInsertQueryBuilder {
                 return !isPrimary && !isProtectedCalc;
             });
 
-            const conflictClause = `ON CONFLICT (${primaryKeys.map(col => `"${col}"`).join(", ")})`;
+            const conflictClause = `ON CONFLICT (${primaryKeys.map(col => q(col)).join(", ")})`;
 
             if (updateCols.length > 0) {
             const updateSet = updateCols
-                .map(col => `"${col}" = EXCLUDED."${col}"`)
+                .map(col => `${q(col)} = EXCLUDED.${q(col)}`)
                 .join(", ");
             query += ` ${conflictClause} DO UPDATE SET ${updateSet}`;
             } else {
@@ -94,7 +96,7 @@ export class PostgresInsertQueryBuilder {
         let header: MetadataHeader;
         let insertType: "UPDATE" | "INSERT";
       
-        const schemaPrefix = databaseConfig?.schema ? `"${databaseConfig.schema}".` : "";
+        const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
       
         if (typeof tableOrInput === "object" && "table" in tableOrInput) {
           table = tableOrInput.table;
@@ -110,10 +112,10 @@ export class PostgresInsertQueryBuilder {
         const tempTable = getTempTableName(table, stagingPrefix);
 
         const columns = Object.keys(header);
-        const escapedCols = columns.map(col => `"${col}"`).join(", ");
-        const selectCols = columns.map(col => `"${col}"`).join(", ");
+        const escapedCols = columns.map(col => q(col)).join(", ");
+        const selectCols = columns.map(col => q(col)).join(", ");
 
-        let query = `INSERT INTO ${schemaPrefix}"${table}" (${escapedCols}) SELECT ${selectCols} FROM ${schemaPrefix}"${tempTable}"`;
+        let query = `INSERT INTO ${schemaPrefix}${q(table)} (${escapedCols}) SELECT ${selectCols} FROM ${schemaPrefix}${q(tempTable)}`;
       
         if (insertType === "UPDATE") {
           const primaryKeys = Object.keys(header).filter(col => header[col].primary === true);
@@ -127,9 +129,9 @@ export class PostgresInsertQueryBuilder {
       
           if (primaryKeys.length > 0 && updateCols.length > 0) {
             const updateSet = updateCols
-              .map(col => `"${col}" = EXCLUDED."${col}"`)
+              .map(col => `${q(col)} = EXCLUDED.${q(col)}`)
               .join(", ");
-            query += ` ON CONFLICT (${primaryKeys.map(pk => `"${pk}"`).join(", ")}) DO UPDATE SET ${updateSet}`;
+            query += ` ON CONFLICT (${primaryKeys.map(pk => q(pk)).join(", ")}) DO UPDATE SET ${updateSet}`;
           } else {
             // Optional: skip conflict update if nothing valid to update
             query += ` ON CONFLICT DO NOTHING`;
@@ -146,7 +148,7 @@ export class PostgresInsertQueryBuilder {
       let table: string;
       let header: MetadataHeader;
     
-      const schemaPrefix = databaseConfig?.schema ? `"${databaseConfig.schema}".` : "";
+      const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
     
       let stagingPrefix: string | undefined;
       let historyTableSuffix: string | undefined;
@@ -172,22 +174,22 @@ export class PostgresInsertQueryBuilder {
       const t1 = "t1";
       const t2 = "t2";
     
-      const valuesCols = filteredCols.map(col => `"${col}"`).join(", ");
-      const selectCols = filteredCols.map(col => `${t1}."${col}"`).join(", ");
-    
+      const valuesCols = filteredCols.map(col => q(col)).join(", ");
+      const selectCols = filteredCols.map(col => `${t1}.${q(col)}`).join(", ");
+
       const joinCondition = primaryKeys
-        .map(pk => `${t1}."${pk}" = ${t2}."${pk}"`)
+        .map(pk => `${t1}.${q(pk)} = ${t2}.${q(pk)}`)
         .join(" AND ");
-    
+
       const diffCondition = nonPrimaryCols
-        .map(col => `${t1}."${col}" IS DISTINCT FROM ${t2}."${col}"`)
+        .map(col => `${t1}.${q(col)} IS DISTINCT FROM ${t2}.${q(col)}`)
         .join(" OR ");
-    
+
       const query = `
-        INSERT INTO ${schemaPrefix}"${historyTable}" (${valuesCols}, "dwh_as_at")
+        INSERT INTO ${schemaPrefix}${q(historyTable)} (${valuesCols}, "dwh_as_at")
         SELECT ${selectCols}, CURRENT_TIMESTAMP
-        FROM ${schemaPrefix}"${table}" ${t1}
-        LEFT JOIN ${schemaPrefix}"${tempTable}" ${t2}
+        FROM ${schemaPrefix}${q(table)} ${t1}
+        LEFT JOIN ${schemaPrefix}${q(tempTable)} ${t2}
           ON ${joinCondition}
         WHERE ${diffCondition};
         `.trim();
