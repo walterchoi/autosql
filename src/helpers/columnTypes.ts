@@ -2,8 +2,10 @@ import { regexPatterns } from "../config/regex";
 import { groupings } from "../config/groupings";
 import { normalizeNumber, setToArray } from "./utilities";
 
-// Using regex, when provided a data point, predict what data type this will be
-export function predictType(data: any): string | null {
+// Using regex, when provided a data point, predict what data type this will be.
+// thousandsSeparator/decimalSeparator disambiguate locale-specific number formats (e.g.
+// whether "1.000" is 1 or 1000) — see normalizeNumber. Omit both to use the auto-heuristic.
+export function predictType(data: any, thousandsSeparator?: string, decimalSeparator?: string): string | null {
     try {
         if(data === undefined || data === null) {
             return null
@@ -23,9 +25,16 @@ export function predictType(data: any): string | null {
             json = true
         } catch (e) {}
 
+        // Fidelity: a digit string with a leading zero (e.g. "007", "07030", phone numbers)
+        // is an identifier, not a number — coercing it to an integer would silently drop the
+        // leading zeros. Preserve the original representation as text.
+        if (/^0[0-9]+$/.test(strData)) {
+            return "varchar";
+        }
+
         // ✅ Detect and normalize numbers
         if (regexPatterns.number.test(strData) || regexPatterns.decimal.test(strData)) {
-            strData = normalizeNumber(strData);
+            strData = normalizeNumber(strData, thousandsSeparator, decimalSeparator);
 
             if (!strData) {
                 return "varchar"; // Invalid format
@@ -34,14 +43,12 @@ export function predictType(data: any): string | null {
 
         if (regexPatterns.boolean.test(strData)) {
             currentType = "boolean";
-        } else if (regexPatterns.binary.test(strData)) {
-            currentType = "binary";
         } else if (regexPatterns.number.test(strData)) {
             currentType = "int";
         } else if (regexPatterns.decimal.test(strData)) {
             currentType = "decimal";
         } else if (regexPatterns.exponential.test(strData)) {
-            currentType = "exponential";
+            currentType = "exponent";
         } else if (regexPatterns.datetimetz.test(strData)) {
             currentType = "datetimetz";
         } else if (regexPatterns.datetime.test(strData)) {
@@ -184,9 +191,9 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
                 continue;
             }
 
-            // ✅ Handle decimal + exponential → exponential
-            if ((currentType === "decimal" && overallType === "exponential") || (overallType === "decimal" && currentType === "exponential")) {
-                overallType = "exponential";
+            // ✅ Handle decimal + exponent → exponent
+            if ((currentType === "decimal" && overallType === "exponent") || (overallType === "decimal" && currentType === "exponent")) {
+                overallType = "exponent";
                 continue;
             }
 
@@ -198,8 +205,8 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
 
             // Handle different groupings
             if (currentTypeGroup !== overallTypeGroup) {
-                if ((currentType === "exponential" && overallTypeGroup === "int") || (overallType === "exponential" && currentTypeGroup === "int")) {
-                    collatedType = "exponential";
+                if ((currentType === "exponent" && overallTypeGroup === "int") || (overallType === "exponent" && currentTypeGroup === "int")) {
+                    collatedType = "exponent";
                 } else if ((currentType === "double" && overallTypeGroup === "int") || (overallType === "double" && currentTypeGroup === "int")) {
                     collatedType = "double";
                 } else if ((currentType === "decimal" && overallTypeGroup === "int") || (overallType === "decimal" && currentTypeGroup === "int")) {
@@ -222,6 +229,11 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
             // Handle similar groupings
             if (overallTypeGroup === currentTypeGroup) {
                 if (overallTypeGroup === "specialInt") {
+                    // Widen toward the later group entry (decimal < double < exponent). This
+                    // deliberately resolves decimal+double -> double: "double" only enters via a
+                    // pre-existing DOUBLE column, and narrowing it back to decimal would be a
+                    // lossy/erroring ALTER. Pure inference never yields "double" (it yields
+                    // decimal/exponent), so exact decimals are not silently floated here.
                     for (let i = groupings.specialIntGroup.length - 1; i >= 0; i--) {
                         if (groupings.specialIntGroup[i] === currentType || groupings.specialIntGroup[i] === overallType) {
                             overallType = groupings.specialIntGroup[i];

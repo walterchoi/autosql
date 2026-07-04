@@ -3,15 +3,17 @@ import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { compareMetaData } from '../../../helpers/metadata';
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
+import { escapeIdentifier, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
 const dialectConfig = pgsqlConfig
+const q = (name: string) => escapeIdentifier(name, "pgsql");
 
 export class PostgresTableQueryBuilder {
     static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
         const maxIndexCount = dialectConfig.maxIndexCount || 64;
         let remainingIndexSlots = maxIndexCount;
         let sqlQueries: QueryInput[] = [];
-        const schemaPrefix = databaseConfig?.schema ? `"${databaseConfig.schema}".` : "";
-        let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}"${table}" (\n`;
+        const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
+        let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}${q(table)} (\n`;
         let primaryKeys: string[] = [];
         let uniqueKeys: string[] = [];
         let indexes: string[] = [];
@@ -24,17 +26,18 @@ export class PostgresTableQueryBuilder {
                 columnType = dialectConfig.translate.localToServer[columnType];
             }
     
-            let columnDef = `"${columnName}" ${columnType}`;
-    
+            assertSafeTypeToken(columnType);
+            let columnDef = `${q(columnName)} ${columnType}`;
+
             // Handle column lengths
             if (column.length && dialectConfig.requireLength.includes(columnType)) {
-                columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
+                columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
-    
+
             // Use SERIAL for Auto-incrementing Primary Keys
             if (column.autoIncrement) {
                 if (columnType === "int" || columnType === "bigint") {
-                    columnDef = `"${columnName}" SERIAL`;
+                    columnDef = `${q(columnName)} SERIAL`;
                 } else {
                     throw new Error(`AUTO_INCREMENT (SERIAL) is not supported on type ${columnType} in PostgreSQL`);
                 }
@@ -42,29 +45,28 @@ export class PostgresTableQueryBuilder {
     
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined && !column.autoIncrement) {
-                const replacement = dialectConfig.defaultTranslation[column.default] || column.default;
-                columnDef += ` DEFAULT ${replacement}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
             }
     
-            if (column.primary) primaryKeys.push(`"${columnName}"`);
-            if (column.unique) uniqueKeys.push(`"${columnName}"`);
-            if (column.index) indexes.push(`"${columnName}"`);
+            if (column.primary) primaryKeys.push(columnName);
+            if (column.unique) uniqueKeys.push(columnName);
+            if (column.index) indexes.push(columnName);
     
             sqlQuery += `${columnDef},\n`;
         }
     
         if (primaryKeys.length) {
-            sqlQuery += `PRIMARY KEY (${primaryKeys.join(", ")}),\n`
+            sqlQuery += `PRIMARY KEY (${primaryKeys.map(q).join(", ")}),\n`
             remainingIndexSlots--; // 🔢 count primary key toward the limit
         }
         const includedUniqueKeys = uniqueKeys.slice(0, remainingIndexSlots);
         if (includedUniqueKeys.length) {
             sqlQuery += `${includedUniqueKeys
                 .map((key) => {
-                    const columnName = key.replace(/"/g, '');
+                    const columnName = key;
                     const constraintName = generateSafeConstraintName(table, columnName, 'unique');
                     remainingIndexSlots --;
-                    return `CONSTRAINT "${constraintName}" UNIQUE("${columnName}")`;
+                    return `CONSTRAINT ${q(constraintName)} UNIQUE(${q(columnName)})`;
                 })
                 .join(', ')},\n`;
         }
@@ -76,14 +78,13 @@ export class PostgresTableQueryBuilder {
         const limitedIndexes = indexes.slice(0, remainingIndexSlots);
         for (const index of limitedIndexes) {
             if (!index) continue; // Skip empty index names
-        
-            const cleanIndex = index.replace(/"/g, '');
-            const indexName = generateSafeConstraintName(table, cleanIndex, 'index');
+
+            const indexName = generateSafeConstraintName(table, index, 'index');
             sqlQueries.push({
-                query: `CREATE INDEX "${indexName}" ON ${schemaPrefix}"${table}" ("${cleanIndex}");`,
+                query: `CREATE INDEX ${q(indexName)} ON ${schemaPrefix}${q(table)} (${q(index)});`,
                 params: []
             });
-        }        
+        }
     
         return sqlQueries;
     }
@@ -95,13 +96,13 @@ export class PostgresTableQueryBuilder {
         // ✅ Handle `DROP COLUMN`
         if(databaseConfig?.deleteColumns) {
             changes.dropColumns.forEach(columnName => {
-                alterStatements.push(`DROP COLUMN "${columnName}"`);
+                alterStatements.push(`DROP COLUMN ${q(columnName)}`);
             });
         }
-    
+
         // ✅ Handle `RENAME COLUMN`
         changes.renameColumns.forEach(({ oldName, newName }) => {
-            alterStatements.push(`RENAME COLUMN "${oldName}" TO "${newName}"`);
+            alterStatements.push(`RENAME COLUMN ${q(oldName)} TO ${q(newName)}`);
         });
     
         // ✅ Handle `ADD COLUMN`
@@ -112,12 +113,13 @@ export class PostgresTableQueryBuilder {
             if (dialectConfig.translate.localToServer[columnType]) {
                 columnType = dialectConfig.translate.localToServer[columnType];
             }
-            let columnDef = `"${columnName}" ${columnType}`;
+            assertSafeTypeToken(columnType);
+            let columnDef = `${q(columnName)} ${columnType}`;
             if (column.length && !pgsqlConfig.noLength.includes(column.type ?? "")) {
-                columnDef += `(${column.length}${column.decimal ? `,${column.decimal}` : ""})`;
+                columnDef += `(${assertSafeLength(column.length)}${column.decimal ? `,${assertSafeLength(column.decimal)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
-            if (column.default !== undefined) columnDef += ` DEFAULT '${column.default}'`;
+            if (column.default !== undefined) columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
     
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         };
@@ -136,9 +138,10 @@ export class PostgresTableQueryBuilder {
                 if (dialectConfig.translate.localToServer[columnType]) {
                     columnType = dialectConfig.translate.localToServer[columnType];
                 }
+                assertSafeTypeToken(columnType);
                 let columnDef = `SET DATA TYPE ${columnType}`;
                 if (column.length && !dialectConfig.noLength.includes(column.type ?? "")) {
-                    columnDef += `(${column.length}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${column.decimal || 0}` : ""})`;
+                    columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
                 }
                 if (column.previousType && column.previousType !== column.type) {
                     const usingExpr = getUsingClause(columnName, column.previousType, column.type);
@@ -151,42 +154,42 @@ export class PostgresTableQueryBuilder {
                 alterColumnMap[columnName].push(`DROP NOT NULL`);
             }
             if (column.default !== undefined) {
-                alterColumnMap[columnName].push(`SET DEFAULT '${column.default}'`);
+                alterColumnMap[columnName].push(`SET DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`);
             }
         };
     
         // ✅ Generate consolidated `ALTER COLUMN` statements
         Object.keys(alterColumnMap).forEach(columnName => {
             const changes = alterColumnMap[columnName].join(", ");
-            alterStatements.push(`ALTER COLUMN "${columnName}" ${changes}`);
+            alterStatements.push(`ALTER COLUMN ${q(columnName)} ${changes}`);
         });
-    
+
         // ✅ Handle `NULLABLE COLUMNS` separately (if not already modified)
         changes.nullableColumns.forEach(columnName => {
             if (!alterColumnMap[columnName]) {
-                alterStatements.push(`ALTER COLUMN "${columnName}" DROP NOT NULL`);
+                alterStatements.push(`ALTER COLUMN ${q(columnName)} DROP NOT NULL`);
             }
         });
-    
+
         // ✅ Combine all `ALTER TABLE` statements
-        const schemaPrefix = schema ? `"${schema}".` : "";
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
         if (alterStatements.length > 0) {
-            queries.push({ query: `ALTER TABLE ${schemaPrefix}"${table}" ${alterStatements.join(", ")};`, params: [] });
+            queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} ${alterStatements.join(", ")};`, params: [] });
         }
     
         return queries;
     }
 
     static getDropTableQuery(table: string, schema?: string): QueryInput {
-        const schemaPrefix = schema ? `"${schema}".` : "";
-        return { query: `DROP TABLE IF EXISTS ${schemaPrefix}"${table}";`, params: []};
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
+        return { query: `DROP TABLE IF EXISTS ${schemaPrefix}${q(table)};`, params: []};
     }
 
     static getCreateTempTableQuery(table: string, schema?: string, stagingPrefix?: string): QueryInput {
         const tempTableName = getTempTableName(table, stagingPrefix);
-        const schemaPrefix = schema ? `"${schema}".` : "";
-        return {query: `CREATE TABLE IF NOT EXISTS ${schemaPrefix}"${tempTableName}"
-        AS SELECT * FROM ${schemaPrefix}"${table}" LIMIT 0;`, params: []};
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
+        return {query: `CREATE TABLE IF NOT EXISTS ${schemaPrefix}${q(tempTableName)}
+        AS SELECT * FROM ${schemaPrefix}${q(table)} LIMIT 0;`, params: []};
     }
 
     static getTableExistsQuery(schema: string, table: string): QueryInput {
@@ -309,4 +312,4 @@ export class PostgresTableQueryBuilder {
             params: [schema, table],
         }
     }
-}
+}

@@ -36,8 +36,9 @@ export const pgsqlConfig: DialectConfig = {
     "CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP": "CURRENT_TIMESTAMP"
   },
   sqlize:  [
-    { regex: "'", replace: "''", type: true },
-    { regex: "\\\\", replace: "\\\\\\\\", type: true },
+    // NOTE: no quote/backslash literal-escaping rules here. `sqlize` output is only ever
+    // parameter-bound (getInsertValues) or compared in memory (metadata sampling); escaping
+    // it would double-escape values that the driver then binds (storing O''Brien for O'Brien).
     { regex: "T", replace: " ", type: ["date", "datetime", "datetimetz"] },
     { regex: "\\.\\d{3,}Z$", replace: "", type: ["date", "datetime"] },
     { regex: "Z$", replace: "", type: ["date", "datetime", "datetimetz"] }

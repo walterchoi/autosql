@@ -9,7 +9,7 @@ describe("collateTypes function", () => {
     test("collates mixed numeric types correctly", async () => {
         expect(collateTypes(["int", "decimal"])).toBe("decimal");
         expect(collateTypes(["smallint", "int", "bigint"])).toBe("bigint");
-        expect(collateTypes(["decimal", "exponential"])).toBe("exponential");
+        expect(collateTypes(["decimal", "exponent"])).toBe("exponent");
     });
 
     test("collates boolean and binary correctly", async () => {

@@ -1,5 +1,8 @@
 import { QueryInput } from "../../../config/types";
 import { getTempTableName } from "../../../helpers/utilities";
+import { escapeIdentifier } from "../../utils/escape";
+
+const q = (name: string) => escapeIdentifier(name, "mysql");
 
 export class MySQLIndexQueryBuilder {
     static getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
@@ -40,25 +43,25 @@ export class MySQLIndexQueryBuilder {
     }    
 
     static getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
-        const schemaPrefix = schema ? `\`${schema}\`.` : "";
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
-            query: `ALTER TABLE ${schemaPrefix}\`${table}\` DROP PRIMARY KEY;`,
+            query: `ALTER TABLE ${schemaPrefix}${q(table)} DROP PRIMARY KEY;`,
             params: []
         };
     }
 
     static getDropUniqueConstraintQuery(table: string, indexName: string, schema?: string): QueryInput {
-        const schemaPrefix = schema ? `\`${schema}\`.` : "";
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
-          query: `DROP INDEX \`${indexName}\` ON ${schemaPrefix}\`${table}\`;`,
+          query: `DROP INDEX ${q(indexName)} ON ${schemaPrefix}${q(table)};`,
           params: []
         };
     }
 
     static getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
-        const schemaPrefix = schema ? `\`${schema}\`.` : "";
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
-            query: `ALTER TABLE ${schemaPrefix}\`${table}\` ADD PRIMARY KEY (${primaryKeys.map(pk => `\`${pk}\``).join(", ")});`,
+            query: `ALTER TABLE ${schemaPrefix}${q(table)} ADD PRIMARY KEY (${primaryKeys.map(pk => q(pk)).join(", ")});`,
             params: []
         };
     }
@@ -90,26 +93,26 @@ export class MySQLIndexQueryBuilder {
     }
 
     static generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string, stagingPrefix?: string): QueryInput {
-        const schemaPrefix = schema ? `\`${schema}\`.` : "";
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
         const tempTable = getTempTableName(table, stagingPrefix);
         const t1 = "t1";
         const t2 = "t2";
-      
+
         const conflictColumns = Object.entries(structure.uniques).map(([index_name, cols]) => {
-            const condition = cols.map(col => `t1.${col} = t2.${col}`).join(" AND ");
+            const condition = cols.map(col => `t1.${q(col)} = t2.${q(col)}`).join(" AND ");
             const alias = index_name;
-      
-          return `  SUM(CASE WHEN ${condition} THEN 1 ELSE 0 END) AS \`${alias}\``;
+
+          return `  SUM(CASE WHEN ${condition} THEN 1 ELSE 0 END) AS ${q(alias)}`;
         });
-      
+
         const primaryMismatch = structure.primary.length
-          ? structure.primary.map(col => `${t1}.${col} != ${t2}.${col}`).join(" OR ")
+          ? structure.primary.map(col => `${t1}.${q(col)} != ${t2}.${q(col)}`).join(" OR ")
           : "FALSE";
-      
+
         const query = `SELECT
                         ${conflictColumns.join(",\n")}
-                        FROM ${schemaPrefix}\`${table}\` ${t1}
-                        JOIN ${schemaPrefix}\`${tempTable}\` ${t2}
+                        FROM ${schemaPrefix}${q(table)} ${t1}
+                        JOIN ${schemaPrefix}${q(tempTable)} ${t2}
                         ON (${primaryMismatch});
                         `.trim();
       
