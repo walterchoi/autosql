@@ -77,6 +77,33 @@ export async function bootstrapSchemaHistoryTable(db: Database): Promise<void> {
 // Record start of migration (status = 'pending')
 // Returns the inserted record id.
 // ---------------------------------------------------------------------------
+// A `pending` migration start older than this is treated as orphaned (a crashed run) and
+// swept to `failed`, so it can't linger forever. Comfortably longer than any real migration.
+const STALE_PENDING_MS = 60 * 60 * 1000;
+
+/** Best-effort: mark this table's orphaned `pending` starts (from crashed runs) as failed. */
+async function sweepStalePending(db: Database, table: string): Promise<void> {
+    const ref = historyTableRef(db.getConfig());
+    const dialect = db.getConfig().sqlDialect;
+    const cutoff = new Date(Date.now() - STALE_PENDING_MS);
+    const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
+    if (dialect === 'mysql') {
+        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+        await db.runQuery({
+            query: `UPDATE ${tableRef} SET status = 'failed' WHERE table_name = ? AND status = 'pending' AND applied_at < ?`,
+            params: [table, cutoff.toISOString().slice(0, 19).replace('T', ' ')]
+        }).catch(() => {});
+    } else {
+        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+        await db.runQuery({
+            query: `UPDATE ${tableRef} SET status = 'failed' WHERE table_name = $1 AND status = 'pending' AND applied_at < $2`,
+            params: [table, cutoff.toISOString()]
+        }).catch(() => {});
+    }
+}
+
+const UNIQUE_VIOLATION = /duplicate|unique/i;
+
 export async function recordMigrationStart(
     db: Database,
     table: string,
@@ -86,56 +113,67 @@ export async function recordMigrationStart(
     const ref = historyTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
     const appliedBy = getAppliedBy();
-    const now = new Date();
 
-    let query: string;
-    if (dialect === 'mysql') {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
-        query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
+    await sweepStalePending(db, table);
+
+    // The version is computed as MAX(version)+1 against a UNIQUE(table_name, version)
+    // constraint. Without a schema lock, two concurrent migrations can compute the same
+    // version and one hits a unique violation — recompute and retry a few times.
+    const maxAttempts = 5;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const now = new Date();
+        let result: QueryResult;
+        if (dialect === 'mysql') {
+            const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
+            const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+            const query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
 SELECT ?, COALESCE(MAX(version), 0) + 1, 'pending', ?, ?, ?, ?
 FROM ${tableRef} WHERE table_name = ?`;
-        // Run the INSERT and LAST_INSERT_ID() in one transaction so they share a single
-        // connection — LAST_INSERT_ID() is connection-scoped, so reading it on a separate
-        // pooled connection (as a second runQuery would) returns 0/unrelated, leaving the
-        // history row stuck at 'pending' and drift detection without a baseline.
-        const result = await db.runTransaction([
-            {
-                query,
-                params: [
-                    table,
-                    now.toISOString().slice(0, 19).replace('T', ' '),
-                    appliedBy,
-                    JSON.stringify(previousSchema),
-                    JSON.stringify(changes),
-                    table
-                ]
-            },
-            { query: 'SELECT LAST_INSERT_ID() AS id', params: [] }
-        ]);
-        return Number(result.results?.[0]?.id ?? 0);
-    } else {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
-        // $1 is used both in the SELECT list and the WHERE clause; without an explicit cast
-        // Postgres infers it as text in one place and varchar in the other and rejects the
-        // statement with "inconsistent types deduced for parameter $1".
-        query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
+            // Run the INSERT and LAST_INSERT_ID() in one transaction so they share a single
+            // connection — LAST_INSERT_ID() is connection-scoped, so reading it on a separate
+            // pooled connection returns 0/unrelated and leaves the row stuck at 'pending'.
+            result = await db.runTransaction([
+                {
+                    query,
+                    params: [
+                        table,
+                        now.toISOString().slice(0, 19).replace('T', ' '),
+                        appliedBy,
+                        JSON.stringify(previousSchema),
+                        JSON.stringify(changes),
+                        table
+                    ]
+                },
+                { query: 'SELECT LAST_INSERT_ID() AS id', params: [] }
+            ]);
+        } else {
+            const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
+            const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+            // $1 is used both in the SELECT list and the WHERE clause; without an explicit cast
+            // Postgres infers it as text in one place and varchar in the other and rejects the
+            // statement with "inconsistent types deduced for parameter $1".
+            const query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
 SELECT $1::varchar, COALESCE(MAX(version), 0) + 1, 'pending', $2, $3, $4::jsonb, $5::jsonb
 FROM ${tableRef} WHERE table_name = $1
 RETURNING id`;
-        const result = await db.runQuery({
-            query,
-            params: [
-                table,
-                now.toISOString(),
-                appliedBy,
-                JSON.stringify(previousSchema),
-                JSON.stringify(changes)
-            ]
-        });
-        return Number(result.results?.[0]?.id ?? 0);
+            result = await db.runQuery({
+                query,
+                params: [
+                    table,
+                    now.toISOString(),
+                    appliedBy,
+                    JSON.stringify(previousSchema),
+                    JSON.stringify(changes)
+                ]
+            });
+        }
+
+        const id = Number(result.results?.[0]?.id ?? 0);
+        if (id > 0) return id;
+        if (attempt < maxAttempts && UNIQUE_VIOLATION.test(result.error ?? '')) continue;
+        return 0;
     }
+    return 0;
 }
 
 // ---------------------------------------------------------------------------
