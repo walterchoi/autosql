@@ -100,9 +100,13 @@ export class PostgresTableQueryBuilder {
             });
         }
 
-        // ✅ Handle `RENAME COLUMN`
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
+
+        // ✅ Handle `RENAME COLUMN` — Postgres requires each rename in its own ALTER TABLE
+        // statement; it cannot be combined with other actions (or with another rename) as
+        // MySQL's CHANGE COLUMN can. Emit each as a standalone statement, before the rest.
         changes.renameColumns.forEach(({ oldName, newName }) => {
-            alterStatements.push(`RENAME COLUMN ${q(oldName)} TO ${q(newName)}`);
+            queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} RENAME COLUMN ${q(oldName)} TO ${q(newName)};`, params: [] });
         });
     
         // ✅ Handle `ADD COLUMN`
@@ -172,7 +176,6 @@ export class PostgresTableQueryBuilder {
         });
 
         // ✅ Combine all `ALTER TABLE` statements
-        const schemaPrefix = schema ? `${q(schema)}.` : "";
         if (alterStatements.length > 0) {
             queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} ${alterStatements.join(", ")};`, params: [] });
         }
