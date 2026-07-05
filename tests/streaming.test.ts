@@ -138,6 +138,7 @@ function makeHandler(db: any) {
     return {
         fetchTableMetadata: jest.fn().mockResolvedValue({ currentMetaData: null, tableExists: false }),
         configureTables: jest.fn().mockResolvedValue([OK_RESULT]),
+        releaseStreamStaging: jest.fn(),
     };
 }
 

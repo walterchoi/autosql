@@ -58,9 +58,13 @@ export class MySQLDatabase extends Database {
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
                 );
             }
+            // Release any stale connection registered for this table before overwriting, so a
+            // leftover entry can't leak a pooled connection.
+            const stale = this.schemaLockConnections.get(table);
+            if (stale && stale !== client) stale.release();
             this.schemaLockConnections.set(table, client);
         } catch (error) {
-            if (client && !this.schemaLockConnections.has(table)) client.release();
+            if (client && this.schemaLockConnections.get(table) !== client) client.release();
             throw error;
         }
     }

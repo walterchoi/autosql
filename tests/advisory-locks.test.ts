@@ -1,6 +1,7 @@
 import { SchemaLockTimeoutError } from "../src/errors";
 import { validateConfig } from "../src/helpers/utilities";
 import { DatabaseConfig } from "../src/config/types";
+import { Database } from "../src/db/database";
 
 const BASE_CONFIG: DatabaseConfig = {
     sqlDialect: "mysql",
@@ -91,33 +92,30 @@ describe("validateConfig — advisory lock options", () => {
 // ---------------------------------------------------------------------------
 
 describe("advisory lock key determinism", () => {
-    // djb2 hash used by PostgresDatabase.getLockKey — reproduced here to verify
-    // that the same table name always produces the same 32-bit signed integer.
-    function djb2(str: string): number {
-        let hash = 5381;
-        for (let i = 0; i < str.length; i++) {
-            hash = ((hash << 5) + hash) + str.charCodeAt(i);
-            hash |= 0;
+    // White-box test of PostgresDatabase.getLockKey — a pair of int4 keys derived from sha256
+    // (used with the pg_advisory_lock(int4, int4) 64-bit form). No connection is needed.
+    const pgDb: any = Database.create({ sqlDialect: "pgsql", host: "localhost", user: "u", password: "p", database: "d" });
+    const key = (t: string): [number, number] => pgDb.getLockKey(t);
+
+    test("same table name produces the same key pair", () => {
+        expect(key("users")).toEqual(key("users"));
+    });
+
+    test("different table names produce different key pairs", () => {
+        expect(key("users")).not.toEqual(key("orders"));
+    });
+
+    test("key is a pair of 32-bit signed integers", () => {
+        const pair = key("some_long_table_name_here");
+        expect(pair).toHaveLength(2);
+        for (const k of pair) {
+            expect(Number.isInteger(k)).toBe(true);
+            expect(k).toBeGreaterThanOrEqual(-2147483648);
+            expect(k).toBeLessThanOrEqual(2147483647);
         }
-        return hash;
-    }
-
-    test("same table name produces same key", () => {
-        expect(djb2("users")).toBe(djb2("users"));
-    });
-
-    test("different table names produce different keys", () => {
-        expect(djb2("users")).not.toBe(djb2("orders"));
-    });
-
-    test("key is a 32-bit signed integer", () => {
-        const key = djb2("some_long_table_name_here");
-        expect(Number.isInteger(key)).toBe(true);
-        expect(key).toBeGreaterThanOrEqual(-2147483648);
-        expect(key).toBeLessThanOrEqual(2147483647);
     });
 
     test("empty string produces a consistent key", () => {
-        expect(djb2("")).toBe(djb2(""));
+        expect(key("")).toEqual(key(""));
     });
 });
