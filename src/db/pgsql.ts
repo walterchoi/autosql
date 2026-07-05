@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { Pool, PoolClient } from "pg";
 import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
@@ -44,18 +45,18 @@ export class PostgresDatabase extends Database {
         return (this.connection as Pool)?.options?.max ?? 5;
     }
 
-    /** djb2 hash → 32-bit signed integer suitable for pg_advisory_lock(bigint) */
-    private getLockKey(table: string): number {
-        let hash = 5381;
-        for (let i = 0; i < table.length; i++) {
-            hash = ((hash << 5) + hash) + table.charCodeAt(i);
-            hash |= 0; // truncate to 32-bit signed int
-        }
-        return hash;
+    /**
+     * Two int4 keys (from sha256) for the pg_advisory_lock(int4, int4) form — a 64-bit lock
+     * space. A single 32-bit djb2 key made distinct tables collide onto the same advisory
+     * lock and serialize against each other.
+     */
+    private getLockKey(table: string): [number, number] {
+        const h = crypto.createHash("sha256").update(`autosql_schema__${table}`).digest();
+        return [h.readInt32BE(0), h.readInt32BE(4)];
     }
 
     public async acquireSchemaLock(table: string, timeoutSeconds: number): Promise<void> {
-        const lockKey = this.getLockKey(table);
+        const [lockKey1, lockKey2] = this.getLockKey(table);
         if (!this.connection) await this.establishConnection();
         let client: PoolClient | undefined;
         try {
@@ -63,7 +64,7 @@ export class PostgresDatabase extends Database {
             const deadline = Date.now() + timeoutSeconds * 1000;
             let acquired = false;
             while (Date.now() < deadline) {
-                const result = await client.query('SELECT pg_try_advisory_lock($1) AS acquired', [lockKey]);
+                const result = await client.query('SELECT pg_try_advisory_lock($1, $2) AS acquired', [lockKey1, lockKey2]);
                 if (result.rows[0]?.acquired === true) {
                     acquired = true;
                     break;
@@ -77,19 +78,23 @@ export class PostgresDatabase extends Database {
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
                 );
             }
+            // Release any stale connection registered for this table before overwriting, so a
+            // leftover entry can't leak a pooled connection.
+            const stale = this.schemaLockConnections.get(table);
+            if (stale && stale !== client) stale.release();
             this.schemaLockConnections.set(table, client);
         } catch (error) {
-            if (client && !this.schemaLockConnections.has(table)) client.release();
+            if (client && this.schemaLockConnections.get(table) !== client) client.release();
             throw error;
         }
     }
 
     public async releaseSchemaLock(table: string): Promise<void> {
-        const lockKey = this.getLockKey(table);
+        const [lockKey1, lockKey2] = this.getLockKey(table);
         const client = this.schemaLockConnections.get(table);
         if (!client) return;
         try {
-            await client.query('SELECT pg_advisory_unlock($1)', [lockKey]);
+            await client.query('SELECT pg_advisory_unlock($1, $2)', [lockKey1, lockKey2]);
         } finally {
             client.release();
             this.schemaLockConnections.delete(table);
