@@ -43,7 +43,7 @@ export class PostgresIndexQueryBuilder {
     static getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
-            query: `ALTER TABLE ${schemaPrefix}${q(table)} DROP CONSTRAINT ${q(`${table}_pkey`)};`,
+            query: `ALTER TABLE ${schemaPrefix}${q(table)} DROP CONSTRAINT IF EXISTS ${q(`${table}_pkey`)};`,
             params: []
         };
     }

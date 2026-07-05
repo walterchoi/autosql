@@ -197,7 +197,13 @@ export class MySQLDatabase extends Database {
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
         let updatedMetaData: MetadataHeader
-        const alterPrimaryKey = this.config.updatePrimaryKey ?? false;
+        // Staging temp tables are throwaway bulk-load intermediaries created via CREATE TABLE
+        // AS SELECT (columns only, no keys). They need no primary key — reconciling one would
+        // emit DROP/ADD PRIMARY KEY against a keyless table, which errors. Skip PK reconciliation
+        // for staging tables (keyed off the staging-name prefix; the real target is untouched).
+        const stagingPrefix = this.getConfig().stagingPrefix ?? "temp_staging__";
+        const isStagingTable = table.startsWith(stagingPrefix);
+        const alterPrimaryKey = (this.config.updatePrimaryKey ?? false) && !isStagingTable;
         if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
             // If old headers are provided in MetadataHeader format, compare them with newHeaders
             if (!newHeaders) {

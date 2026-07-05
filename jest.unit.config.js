@@ -27,5 +27,6 @@ module.exports = {
     'tests/transaction-atomicity\\.test\\.ts',
     'tests/stream-injection\\.test\\.ts',
     'tests/schema-override\\.test\\.ts',
+    'tests/staging-primary-key\\.test\\.ts',
   ],
 };
