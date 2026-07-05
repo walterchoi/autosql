@@ -5,6 +5,7 @@ import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
 import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { pgsqlConfig } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
+import { escapeIdentifier, escapeLiteral } from './utils/escape';
 import { compareMetaData } from '../helpers/metadata';
 import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
 import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
@@ -195,7 +196,7 @@ export class PostgresDatabase extends Database {
     }
 
     getCreateSchemaQuery(schemaName: string): QueryInput {
-        return { query: `CREATE SCHEMA IF NOT EXISTS "${schemaName}";`};
+        return { query: `CREATE SCHEMA IF NOT EXISTS ${escapeIdentifier(schemaName, "pgsql")};`};
     }
 
     getCheckSchemaQuery(schemaName: string | string[]): QueryInput {
@@ -203,11 +204,11 @@ export class PostgresDatabase extends Database {
             return { query: `SELECT ${schemaName
                 .map(
                     (db) =>
-                        `(CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${db}') THEN 1 ELSE 0 END) AS "${db}"`
+                        `(CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ${escapeLiteral(db, "pgsql")}) THEN 1 ELSE 0 END) AS ${escapeIdentifier(db, "pgsql")}`
                 )
                 .join(", ")};`};
         }
-        return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS "${schemaName}";`};
+        return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ${escapeLiteral(schemaName, "pgsql")}) THEN 1 ELSE 0 END) AS ${escapeIdentifier(schemaName, "pgsql")};`};
     }
 
     getCreateTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
@@ -230,7 +231,7 @@ export class PostgresDatabase extends Database {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }
         const queries: QueryInput[] = [];
-        const schemaPrefix = this.getConfig().schema ? `"${this.getConfig().schema}".` : "";
+        const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "pgsql")}.` : "";
 
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getDropPrimaryKeyQuery(table));
@@ -254,7 +255,7 @@ export class PostgresDatabase extends Database {
         
             const indexesToDrop = uniqueIndexes
                 .filter(({ columns }) => columns.split(", ").some((col: string) => alterTableChanges.noLongerUnique.includes(col)))
-                .map(({ index_name }) => `DROP INDEX IF EXISTS "${index_name}"`);
+                .map(({ index_name }) => `DROP INDEX IF EXISTS ${escapeIdentifier(index_name, "pgsql")}`);
         
                 if (indexesToDrop.length > 0) {
                     queries.push({

@@ -65,7 +65,6 @@ export class PostgresIndexQueryBuilder {
     }
 
     static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
-        const schemaPrefix = schema ? `"${schema}".` : "";
         let query = `
             SELECT i.relname AS index_name, array_to_string(array_agg(a.attname), ', ') AS columns
             FROM pg_index ix
