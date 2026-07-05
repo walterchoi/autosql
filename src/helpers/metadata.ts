@@ -131,7 +131,10 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 }
             }
             metaDataInterim[column].types.add(type);
-            if (groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) {
+            // `exponent` is a specialInt but normalizeNumber() returns null for "1.23e10", so the
+            // numeric length branch would split on "." and compute a bogus decimal length. It maps
+            // to a no-length DOUBLE anyway, so route it to the plain string-length branch.
+            if ((groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) && type !== "exponent") {
                 let valueStr = normalizeNumber(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
                 if(!valueStr) {
                     valueStr = String(value).trim();
@@ -156,6 +159,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         metaDataInterim[column].collated_type = type;
         metaData[column].type = type;
         metaData[column].length = metaDataInterim[column].length || 0;
+        metaData[column].byteLength = metaDataInterim[column].byteLength || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
 
         const uniqueSize = metaDataInterim[column].uniqueSet.size;

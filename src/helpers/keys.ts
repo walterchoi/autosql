@@ -17,7 +17,10 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         // ✅ Step 1: Predict indexes for date-related, unique, and pseudo-unique columns
         for (const [columnName, column] of Object.entries(headers)) {
             const columnType = column.type ?? "varchar";
-            const columnLength = column.length ?? 255
+            // Key limits are enforced in bytes, so compare the max of char length and byte
+            // length against maxKeyLength — a 200-char multibyte (CJK/emoji) value can be
+            // ~600 bytes and exceed the key limit even though its char length looks fine.
+            const columnLength = Math.max(column.length ?? 0, column.byteLength ?? 0) || 255
             const isNumeric = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
             const isDecimal = (column.decimal !== 0 && column.decimal !== undefined) || column.type == 'decimal' || groupings.specialIntGroup.includes(columnType); // Identify decimal columns
             const isText = groupings.textGroup.includes(columnType) && columnType !== "varchar";

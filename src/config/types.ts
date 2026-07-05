@@ -3,6 +3,7 @@ import type { Client as SSHClient, ClientChannel } from "ssh2";
 export interface ColumnDefinition {
   type: string | null;
   length?: number;
+  byteLength?: number;
   allowNull?: boolean;
   unique?: boolean;
   index?: boolean;
