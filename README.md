@@ -145,6 +145,12 @@ export interface DatabaseConfig {
   // types: phone numbers, zip codes, padded codes (e.g. "007"), account numbers, etc.
   forceStringColumns?: string[];
 
+  // Locale number parsing. Provide BOTH together to disambiguate single-separator values
+  // (e.g. thousandsSeparator: "." + decimalSeparator: "," parses "1.000" as 1000, not 1).
+  // Omit both to use the default heuristic.
+  thousandsSeparator?: string;
+  decimalSeparator?: string;
+
   // Sampling controls
   sampling?: number; // If provided data exceeds samplingMinimum rows, we sample this % of values for identifying uniques and column types — defaults to 0, allows values between 0 and 1
   samplingMinimum?: number; // If provided data exceeds this row count, sampling kicks in — defaults to 100
@@ -362,6 +368,14 @@ Defaults to `true`.
 
   Without this, a column containing `"14155550100"` would be inferred as `bigint`. With it, the column stays `varchar` and leading zeros, formatting, and string semantics are preserved.
 
+- `thousandsSeparator`: `string` / `decimalSeparator`: `string`
+  Disambiguate locale number formats. By default a value with a single separator like `"1,000"` is treated as a decimal (`1.0`). Provide **both** (they must be set together) to parse explicitly — e.g. with `thousandsSeparator: "."` and `decimalSeparator: ","`, `"1.000"` parses as `1000` and `"1,5"` as `1.5`. Omit both to use the default heuristic.
+
+  ```ts
+  // European-formatted input
+  thousandsSeparator: '.', decimalSeparator: ','
+  ```
+
 ---
 
 ### 🛡 DDL Safety
@@ -416,13 +430,14 @@ This is the core interface for managing connections, generating queries, and exe
 
 #### 🔹 Core Methods
 - **`getConfig()`** – Returns the full `DatabaseConfig` used to initialise this instance.
-- **`updateSchema(schema: string)`** – Updates the current schema name being used.
+- **`updateSchema(schema: string)`** – Sets the instance's default schema (mutates config). For a **per-operation** schema that won't interfere with concurrent operations, prefer passing `schema` to `autoSQL`/`autoSQLChunked`/`openStream`, or use `runWithSchema` below.
+- **`runWithSchema(schema: string, fn: () => T)`** – Runs `fn` with `schema` as the effective schema for the duration of the async operation, **without mutating instance config** — concurrent operations with different schemas stay isolated. (This is what the per-call `schema` argument uses internally.)
 - **`getDialect()`** – Returns the SQL dialect (`mysql` or `pgsql`).
 - **`establishConnection()`** – Creates and stores a live database connection.
 - **`testConnection()`** – Attempts to connect and returns success as a boolean.
 - **`runQuery(queryOrParams: QueryInput | QueryInput[])`** – Executes a SQL query or list of queries.
-- **`startTransaction()` / `commit()` / `rollback()`** – Manages manual transaction blocks.
-- **`runTransaction(queries: QueryInput[])`** – Runs multiple queries inside a single transaction.
+- **`runTransaction(queries: QueryInput[])`** – Runs the queries **atomically on a single pinned connection** (`BEGIN` → … → `COMMIT`, with automatic `ROLLBACK` on failure and transient-error retry). Use this for transactional work.
+- **`startTransaction(client)` / `commit(client)` / `rollback(client)`** – Low-level transaction control; each **requires a pinned connection** (managed internally by `runTransaction`). Prefer `runTransaction()`.
 - **`runTransactionsWithConcurrency(queryGroups: QueryInput[][])`** – Runs multiple query batches in parallel.
 - **`closeConnection()`** – Safely closes the active DB connection.
 
