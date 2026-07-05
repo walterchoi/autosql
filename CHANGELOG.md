@@ -1,3 +1,12 @@
+## [1.4.0] - 2026-07-05
+### 🐛 Bug Fixes (concurrency)
+- **Per-call schema is now isolated per operation.** Passing a `schema` to `autoSQL`/`autoSQLChunked`/`openStream` previously mutated the shared `Database` config schema and restored it in a `finally`. Concurrent calls with different schemas on one instance raced on that shared field (queries against the wrong schema; the restore could leave the config permanently wrong), and `openStream` held the mutation for the whole stream lifetime. Each schema-scoped operation now runs inside an `AsyncLocalStorage` context and `getConfig()` resolves the schema from it without mutating the instance, so concurrent operations stay isolated.
+
+### ✨ New
+- `Database.runWithSchema(schema, fn)` — run an operation with an effective schema override for its async duration without mutating instance config.
+
+---
+
 ## [1.3.1] - 2026-07-05
 ### 🐛 Bug Fixes (concurrency)
 - **Schema-history record id.** `recordMigrationStart` returned a wrong/zero id, leaving the history row stuck at `pending` and drift detection without a baseline. MySQL read the id from a separate `SELECT LAST_INSERT_ID()` that ran on a different pooled connection (LAST_INSERT_ID is connection-scoped) — it now runs in one connection-pinned transaction. PostgreSQL failed outright with `"inconsistent types deduced for parameter $1"` (schema-history recording was entirely broken on PG) — fixed with an explicit `$1::varchar` cast.
