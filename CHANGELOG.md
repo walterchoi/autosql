@@ -1,3 +1,11 @@
+## [1.3.1] - 2026-07-05
+### 🐛 Bug Fixes (concurrency)
+- **Schema-history record id.** `recordMigrationStart` returned a wrong/zero id, leaving the history row stuck at `pending` and drift detection without a baseline. MySQL read the id from a separate `SELECT LAST_INSERT_ID()` that ran on a different pooled connection (LAST_INSERT_ID is connection-scoped) — it now runs in one connection-pinned transaction. PostgreSQL failed outright with `"inconsistent types deduced for parameter $1"` (schema-history recording was entirely broken on PG) — fixed with an explicit `$1::varchar` cast.
+- **Stream orphan cleanup no longer drops a live stream's staging table.** Concurrent streams to the same table share the `${prefix}${table}__` name pattern the cleanup scans; staging tables of streams open on the same instance are now excluded. (Cross-process concurrency still needs a DB-side liveness marker.)
+- **PostgreSQL advisory-lock key widened to 64-bit** (two int4 keys via sha256, `pg_advisory_lock(int4, int4)`) so distinct table names no longer collide onto the same lock and serialize. Also release any stale lock connection before overwriting the registry entry (prevents a pooled-connection leak) on both dialects.
+
+---
+
 ## [1.3.0] - 2026-07-05
 ### 🐛 Bug Fixes (transaction atomicity)
 - **`runTransaction` is now atomic.** Previously `START TRANSACTION`, the statements, and `COMMIT`/`ROLLBACK` each ran through a freshly acquired/released pool connection, so a transaction's statements scattered across different connections in autocommit mode — atomicity held only by luck (sequential reuse of the same idle connection) and broke under `runTransactionsWithConcurrency`, with rollback running on an unrelated connection. Transactions now acquire **one** connection and run all statements plus BEGIN/COMMIT/ROLLBACK on it. **PostgreSQL transactional DDL rollback now actually works.**
