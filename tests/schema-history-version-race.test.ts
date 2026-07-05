@@ -27,7 +27,7 @@ describe("schema-history version-race handling", () => {
     test("does not retry on a non-collision failure", async () => {
         const db = makeDb([{ success: false, error: "ER_BAD_FIELD_ERROR: Unknown column" }]);
         const id = await recordMigrationStart(db, "t", {}, {});
-        expect(id).toBe(0);
+        expect(id).toBeUndefined();
         expect((db.runTransaction as jest.Mock)).toHaveBeenCalledTimes(1);
     });
 });

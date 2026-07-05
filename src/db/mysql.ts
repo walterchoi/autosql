@@ -52,7 +52,9 @@ export class MySQLDatabase extends Database {
             const [rows] = await client.query('SELECT GET_LOCK(?, ?) AS acquired', [lockKey, timeoutSeconds]) as [any[], any];
             const acquired = (rows as any[])[0]?.acquired;
             if (!acquired) {
-                client.release();
+                // Do not release here — the catch below releases exactly once (the map was
+                // never set for this table, so its guard fires). Releasing here too would
+                // double-release the connection on the timeout path.
                 throw new SchemaLockTimeoutError(
                     `Could not acquire schema lock for table '${table}' within ${timeoutSeconds}s. ` +
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`

@@ -72,7 +72,9 @@ export class PostgresDatabase extends Database {
                 await new Promise(r => setTimeout(r, 500));
             }
             if (!acquired) {
-                client.release();
+                // Do not release here — the catch below releases exactly once (the map was
+                // never set for this table, so its guard fires). Releasing here too would
+                // double-release the connection on the timeout path.
                 throw new SchemaLockTimeoutError(
                     `Could not acquire schema lock for table '${table}' within ${timeoutSeconds}s. ` +
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`

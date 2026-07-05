@@ -43,10 +43,11 @@ Object.values(DB_CONFIG).forEach((config) => {
         test("returns a usable id and the row transitions pending -> applied", async () => {
             const id = await recordMigrationStart(db, TABLE, PREV, { note: "test" });
             expect(id).toBeGreaterThan(0);
-            expect(await statusOf(id)).toBe("pending");
+            const rid = id!;
+            expect(await statusOf(rid)).toBe("pending");
 
-            await recordMigrationSuccess(db, id, NEXT);
-            expect(await statusOf(id)).toBe("applied");
+            await recordMigrationSuccess(db, rid, NEXT);
+            expect(await statusOf(rid)).toBe("applied");
         });
     });
 });
