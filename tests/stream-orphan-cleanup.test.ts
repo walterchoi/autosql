@@ -6,6 +6,7 @@ import { AutoSQLHandler } from "../src/db/autosql";
 
 function makeMockDb(listedTables: string[], dropCalls: string[]) {
     return {
+        runWithSchema: (_s: any, fn: any) => fn(),
         getConfig: () => ({
             sqlDialect: "mysql" as const,
             schema: "s",

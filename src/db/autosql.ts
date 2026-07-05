@@ -848,10 +848,8 @@ export class AutoSQLHandler {
     } 
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[]): Promise<QueryResult> {
+      return this.db.runWithSchema(schema, async () => {
         const start = new Date();
-        const originalSchema = this.db.getConfig().schema;
-        if (schema) { this.db.updateSchema(schema); }
-
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
         const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
@@ -920,9 +918,8 @@ export class AutoSQLHandler {
         } catch (error: any) {
             const end = new Date();
             return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error) };
-        } finally {
-            if (schema) { this.db.updateSchema(originalSchema); }
         }
+      });
     }
 
     /**
@@ -946,10 +943,8 @@ export class AutoSQLHandler {
         schema?: string,
         primaryKey?: string[]
     ): Promise<QueryResult> {
+      return this.db.runWithSchema(schema, async () => {
         const start = new Date();
-        const originalSchema = this.db.getConfig().schema;
-        if (schema) this.db.updateSchema(schema);
-
         const useSchemaLock = this.db.getConfig().useSchemaLock;
         const lockTimeout = this.db.getConfig().schemaLockTimeout ?? defaults.schemaLockTimeout;
 
@@ -1013,9 +1008,8 @@ export class AutoSQLHandler {
                 success: false,
                 error: error instanceof Error ? error.message : String(error)
             };
-        } finally {
-            if (schema) this.db.updateSchema(originalSchema);
         }
+      });
     }
 
     async openStream(
@@ -1023,13 +1017,10 @@ export class AutoSQLHandler {
         schema?: string,
         primaryKey?: string[]
     ): Promise<AutoSQLStreamHandle> {
-        const originalSchema = this.db.getConfig().schema;
-        if (schema) this.db.updateSchema(schema);
-
+      return this.db.runWithSchema(schema, async () => {
         // Connectivity check — surfaces auth/connection errors before first write
         const ping = await this.db.runQuery({ query: 'SELECT 1', params: [] });
         if (!ping.success) {
-            if (schema) this.db.updateSchema(originalSchema);
             throw new Error(`openStream: cannot connect to database — ${ping.error}`);
         }
 
@@ -1045,7 +1036,10 @@ export class AutoSQLHandler {
         const stagingTable = buildStreamStagingTableName(table, prefix, runId);
         this.activeStreamStagingTables.add(stagingTable);
 
-        return new AutoSQLStreamHandle(this, this.db, table, stagingTable, schema, primaryKey, originalSchema);
+        // The handle re-establishes this schema context for its own write()/end()/abort()
+        // calls, which run later in separate async invocations.
+        return new AutoSQLStreamHandle(this, this.db, table, stagingTable, schema, primaryKey);
+      });
     }
 
     async _cleanupOrphanedStreamTables(table: string, prefix: string): Promise<void> {
@@ -1080,7 +1074,6 @@ export class AutoSQLStreamHandle {
     private stagingTable: string;
     private schema: string | undefined;
     private primaryKey: string[] | undefined;
-    private originalSchema: string | undefined;
     private columns: string[] | null = null;
     private stagingCreated = false;
     private ended = false;
@@ -1091,8 +1084,7 @@ export class AutoSQLStreamHandle {
         table: string,
         stagingTable: string,
         schema: string | undefined,
-        primaryKey: string[] | undefined,
-        originalSchema: string | undefined
+        primaryKey: string[] | undefined
     ) {
         this.handler = handler;
         this.db = db;
@@ -1100,34 +1092,35 @@ export class AutoSQLStreamHandle {
         this.stagingTable = stagingTable;
         this.schema = schema;
         this.primaryKey = primaryKey;
-        this.originalSchema = originalSchema;
     }
 
     async write(chunk: Record<string, any>[]): Promise<void> {
         if (this.ended) throw new Error(`autoSQLStream: write() called after end()/abort()`);
         if (chunk.length === 0) return;
+        return this.db.runWithSchema(this.schema, async () => {
+            const config = this.db.getConfig();
 
-        const config = this.db.getConfig();
-
-        if (!this.stagingCreated) {
-            // Derive columns from first row
-            this.columns = Object.keys(chunk[0]);
-            const createQ = buildCreateStreamStagingTableQuery(this.stagingTable, this.columns, config);
-            const createResult = await this.db.runTransaction([createQ]);
-            if (!createResult.success) {
-                throw new Error(`autoSQLStream: failed to create stream staging table '${this.stagingTable}': ${createResult.error}`);
+            if (!this.stagingCreated) {
+                // Derive columns from first row
+                this.columns = Object.keys(chunk[0]);
+                const createQ = buildCreateStreamStagingTableQuery(this.stagingTable, this.columns, config);
+                const createResult = await this.db.runTransaction([createQ]);
+                if (!createResult.success) {
+                    throw new Error(`autoSQLStream: failed to create stream staging table '${this.stagingTable}': ${createResult.error}`);
+                }
+                this.stagingCreated = true;
             }
-            this.stagingCreated = true;
-        }
 
-        const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, chunk, config);
-        const insertResult = await this.db.runTransaction([insertQ]);
-        if (!insertResult.success) {
-            throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error}`);
-        }
+            const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, chunk, config);
+            const insertResult = await this.db.runTransaction([insertQ]);
+            if (!insertResult.success) {
+                throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error}`);
+            }
+        });
     }
 
     async end(): Promise<QueryResult> {
+      return this.db.runWithSchema(this.schema, async () => {
         const start = new Date();
         this.ended = true;
         const config = this.db.getConfig();
@@ -1215,9 +1208,9 @@ export class AutoSQLStreamHandle {
                     this.db.error(`autoSQLStream: failed to drop staging table '${this.stagingTable}': ${e.message}`)
                 );
             }
-            if (this.schema) this.db.updateSchema(this.originalSchema);
             this.handler.releaseStreamStaging(this.stagingTable);
         }
+      });
     }
 
     private async _perRowMerge(
@@ -1297,13 +1290,14 @@ export class AutoSQLStreamHandle {
 
     async abort(): Promise<void> {
         this.ended = true;
-        if (this.stagingCreated) {
-            const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
-            await this.db.runTransaction([dropQ]).catch(e =>
-                this.db.error(`autoSQLStream: failed to drop staging table during abort: ${e.message}`)
-            );
-        }
-        if (this.schema) this.db.updateSchema(this.originalSchema);
-        this.handler.releaseStreamStaging(this.stagingTable);
+        return this.db.runWithSchema(this.schema, async () => {
+            if (this.stagingCreated) {
+                const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
+                await this.db.runTransaction([dropQ]).catch(e =>
+                    this.db.error(`autoSQLStream: failed to drop staging table during abort: ${e.message}`)
+                );
+            }
+            this.handler.releaseStreamStaging(this.stagingTable);
+        });
     }
 }
