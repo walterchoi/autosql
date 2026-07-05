@@ -95,25 +95,33 @@ export async function recordMigrationStart(
         query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
 SELECT ?, COALESCE(MAX(version), 0) + 1, 'pending', ?, ?, ?, ?
 FROM ${tableRef} WHERE table_name = ?`;
-        const result = await db.runQuery({
-            query,
-            params: [
-                table,
-                now.toISOString().slice(0, 19).replace('T', ' '),
-                appliedBy,
-                JSON.stringify(previousSchema),
-                JSON.stringify(changes),
-                table
-            ]
-        });
-        // Return the inserted id via last insert id
-        const idResult = await db.runQuery({ query: 'SELECT LAST_INSERT_ID() AS id', params: [] });
-        return Number(idResult.results?.[0]?.id ?? 0);
+        // Run the INSERT and LAST_INSERT_ID() in one transaction so they share a single
+        // connection — LAST_INSERT_ID() is connection-scoped, so reading it on a separate
+        // pooled connection (as a second runQuery would) returns 0/unrelated, leaving the
+        // history row stuck at 'pending' and drift detection without a baseline.
+        const result = await db.runTransaction([
+            {
+                query,
+                params: [
+                    table,
+                    now.toISOString().slice(0, 19).replace('T', ' '),
+                    appliedBy,
+                    JSON.stringify(previousSchema),
+                    JSON.stringify(changes),
+                    table
+                ]
+            },
+            { query: 'SELECT LAST_INSERT_ID() AS id', params: [] }
+        ]);
+        return Number(result.results?.[0]?.id ?? 0);
     } else {
         const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
         const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+        // $1 is used both in the SELECT list and the WHERE clause; without an explicit cast
+        // Postgres infers it as text in one place and varchar in the other and rejects the
+        // statement with "inconsistent types deduced for parameter $1".
         query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
-SELECT $1, COALESCE(MAX(version), 0) + 1, 'pending', $2, $3, $4::jsonb, $5::jsonb
+SELECT $1::varchar, COALESCE(MAX(version), 0) + 1, 'pending', $2, $3, $4::jsonb, $5::jsonb
 FROM ${tableRef} WHERE table_name = $1
 RETURNING id`;
         const result = await db.runQuery({

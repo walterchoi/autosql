@@ -78,7 +78,13 @@ function defaultRunQuery(q: { query: string; params?: any[] }): Promise<QueryRes
 
 function makeDb(configOverrides: Partial<DatabaseConfig> = {}) {
     const runQuery = jest.fn().mockImplementation(defaultRunQuery);
-    const runTransaction = jest.fn().mockResolvedValue(ok({ affectedRows: 3 }));
+    const runTransaction = jest.fn().mockImplementation((queries: { query: string }[] = []) => {
+        // recordMigrationStart now runs its INSERT + LAST_INSERT_ID() in one transaction.
+        if (queries.some(q => q.query?.includes('LAST_INSERT_ID'))) {
+            return Promise.resolve(ok({ results: [{ id: 42 }] }));
+        }
+        return Promise.resolve(ok({ affectedRows: 3 }));
+    });
 
     return {
         getConfig: () => ({
@@ -357,11 +363,12 @@ describe("end() — schema history integration", () => {
         });
         const handle = makeHandle(handler, db, { stagingCreated: true });
         await handle.end();
-        const qCalls = (db.runQuery as jest.Mock).mock.calls as any[][];
-        const qQueries = qCalls.map((args) => args[0].query as string);
-        // recordMigrationStart issues INSERT INTO autosql_schema_history ... SELECT ...
+        // recordMigrationStart issues INSERT INTO autosql_schema_history ... SELECT ... inside a
+        // single transaction (so the INSERT and LAST_INSERT_ID() share one connection).
+        const txCalls = (db.runTransaction as jest.Mock).mock.calls as any[][];
+        const txQueries = txCalls.flatMap((args) => ((args[0] as { query: string }[]) || []).map((q) => q.query));
         expect(
-            qQueries.some(
+            txQueries.some(
                 (q) => q.includes("INSERT INTO") && q.includes("autosql_schema_history") && q.includes("SELECT")
             )
         ).toBe(true);
