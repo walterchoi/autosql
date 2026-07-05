@@ -159,7 +159,6 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         metaDataInterim[column].collated_type = type;
         metaData[column].type = type;
         metaData[column].length = metaDataInterim[column].length || 0;
-        metaData[column].byteLength = metaDataInterim[column].byteLength || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
 
         const uniqueSize = metaDataInterim[column].uniqueSet.size;
@@ -193,9 +192,15 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     for (const row of remainingData) {
         for (const column of allColumns) {
             const value = row[column]
-            const type = metaData[column].type;
-            if(!type) continue;
-            if (groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) {
+            if (value === null || value === undefined) continue;
+            // Re-evaluate the type on non-sampled rows too (not just length): a wider value —
+            // an integer needing int/bigint, or a decimal/float on an int column — must upgrade
+            // the inferred type set, otherwise it overflows/truncates on insert. The type is
+            // re-collated from this set below.
+            const valueType = predictType(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
+            if(!valueType) continue;
+            metaDataInterim[column].types.add(valueType);
+            if ((groupings.intGroup.includes(valueType) || groupings.specialIntGroup.includes(valueType)) && valueType !== "exponent") {
                 let valueStr = normalizeNumber(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
                 if(!valueStr) {
                     valueStr = String(value).trim();
@@ -216,6 +221,16 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     for (const column in metaDataInterim) {
+        // When sampling was used, re-collate from the full type set (sample + remaining rows)
+        // so non-sampled values can widen the inferred type. Guarded on remainingData so the
+        // default (no-sampling) path is completely untouched. Text promotion is re-applied
+        // below off the final length.
+        if (remainingData.length > 0) {
+            const recollated = forceStringSet.has(column) ? "varchar" : collateTypes(metaDataInterim[column].types);
+            metaDataInterim[column].collated_type = recollated;
+            metaData[column].type = recollated;
+        }
+
         // If type is not decimal, but decimal is set, add + 1 (for the dot) to length and set decimal to 0. Do this to metaDataInterim[column] so that it can be used later.
         // Also replace the metaDataInterim[column].decimal with metaDataInterim[column].trueMaxDecimal as if decimals were rounded due to exceeding the max decimal length, we want to keep the true max decimal length when converting to a non-decimal type.
         if (!dialectConfig.decimals.includes(metaDataInterim[column].collated_type || 'varchar')) {
