@@ -57,13 +57,12 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         remainingData = shuffledData.slice(sampleSize); // Store remaining data
     }
 
-    // Cap uniqueSet per column to avoid unbounded memory on high-cardinality data.
-    // Threshold = minimum entries needed to confirm pseudounique (lower-bound approach):
-    // once uniqueSet.size / valueCount >= pseudoUnique, the column is definitively
-    // pseudounique and we stop inserting. Unique (100%) is only confirmed for columns
-    // that never saturate. For large datasets use sampling for full precision.
-    const pseudoUniqueThreshold = databaseConfig.pseudoUnique || defaults.pseudoUnique;
-    const uniqueSetCap = Math.ceil(pseudoUniqueThreshold * sampleData.length) + 1;
+    // Cap uniqueSet per column at the number of sampled rows (+1). This is enough to observe
+    // every distinct value in the sample and confirm 100% uniqueness, while still bounding
+    // memory to the data already held in memory. A cap tied to the pseudounique ratio
+    // (ceil(0.9 * N)) saturated a truly-unique column at ~0.9N rows, so `unique` could never
+    // be confirmed for any dense column of ~10+ rows — it was always mislabeled pseudounique.
+    const uniqueSetCap = sampleData.length + 1;
     const forceStringSet = new Set<string>(databaseConfig.forceStringColumns ?? []);
 
     for (const row of sampleData) {
