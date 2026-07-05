@@ -1,3 +1,13 @@
+## [1.4.1] - 2026-07-05
+### 🐛 Bug Fixes (schema history)
+- **Version-race resilience.** `recordMigrationStart` computes `version = MAX(version)+1` against a `UNIQUE(table_name, version)` constraint; without a schema lock, concurrent migrations could collide. It now retries (recomputing the version) on a unique-constraint violation instead of failing the migration.
+- **Stale `pending` sweep.** Orphaned `pending` starts (from crashed runs) older than 1h are best-effort marked `failed` so they don't linger.
+
+### 🔒 Security / tooling
+- Pin the transitive dev dependency `handlebars` to `4.7.9` via `overrides` (high-severity advisory; not shipped in the package). Raise Jest `testTimeout` to 30s for DB integration tests. Add a `test:unit` script (`jest.unit.config.js`) for fast no-DB runs.
+
+---
+
 ## [1.4.0] - 2026-07-05
 ### 🐛 Bug Fixes (concurrency)
 - **Per-call schema is now isolated per operation.** Passing a `schema` to `autoSQL`/`autoSQLChunked`/`openStream` previously mutated the shared `Database` config schema and restored it in a `finally`. Concurrent calls with different schemas on one instance raced on that shared field (queries against the wrong schema; the restore could leave the config permanently wrong), and `openStream` held the mutation for the whole stream lifetime. Each schema-scoped operation now runs inside an `AsyncLocalStorage` context and `getConfig()` resolves the schema from it without mutating the instance, so concurrent operations stay isolated.
