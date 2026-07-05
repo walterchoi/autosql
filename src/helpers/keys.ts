@@ -14,10 +14,26 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         let potentialCompositeKeys: string[] = [];
         let NullablePseudoUniqueColumns: string[] = [];
 
+        // Key limits are enforced in bytes, so a ~200-char multibyte (CJK/emoji) value can be
+        // ~600 bytes and exceed the key limit even though its char length looks fine. When the
+        // sample data is available, capture each column's max byte length in one pass so the
+        // index/key checks below can gate on it (falls back to char length otherwise).
+        const maxByteLenByColumn: Record<string, number> = {};
+        if (data && data.length) {
+            for (const row of data) {
+                for (const col in row) {
+                    const v = row[col];
+                    if (v === null || v === undefined) continue;
+                    const b = Buffer.byteLength(String(v), "utf8");
+                    if (b > (maxByteLenByColumn[col] ?? 0)) maxByteLenByColumn[col] = b;
+                }
+            }
+        }
+
         // ✅ Step 1: Predict indexes for date-related, unique, and pseudo-unique columns
         for (const [columnName, column] of Object.entries(headers)) {
             const columnType = column.type ?? "varchar";
-            const columnLength = column.length ?? 255
+            const columnLength = Math.max(column.length ?? 0, maxByteLenByColumn[columnName] ?? 0) || 255
             const isNumeric = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
             const isDecimal = (column.decimal !== 0 && column.decimal !== undefined) || column.type == 'decimal' || groupings.specialIntGroup.includes(columnType); // Identify decimal columns
             const isText = groupings.textGroup.includes(columnType) && columnType !== "varchar";

@@ -5,6 +5,7 @@ import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
 import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { pgsqlConfig } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
+import { escapeIdentifier, escapeLiteral } from './utils/escape';
 import { compareMetaData } from '../helpers/metadata';
 import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
 import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
@@ -72,7 +73,9 @@ export class PostgresDatabase extends Database {
                 await new Promise(r => setTimeout(r, 500));
             }
             if (!acquired) {
-                client.release();
+                // Do not release here — the catch below releases exactly once (the map was
+                // never set for this table, so its guard fires). Releasing here too would
+                // double-release the connection on the timeout path.
                 throw new SchemaLockTimeoutError(
                     `Could not acquire schema lock for table '${table}' within ${timeoutSeconds}s. ` +
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
@@ -193,7 +196,7 @@ export class PostgresDatabase extends Database {
     }
 
     getCreateSchemaQuery(schemaName: string): QueryInput {
-        return { query: `CREATE SCHEMA IF NOT EXISTS "${schemaName}";`};
+        return { query: `CREATE SCHEMA IF NOT EXISTS ${escapeIdentifier(schemaName, "pgsql")};`};
     }
 
     getCheckSchemaQuery(schemaName: string | string[]): QueryInput {
@@ -201,21 +204,27 @@ export class PostgresDatabase extends Database {
             return { query: `SELECT ${schemaName
                 .map(
                     (db) =>
-                        `(CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${db}') THEN 1 ELSE 0 END) AS "${db}"`
+                        `(CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ${escapeLiteral(db, "pgsql")}) THEN 1 ELSE 0 END) AS ${escapeIdentifier(db, "pgsql")}`
                 )
                 .join(", ")};`};
         }
-        return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS "${schemaName}";`};
+        return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ${escapeLiteral(schemaName, "pgsql")}) THEN 1 ELSE 0 END) AS ${escapeIdentifier(schemaName, "pgsql")};`};
     }
 
     getCreateTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
-            return PostgresTableQueryBuilder.getCreateTableQuery(table, headers, this.config);
+            return PostgresTableQueryBuilder.getCreateTableQuery(table, headers, this.getConfig());
         }
     
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
         let updatedMetaData: MetadataHeader
-        const alterPrimaryKey = this.config.updatePrimaryKey ?? false;
+        // Staging temp tables are throwaway bulk-load intermediaries created via CREATE TABLE
+        // AS SELECT (columns only, no keys). They need no primary key — reconciling one would
+        // emit DROP/ADD PRIMARY KEY against a keyless table, which errors. Skip PK reconciliation
+        // for staging tables (keyed off the staging-name prefix; the real target is untouched).
+        const stagingPrefix = this.getConfig().stagingPrefix ?? "temp_staging__";
+        const isStagingTable = table.startsWith(stagingPrefix);
+        const alterPrimaryKey = (this.config.updatePrimaryKey ?? false) && !isStagingTable;
 
         if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
                     // If old headers are provided in MetadataHeader format, compare them with newHeaders
@@ -228,7 +237,7 @@ export class PostgresDatabase extends Database {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }
         const queries: QueryInput[] = [];
-        const schemaPrefix = this.config.schema ? `"${this.config.schema}".` : "";
+        const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "pgsql")}.` : "";
 
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getDropPrimaryKeyQuery(table));
@@ -252,7 +261,7 @@ export class PostgresDatabase extends Database {
         
             const indexesToDrop = uniqueIndexes
                 .filter(({ columns }) => columns.split(", ").some((col: string) => alterTableChanges.noLongerUnique.includes(col)))
-                .map(({ index_name }) => `DROP INDEX IF EXISTS "${index_name}"`);
+                .map(({ index_name }) => `DROP INDEX IF EXISTS ${escapeIdentifier(index_name, "pgsql")}`);
         
                 if (indexesToDrop.length > 0) {
                     queries.push({
@@ -262,7 +271,7 @@ export class PostgresDatabase extends Database {
                 }
         }
         // Get actual ALTER TABLE queries
-        const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema, this.getConfig());
+        const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.getConfig().schema, this.getConfig());
         queries.push(...alterQueries);
 
         // Add New Primary Key (if changed and allowed)
@@ -276,7 +285,7 @@ export class PostgresDatabase extends Database {
     }
 
     getDropTableQuery(table: string): QueryInput {
-        return PostgresTableQueryBuilder.getDropTableQuery(table, this.config.schema);
+        return PostgresTableQueryBuilder.getDropTableQuery(table, this.getConfig().schema);
     }
 
     getTableExistsQuery(schema: string, table: string): QueryInput {
@@ -288,35 +297,35 @@ export class PostgresDatabase extends Database {
     }
 
     getPrimaryKeysQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getPrimaryKeysQuery(table, this.config.schema);
+        return PostgresIndexQueryBuilder.getPrimaryKeysQuery(table, this.getConfig().schema);
     }
 
     getForeignKeyConstraintsQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.config.schema);
+        return PostgresIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.getConfig().schema);
     }
 
     getViewDependenciesQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getViewDependenciesQuery(table, this.config.schema);
+        return PostgresIndexQueryBuilder.getViewDependenciesQuery(table, this.getConfig().schema);
     }
 
     getDropPrimaryKeyQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.config.schema);
+        return PostgresIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.getConfig().schema);
     }
 
     getDropUniqueConstraintQuery(table: string, indexName: string): QueryInput {
-        return PostgresIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.config.schema);
+        return PostgresIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.getConfig().schema);
     }
 
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
-        return PostgresIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.config.schema);
+        return PostgresIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.getConfig().schema);
     }
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
-        return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
+        return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.getConfig().schema);
     }
 
     getSplitTablesQuery(table: string): QueryInput {
-        return PostgresTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
+        return PostgresTableQueryBuilder.getSplitTablesQuery(table, this.getConfig().schema);
     }
 
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
@@ -332,10 +341,10 @@ export class PostgresDatabase extends Database {
     }
 
     getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput {
-        return PostgresTableQueryBuilder.getCreateTempTableQuery(table, this.config.schema, stagingPrefix)
+        return PostgresTableQueryBuilder.getCreateTempTableQuery(table, this.getConfig().schema, stagingPrefix)
     }
 
     getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, stagingPrefix?: string): QueryInput {
-        return PostgresIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.config.schema, stagingPrefix)
+        return PostgresIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.getConfig().schema, stagingPrefix)
     }
 }

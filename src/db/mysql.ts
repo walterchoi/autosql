@@ -5,6 +5,7 @@ import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, Insert
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
 import { mysqlConfig } from "./config/mysqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
+import { escapeIdentifier, escapeLiteral } from './utils/escape';
 import { compareMetaData } from '../helpers/metadata';
 import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
 import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
@@ -52,7 +53,9 @@ export class MySQLDatabase extends Database {
             const [rows] = await client.query('SELECT GET_LOCK(?, ?) AS acquired', [lockKey, timeoutSeconds]) as [any[], any];
             const acquired = (rows as any[])[0]?.acquired;
             if (!acquired) {
-                client.release();
+                // Do not release here — the catch below releases exactly once (the map was
+                // never set for this table, so its guard fires). Releasing here too would
+                // double-release the connection on the timeout path.
                 throw new SchemaLockTimeoutError(
                     `Could not acquire schema lock for table '${table}' within ${timeoutSeconds}s. ` +
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
@@ -172,7 +175,7 @@ export class MySQLDatabase extends Database {
     }
 
     getCreateSchemaQuery(schemaName: string): QueryInput {
-        return { query: `CREATE SCHEMA IF NOT EXISTS \`${schemaName}\`;` };
+        return { query: `CREATE SCHEMA IF NOT EXISTS ${escapeIdentifier(schemaName, "mysql")};` };
     }
 
     getCheckSchemaQuery(schemaName: string | string[]): QueryInput {
@@ -180,21 +183,27 @@ export class MySQLDatabase extends Database {
             return { query: `SELECT ${schemaName
                 .map(
                     (db) =>
-                        `(CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${db}') THEN 1 ELSE 0 END) AS '${db}'`
+                        `(CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ${escapeLiteral(db, "mysql")}) THEN 1 ELSE 0 END) AS ${escapeIdentifier(db, "mysql")}`
                 )
                 .join(", ")};`};
         }
-        return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = '${schemaName}') THEN 1 ELSE 0 END) AS '${schemaName}';`};
+        return { query: `SELECT (CASE WHEN EXISTS (SELECT NULL FROM INFORMATION_SCHEMA.SCHEMATA WHERE SCHEMA_NAME = ${escapeLiteral(schemaName, "mysql")}) THEN 1 ELSE 0 END) AS ${escapeIdentifier(schemaName, "mysql")};`};
     }
 
     getCreateTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
-        return MySQLTableQueryBuilder.getCreateTableQuery(table, headers, this.config);
+        return MySQLTableQueryBuilder.getCreateTableQuery(table, headers, this.getConfig());
     }
 
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
         let updatedMetaData: MetadataHeader
-        const alterPrimaryKey = this.config.updatePrimaryKey ?? false;
+        // Staging temp tables are throwaway bulk-load intermediaries created via CREATE TABLE
+        // AS SELECT (columns only, no keys). They need no primary key — reconciling one would
+        // emit DROP/ADD PRIMARY KEY against a keyless table, which errors. Skip PK reconciliation
+        // for staging tables (keyed off the staging-name prefix; the real target is untouched).
+        const stagingPrefix = this.getConfig().stagingPrefix ?? "temp_staging__";
+        const isStagingTable = table.startsWith(stagingPrefix);
+        const alterPrimaryKey = (this.config.updatePrimaryKey ?? false) && !isStagingTable;
         if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
             // If old headers are provided in MetadataHeader format, compare them with newHeaders
             if (!newHeaders) {
@@ -206,7 +215,7 @@ export class MySQLDatabase extends Database {
             alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
         }
         const queries: QueryInput[] = [];
-        const schemaPrefix = this.config.schema ? `\`${this.config.schema}\`.` : "";
+        const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "mysql")}.` : "";
         
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getDropPrimaryKeyQuery(table));
@@ -226,17 +235,17 @@ export class MySQLDatabase extends Database {
         
             const indexesToDrop = uniqueIndexes
                 .filter(({ columns }) => columns.split(", ").some((col: string) => alterTableChanges.noLongerUnique.includes(col)))
-                .map(({ index_name }) => `DROP INDEX \`${index_name}\``);
+                .map(({ index_name }) => `DROP INDEX ${escapeIdentifier(index_name, "mysql")}`);
         
             if (indexesToDrop.length > 0) {
                 queries.push({
-                    query: `ALTER TABLE ${schemaPrefix}\`${table}\` ${indexesToDrop.join(", ")};`,
+                    query: `ALTER TABLE ${schemaPrefix}${escapeIdentifier(table, "mysql")} ${indexesToDrop.join(", ")};`,
                     params: []
                 });
             }
         }
         
-        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema, this.getConfig());
+        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.getConfig().schema, this.getConfig());
         queries.push(...alterQueries);
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getAddPrimaryKeyQuery(table, alterTableChanges.primaryKeyChanges));
@@ -245,7 +254,7 @@ export class MySQLDatabase extends Database {
     }
 
     getDropTableQuery(table: string): QueryInput {
-        return MySQLTableQueryBuilder.getDropTableQuery(table, this.config.schema);
+        return MySQLTableQueryBuilder.getDropTableQuery(table, this.getConfig().schema);
     }
 
     getTableExistsQuery(schema: string, table: string): QueryInput {
@@ -257,35 +266,35 @@ export class MySQLDatabase extends Database {
     }
 
     getPrimaryKeysQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getPrimaryKeysQuery(table, this.config.schema);
+        return MySQLIndexQueryBuilder.getPrimaryKeysQuery(table, this.getConfig().schema);
     }
 
     getForeignKeyConstraintsQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.config.schema);
+        return MySQLIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.getConfig().schema);
     }
 
     getViewDependenciesQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getViewDependenciesQuery(table, this.config.schema);
+        return MySQLIndexQueryBuilder.getViewDependenciesQuery(table, this.getConfig().schema);
     }
 
     getDropPrimaryKeyQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.config.schema);
+        return MySQLIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.getConfig().schema);
     }
 
     getDropUniqueConstraintQuery(table: string, indexName: string): QueryInput {
-        return MySQLIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.config.schema);
+        return MySQLIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.getConfig().schema);
     }
 
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
-        return MySQLIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.config.schema);
+        return MySQLIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.getConfig().schema);
     }
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
-        return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
+        return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.getConfig().schema);
     }
 
     getSplitTablesQuery(table: string): QueryInput {
-        return MySQLTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
+        return MySQLTableQueryBuilder.getSplitTablesQuery(table, this.getConfig().schema);
     }
 
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
@@ -301,10 +310,10 @@ export class MySQLDatabase extends Database {
     }
 
     getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput {
-        return MySQLTableQueryBuilder.getCreateTempTableQuery(table, this.config.schema, stagingPrefix)
+        return MySQLTableQueryBuilder.getCreateTempTableQuery(table, this.getConfig().schema, stagingPrefix)
     }
 
     getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, stagingPrefix?: string): QueryInput {
-        return MySQLIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.config.schema, stagingPrefix)
+        return MySQLIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.getConfig().schema, stagingPrefix)
     }
 }

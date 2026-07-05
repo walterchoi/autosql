@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import { MetadataHeader, DatabaseConfig, QueryInput } from '../config/types';
-import { mysqlConfig } from '../db/config/mysqlConfig';
+import { MetadataHeader, DatabaseConfig, QueryInput, supportedDialects } from '../config/types';
+import { escapeIdentifier, assertSafeLength } from '../db/utils/escape';
 
 // Generate an 8-char hex run ID for unique staging table names
 export function generateRunId(): string {
@@ -24,6 +24,16 @@ export function isAutosqlStreamTable(tableName: string, table: string, prefix: s
     return /^[0-9a-f]{8}$/.test(suffix);
 }
 
+// --- Identifier escaping. Column names originate from arbitrary caller JSON keys and table/
+//     schema names from config, so every interpolated identifier must be quote-escaped (the
+//     rest of the query builders already route through escape.ts; the streaming path did not). ---
+function qi(name: string, dialect: supportedDialects): string {
+    return escapeIdentifier(name, dialect);
+}
+function schemaPrefixFor(config: DatabaseConfig): string {
+    return config.schema ? `${escapeIdentifier(config.schema, config.sqlDialect)}.` : '';
+}
+
 /**
  * Build CREATE TABLE DDL for the untyped (all TEXT) stream staging table.
  * Columns come from the first write() chunk.
@@ -34,24 +44,16 @@ export function buildCreateStreamStagingTableQuery(
     config: DatabaseConfig
 ): QueryInput {
     const dialect = config.sqlDialect;
-    const schemaPrefix = config.schema
-        ? (dialect === 'mysql' ? `\`${config.schema}\`.` : `"${config.schema}".`)
-        : '';
-
-    const colDefs = columns.map(col =>
-        dialect === 'mysql' ? `\`${col}\` LONGTEXT` : `"${col}" TEXT`
-    ).join(',\n  ');
-
-    const tableRef = dialect === 'mysql'
-        ? `${schemaPrefix}\`${stagingTable}\``
-        : `${schemaPrefix}"${stagingTable}"`;
-
+    const schemaPrefix = schemaPrefixFor(config);
+    const colType = dialect === 'mysql' ? 'LONGTEXT' : 'TEXT';
+    const colDefs = columns.map(col => `${qi(col, dialect)} ${colType}`).join(',\n  ');
+    const tableRef = `${schemaPrefix}${qi(stagingTable, dialect)}`;
     return { query: `CREATE TABLE IF NOT EXISTS ${tableRef} (\n  ${colDefs}\n);`, params: [] };
 }
 
 /**
  * Build INSERT for a single chunk of rows into the stream staging table.
- * All values are cast to strings (TEXT columns).
+ * All values are cast to strings (TEXT columns) and parameter-bound.
  */
 export function buildInsertIntoStreamStagingQuery(
     stagingTable: string,
@@ -60,16 +62,8 @@ export function buildInsertIntoStreamStagingQuery(
     config: DatabaseConfig
 ): QueryInput {
     const dialect = config.sqlDialect;
-    const schemaPrefix = config.schema
-        ? (dialect === 'mysql' ? `\`${config.schema}\`.` : `"${config.schema}".`)
-        : '';
-    const tableRef = dialect === 'mysql'
-        ? `${schemaPrefix}\`${stagingTable}\``
-        : `${schemaPrefix}"${stagingTable}"`;
-
-    const escapedCols = dialect === 'mysql'
-        ? columns.map(c => `\`${c}\``).join(', ')
-        : columns.map(c => `"${c}"`).join(', ');
+    const tableRef = `${schemaPrefixFor(config)}${qi(stagingTable, dialect)}`;
+    const escapedCols = columns.map(c => qi(c, dialect)).join(', ');
 
     const params: any[] = [];
     const rowPlaceholders: string[] = [];
@@ -82,10 +76,6 @@ export function buildInsertIntoStreamStagingQuery(
                 params.push(v === null || v === undefined ? null : String(v));
             }
         }
-        return {
-            query: `INSERT INTO ${tableRef} (${escapedCols}) VALUES ${rowPlaceholders.join(', ')}`,
-            params
-        };
     } else {
         let paramIdx = 1;
         for (const row of rows) {
@@ -96,11 +86,11 @@ export function buildInsertIntoStreamStagingQuery(
                 params.push(v === null || v === undefined ? null : String(v));
             }
         }
-        return {
-            query: `INSERT INTO ${tableRef} (${escapedCols}) VALUES ${rowPlaceholders.join(', ')}`,
-            params
-        };
     }
+    return {
+        query: `INSERT INTO ${tableRef} (${escapedCols}) VALUES ${rowPlaceholders.join(', ')}`,
+        params
+    };
 }
 
 /**
@@ -110,13 +100,7 @@ export function buildSelectFromStreamStagingQuery(
     stagingTable: string,
     config: DatabaseConfig
 ): QueryInput {
-    const dialect = config.sqlDialect;
-    const schemaPrefix = config.schema
-        ? (dialect === 'mysql' ? `\`${config.schema}\`.` : `"${config.schema}".`)
-        : '';
-    const tableRef = dialect === 'mysql'
-        ? `${schemaPrefix}\`${stagingTable}\``
-        : `${schemaPrefix}"${stagingTable}"`;
+    const tableRef = `${schemaPrefixFor(config)}${qi(stagingTable, config.sqlDialect)}`;
     return { query: `SELECT * FROM ${tableRef}`, params: [] };
 }
 
@@ -127,13 +111,7 @@ export function buildDropStreamStagingTableQuery(
     stagingTable: string,
     config: DatabaseConfig
 ): QueryInput {
-    const dialect = config.sqlDialect;
-    const schemaPrefix = config.schema
-        ? (dialect === 'mysql' ? `\`${config.schema}\`.` : `"${config.schema}".`)
-        : '';
-    const tableRef = dialect === 'mysql'
-        ? `${schemaPrefix}\`${stagingTable}\``
-        : `${schemaPrefix}"${stagingTable}"`;
+    const tableRef = `${schemaPrefixFor(config)}${qi(stagingTable, config.sqlDialect)}`;
     return { query: `DROP TABLE IF EXISTS ${tableRef}`, params: [] };
 }
 
@@ -172,13 +150,13 @@ const PG_TIME    = ['time'];
 const PG_BOOL    = ['boolean'];
 
 function mysqlCast(col: string, colDef: { type: string | null; length?: number; decimal?: number }): string {
-    const q = `\`${col}\``;
+    const q = qi(col, 'mysql');
     const t = (colDef.type || '').toLowerCase();
     if (MYSQL_NUMERIC.includes(t)) return `CAST(${q} AS SIGNED)`;
     if (MYSQL_FLOAT.includes(t))   return `CAST(${q} AS DECIMAL)`;
     if (t === 'decimal') {
-        const len  = colDef.length  ?? 10;
-        const dec  = colDef.decimal ?? 2;
+        const len = assertSafeLength(colDef.length  ?? 10, 'length');
+        const dec = assertSafeLength(colDef.decimal ?? 2, 'decimal');
         return `CAST(${q} AS DECIMAL(${len},${dec}))`;
     }
     if (MYSQL_DATETIME.includes(t)) return `CAST(${q} AS DATETIME)`;
@@ -189,15 +167,15 @@ function mysqlCast(col: string, colDef: { type: string | null; length?: number; 
 }
 
 function pgCast(col: string, colDef: { type: string | null; length?: number; decimal?: number }): string {
-    const q = `"${col}"`;
+    const q = qi(col, 'pgsql');
     const t = (colDef.type || '').toLowerCase();
     if (PG_INT.includes(t))    return `${q}::INTEGER`;
     if (PG_BIGINT.includes(t)) return `${q}::BIGINT`;
     if (PG_SMALL.includes(t))  return `${q}::SMALLINT`;
     if (PG_FLOAT.includes(t))  return `${q}::FLOAT`;
     if (t === 'decimal') {
-        const len = colDef.length  ?? 10;
-        const dec = colDef.decimal ?? 2;
+        const len = assertSafeLength(colDef.length  ?? 10, 'length');
+        const dec = assertSafeLength(colDef.decimal ?? 2, 'decimal');
         return `${q}::DECIMAL(${len},${dec})`;
     }
     if (PG_TS.includes(t))   return `${q}::TIMESTAMP`;
@@ -219,42 +197,35 @@ export function buildMergeFromStreamQuery(
     config: DatabaseConfig
 ): QueryInput {
     const dialect = config.sqlDialect;
-    const schemaPrefix = config.schema
-        ? (dialect === 'mysql' ? `\`${config.schema}\`.` : `"${config.schema}".`)
-        : '';
+    const schemaPrefix = schemaPrefixFor(config);
 
     const columns = Object.keys(metaData);
     const primaryKeys = columns.filter(c => metaData[c].primary);
+    const mainRef    = `${schemaPrefix}${qi(table, dialect)}`;
+    const stagingRef = `${schemaPrefix}${qi(stagingTable, dialect)}`;
+    const colList  = columns.map(c => qi(c, dialect)).join(', ');
 
     if (dialect === 'mysql') {
-        const mainRef    = `${schemaPrefix}\`${table}\``;
-        const stagingRef = `${schemaPrefix}\`${stagingTable}\``;
-        const colList  = columns.map(c => `\`${c}\``).join(', ');
         const castList = columns.map(c => mysqlCast(c, metaData[c])).join(', ');
-
         let q = `INSERT INTO ${mainRef} (${colList}) SELECT ${castList} FROM ${stagingRef}`;
 
         if (insertType === 'UPDATE') {
             const updateCols = columns.filter(c => !primaryKeys.includes(c) && !(metaData[c].calculated && metaData[c].updatedCalculated === false));
             if (updateCols.length > 0) {
-                const set = updateCols.map(c => `\`${c}\` = VALUES(\`${c}\`)`).join(', ');
+                const set = updateCols.map(c => `${qi(c, dialect)} = VALUES(${qi(c, dialect)})`).join(', ');
                 q += ` ON DUPLICATE KEY UPDATE ${set}`;
             }
         }
         return { query: q, params: [] };
     } else {
-        const mainRef    = `${schemaPrefix}"${table}"`;
-        const stagingRef = `${schemaPrefix}"${stagingTable}"`;
-        const colList  = columns.map(c => `"${c}"`).join(', ');
         const castList = columns.map(c => pgCast(c, metaData[c])).join(', ');
-
         let q = `INSERT INTO ${mainRef} (${colList}) SELECT ${castList} FROM ${stagingRef}`;
 
         if (insertType === 'UPDATE' && primaryKeys.length > 0) {
             const updateCols = columns.filter(c => !primaryKeys.includes(c) && !(metaData[c].calculated && metaData[c].updatedCalculated === false));
-            const conflict = `ON CONFLICT (${primaryKeys.map(c => `"${c}"`).join(', ')})`;
+            const conflict = `ON CONFLICT (${primaryKeys.map(c => qi(c, dialect)).join(', ')})`;
             if (updateCols.length > 0) {
-                const set = updateCols.map(c => `"${c}" = EXCLUDED."${c}"`).join(', ');
+                const set = updateCols.map(c => `${qi(c, dialect)} = EXCLUDED.${qi(c, dialect)}`).join(', ');
                 q += ` ${conflict} DO UPDATE SET ${set}`;
             } else {
                 q += ` ${conflict} DO NOTHING`;
@@ -271,12 +242,8 @@ export function buildBootstrapRejectedRowsQuery(config: DatabaseConfig): QueryIn
     const dialect   = config.sqlDialect;
     const schema    = config.rejectedRowsSchema || config.schema;
     const tableName = config.rejectedRowsTable!;
-    const prefix    = schema
-        ? (dialect === 'mysql' ? `\`${schema}\`.` : `"${schema}".`)
-        : '';
-    const tableRef  = dialect === 'mysql'
-        ? `${prefix}\`${tableName}\``
-        : `${prefix}"${tableName}"`;
+    const prefix    = schema ? `${escapeIdentifier(schema, dialect)}.` : '';
+    const tableRef  = `${prefix}${qi(tableName, dialect)}`;
 
     const ddl = dialect === 'mysql'
         ? `CREATE TABLE IF NOT EXISTS ${tableRef} (
@@ -304,12 +271,8 @@ export function buildInsertRejectedRowsQuery(
     const dialect   = config.sqlDialect;
     const schema    = config.rejectedRowsSchema || config.schema;
     const tableName = config.rejectedRowsTable!;
-    const prefix    = schema
-        ? (dialect === 'mysql' ? `\`${schema}\`.` : `"${schema}".`)
-        : '';
-    const tableRef  = dialect === 'mysql'
-        ? `${prefix}\`${tableName}\``
-        : `${prefix}"${tableName}"`;
+    const prefix    = schema ? `${escapeIdentifier(schema, dialect)}.` : '';
+    const tableRef  = `${prefix}${qi(tableName, dialect)}`;
 
     const now = new Date().toISOString().slice(0, 19).replace('T', ' ');
 

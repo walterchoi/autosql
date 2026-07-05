@@ -1,5 +1,6 @@
 import { AlterTableChanges, MetadataHeader, QueryInput } from '../config/types';
 import { DialectConfig } from '../config/types';
+import { escapeIdentifier, assertSafeTypeToken, assertSafeLength } from '../db/utils/escape';
 
 /**
  * Builds best-effort compensating DDL to reverse a failed ALTER TABLE.
@@ -47,11 +48,25 @@ export function buildCompensatingDDL(
         return { queries: [], warnings };
     }
 
-    // MySQL: emit compensating queries as a best-effort safety net.
+    // MySQL: emit compensating queries as a best-effort safety net. Column names originate
+    // from AlterTableChanges (inferred from arbitrary caller JSON keys), so every identifier
+    // is quote-escaped and every type/length validated — same discipline as the main builders.
     const queries: QueryInput[] = [];
-    const q = '`';
-    const schemaPrefix = schema ? `${q}${schema}${q}.` : '';
-    const tbl = `${schemaPrefix}${q}${table}${q}`;
+    const qi = (name: string) => escapeIdentifier(name, 'mysql');
+    const schemaPrefix = schema ? `${qi(schema)}.` : '';
+    const tbl = `${schemaPrefix}${qi(table)}`;
+
+    // Build a validated `type[(len[,dec])]` fragment (rejects unsafe type tokens/lengths).
+    const buildTypeDef = (colType: string, length?: number, decimal?: number): string => {
+        assertSafeTypeToken(colType);
+        let typeDef = colType;
+        if (length && !dialectConfig.noLength.includes(colType)) {
+            typeDef += `(${assertSafeLength(length)}${
+                decimal && dialectConfig.decimals.includes(colType) ? `,${assertSafeLength(decimal)}` : ''
+            })`;
+        }
+        return typeDef;
+    };
 
     // 1. Reverse renames (newName → oldName) before other operations
     for (const { oldName, newName } of changes.renameColumns) {
@@ -61,15 +76,10 @@ export function buildCompensatingDDL(
         if (dialectConfig.translate.localToServer[colType]) {
             colType = dialectConfig.translate.localToServer[colType];
         }
-        let typeDef = colType;
-        if (col.length && !dialectConfig.noLength.includes(colType)) {
-            typeDef += `(${col.length}${
-                col.decimal && dialectConfig.decimals.includes(colType) ? `,${col.decimal}` : ''
-            })`;
-        }
+        const typeDef = buildTypeDef(colType, col.length, col.decimal);
         const nullability = col.allowNull ? 'NULL' : 'NOT NULL';
         queries.push({
-            query: `ALTER TABLE ${tbl} CHANGE COLUMN ${q}${newName}${q} ${q}${oldName}${q} ${typeDef} ${nullability};`,
+            query: `ALTER TABLE ${tbl} CHANGE COLUMN ${qi(newName)} ${qi(oldName)} ${typeDef} ${nullability};`,
             params: []
         });
     }
@@ -82,17 +92,12 @@ export function buildCompensatingDDL(
         if (dialectConfig.translate.localToServer[colType]) {
             colType = dialectConfig.translate.localToServer[colType];
         }
-        let typeDef = colType;
         // Use the merged length — it is >= the original length, so it safely holds
         // all pre-migration values while we restore the old type.
-        if (column.length && !dialectConfig.noLength.includes(colType)) {
-            typeDef += `(${column.length}${
-                column.decimal && dialectConfig.decimals.includes(colType) ? `,${column.decimal}` : ''
-            })`;
-        }
+        const typeDef = buildTypeDef(colType, column.length, column.decimal);
         const nullability = column.allowNull ? 'NULL' : 'NOT NULL';
         queries.push({
-            query: `ALTER TABLE ${tbl} MODIFY COLUMN ${q}${columnName}${q} ${typeDef} ${nullability};`,
+            query: `ALTER TABLE ${tbl} MODIFY COLUMN ${qi(columnName)} ${typeDef} ${nullability};`,
             params: []
         });
     }
@@ -101,7 +106,7 @@ export function buildCompensatingDDL(
     const addedCols = Object.keys(changes.addColumns);
     if (addedCols.length > 0) {
         const dropClauses = addedCols
-            .map(col => `DROP COLUMN IF EXISTS ${q}${col}${q}`)
+            .map(col => `DROP COLUMN IF EXISTS ${qi(col)}`)
             .join(', ');
         queries.push({ query: `ALTER TABLE ${tbl} ${dropClauses};`, params: [] });
     }

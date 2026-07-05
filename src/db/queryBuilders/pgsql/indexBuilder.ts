@@ -43,7 +43,7 @@ export class PostgresIndexQueryBuilder {
     static getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
-            query: `ALTER TABLE ${schemaPrefix}${q(table)} DROP CONSTRAINT ${q(`${table}_pkey`)};`,
+            query: `ALTER TABLE ${schemaPrefix}${q(table)} DROP CONSTRAINT IF EXISTS ${q(`${table}_pkey`)};`,
             params: []
         };
     }
@@ -65,7 +65,6 @@ export class PostgresIndexQueryBuilder {
     }
 
     static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
-        const schemaPrefix = schema ? `"${schema}".` : "";
         let query = `
             SELECT i.relname AS index_name, array_to_string(array_agg(a.attname), ', ') AS columns
             FROM pg_index ix

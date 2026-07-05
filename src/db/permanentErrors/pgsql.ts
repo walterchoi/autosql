@@ -30,7 +30,8 @@ export const pgsqlPermanentErrors = [
   "0A000", // Feature not supported
   
   // Transaction and integrity issues
-  "40001", // Serialization failure
+  // NOTE: 40001 (serialization_failure) and 40P01 (deadlock) are intentionally NOT listed —
+  // they are transient and must reach runTransaction's whole-transaction retry.
 
   // Resource and system issues
   "53100", // Disk full

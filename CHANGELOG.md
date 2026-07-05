@@ -1,3 +1,17 @@
+## [1.4.2] - 2026-07-05
+### 🔒 Security
+- **Streaming SQL injection fixed.** The streaming builders (`openStream` → `write()`/`end()`) interpolated caller JSON keys (column names) and table/schema identifiers with bare quotes and no quote-doubling — an identifier break-out injection that the rest of the library already escaped. All streaming identifiers now route through the central escape module, and cast lengths are validated.
+- **Compensating-DDL injection fixed.** The MySQL best-effort DDL-rollback builder (reached when a DDL transaction fails) had the same raw-identifier flaw with inferred column names, plus unvalidated type/length. Now escaped and validated. A full sweep also hardened the remaining raw identifier sites in the dialect adapters (alter-path table/index names, schema-existence helpers). Only config-derived schema-history identifiers remain raw (not attacker-reachable).
+
+### 🐛 Bug Fixes (re-audit)
+- **Staging + `updatePrimaryKey` fixed.** `useStagingInsert` defaults to `true`, so setting `updatePrimaryKey: true` hard-failed `autoSQL` on the first fresh table — the staging temp table (`CREATE TABLE AS SELECT`, no keys) was PK-reconciled and emitted `DROP`/`ADD PRIMARY KEY` on a keyless table. Primary-key reconciliation is now skipped for staging tables (the real target is untouched); PG `DROP CONSTRAINT` is now `IF EXISTS`.
+- **Per-call `schema` override now applies to every statement.** ~15 DDL/staging/index builder wrappers still read the shared instance schema after the AsyncLocalStorage refactor, so `autoSQL(table, data, otherSchema)` created the table in one schema and inserted into another. All wrappers now use the effective (context) schema.
+- **Schema-lock timeout no longer double-releases** a pooled connection (both dialects). **Postgres serialization failures (`40001`) now retry** via the whole-transaction retry (they were misclassified as permanent). **`recordMigrationStart` returns `undefined`** (not `0`) on failure so callers don't run `UPDATE … WHERE id = 0`.
+- **Postgres:** each `RENAME COLUMN` is emitted as its own `ALTER TABLE` (Postgres rejects renames combined with other actions).
+- **Type inference:** `UNIQUE` is confirmed for dense unique columns (was mislabeled `pseudounique`); sampling re-evaluates the type on non-sampled rows (wide values no longer overflow); out-of-range `DD/MM`/`MM/DD` dates are rejected; index/key checks gate on byte length for multibyte data; `datetimetz` is preserved when collating with `date`; negative leading-zero strings (`-007`) stay text; `exponent` length handling corrected.
+
+---
+
 ## [1.4.1] - 2026-07-05
 ### 🐛 Bug Fixes (schema history)
 - **Version-race resilience.** `recordMigrationStart` computes `version = MAX(version)+1` against a `UNIQUE(table_name, version)` constraint; without a schema lock, concurrent migrations could collide. It now retries (recomputing the version) on a unique-constraint violation instead of failing the migration.

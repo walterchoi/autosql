@@ -109,7 +109,7 @@ export async function recordMigrationStart(
     table: string,
     previousSchema: MetadataHeader,
     changes: object
-): Promise<number> {
+): Promise<number | undefined> {
     const ref = historyTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
     const appliedBy = getAppliedBy();
@@ -171,9 +171,11 @@ RETURNING id`;
         const id = Number(result.results?.[0]?.id ?? 0);
         if (id > 0) return id;
         if (attempt < maxAttempts && UNIQUE_VIOLATION.test(result.error ?? '')) continue;
-        return 0;
+        // Failed to record the start — return undefined so callers' `id !== undefined`
+        // guard actually skips the follow-up UPDATE (a 0 would run UPDATE ... WHERE id = 0).
+        return undefined;
     }
-    return 0;
+    return undefined;
 }
 
 // ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         // Fidelity: a digit string with a leading zero (e.g. "007", "07030", phone numbers)
         // is an identifier, not a number — coercing it to an integer would silently drop the
         // leading zeros. Preserve the original representation as text.
-        if (/^0[0-9]+$/.test(strData)) {
+        if (/^-?0[0-9]+$/.test(strData)) {
             return "varchar";
         }
 
@@ -255,7 +255,9 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
                         }
                     }
                 } else if (overallTypeGroup === "date") {
-                    overallType = "datetime"; // Dates and times should be stored as datetime
+                    // Dates and times collapse to datetime — but preserve timezone-awareness:
+                    // any tz-aware member (e.g. date + datetimetz) widens the mix to datetimetz.
+                    overallType = (currentType === "datetimetz" || overallType === "datetimetz") ? "datetimetz" : "datetime";
                 }
             }
         }

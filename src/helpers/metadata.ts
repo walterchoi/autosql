@@ -57,13 +57,12 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         remainingData = shuffledData.slice(sampleSize); // Store remaining data
     }
 
-    // Cap uniqueSet per column to avoid unbounded memory on high-cardinality data.
-    // Threshold = minimum entries needed to confirm pseudounique (lower-bound approach):
-    // once uniqueSet.size / valueCount >= pseudoUnique, the column is definitively
-    // pseudounique and we stop inserting. Unique (100%) is only confirmed for columns
-    // that never saturate. For large datasets use sampling for full precision.
-    const pseudoUniqueThreshold = databaseConfig.pseudoUnique || defaults.pseudoUnique;
-    const uniqueSetCap = Math.ceil(pseudoUniqueThreshold * sampleData.length) + 1;
+    // Cap uniqueSet per column at the number of sampled rows (+1). This is enough to observe
+    // every distinct value in the sample and confirm 100% uniqueness, while still bounding
+    // memory to the data already held in memory. A cap tied to the pseudounique ratio
+    // (ceil(0.9 * N)) saturated a truly-unique column at ~0.9N rows, so `unique` could never
+    // be confirmed for any dense column of ~10+ rows — it was always mislabeled pseudounique.
+    const uniqueSetCap = sampleData.length + 1;
     const forceStringSet = new Set<string>(databaseConfig.forceStringColumns ?? []);
 
     for (const row of sampleData) {
@@ -132,7 +131,10 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 }
             }
             metaDataInterim[column].types.add(type);
-            if (groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) {
+            // `exponent` is a specialInt but normalizeNumber() returns null for "1.23e10", so the
+            // numeric length branch would split on "." and compute a bogus decimal length. It maps
+            // to a no-length DOUBLE anyway, so route it to the plain string-length branch.
+            if ((groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) && type !== "exponent") {
                 let valueStr = normalizeNumber(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
                 if(!valueStr) {
                     valueStr = String(value).trim();
@@ -190,9 +192,15 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     for (const row of remainingData) {
         for (const column of allColumns) {
             const value = row[column]
-            const type = metaData[column].type;
-            if(!type) continue;
-            if (groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) {
+            if (value === null || value === undefined) continue;
+            // Re-evaluate the type on non-sampled rows too (not just length): a wider value —
+            // an integer needing int/bigint, or a decimal/float on an int column — must upgrade
+            // the inferred type set, otherwise it overflows/truncates on insert. The type is
+            // re-collated from this set below.
+            const valueType = predictType(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
+            if(!valueType) continue;
+            metaDataInterim[column].types.add(valueType);
+            if ((groupings.intGroup.includes(valueType) || groupings.specialIntGroup.includes(valueType)) && valueType !== "exponent") {
                 let valueStr = normalizeNumber(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
                 if(!valueStr) {
                     valueStr = String(value).trim();
@@ -213,6 +221,16 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     for (const column in metaDataInterim) {
+        // When sampling was used, re-collate from the full type set (sample + remaining rows)
+        // so non-sampled values can widen the inferred type. Guarded on remainingData so the
+        // default (no-sampling) path is completely untouched. Text promotion is re-applied
+        // below off the final length.
+        if (remainingData.length > 0) {
+            const recollated = forceStringSet.has(column) ? "varchar" : collateTypes(metaDataInterim[column].types);
+            metaDataInterim[column].collated_type = recollated;
+            metaData[column].type = recollated;
+        }
+
         // If type is not decimal, but decimal is set, add + 1 (for the dot) to length and set decimal to 0. Do this to metaDataInterim[column] so that it can be used later.
         // Also replace the metaDataInterim[column].decimal with metaDataInterim[column].trueMaxDecimal as if decimals were rounded due to exceeding the max decimal length, we want to keep the true max decimal length when converting to a non-decimal type.
         if (!dialectConfig.decimals.includes(metaDataInterim[column].collated_type || 'varchar')) {
