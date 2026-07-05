@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'async_hooks';
 import { isValidSingleQuery } from './utils/validateQuery';
 import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges, InsertResult, MetadataHeader, QueryResult, InsertInput } from '../config/types';
 import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
@@ -11,13 +12,30 @@ export abstract class Database {
     protected config: DatabaseConfig;
     public autoSQLHandler!: AutoSQLHandler;
     protected abstract getPermanentErrors(): Promise<string[]>;
+    // Per-operation schema override. A schema-scoped call (e.g. autoSQL(table, data, schema))
+    // runs its whole async operation inside this context so concurrent calls with different
+    // schemas stay isolated instead of racing on a shared, mutated this.config.schema.
+    private schemaContext = new AsyncLocalStorage<string>();
 
     constructor(config: DatabaseConfig) {
         this.config = validateConfig(config);
     }
 
     public getConfig() {
+        const ctxSchema = this.schemaContext.getStore();
+        if (ctxSchema !== undefined) return { ...this.config, schema: ctxSchema };
         return this.config;
+    }
+
+    /**
+     * Run `fn` with `schema` as the effective config schema for the duration of the async
+     * operation (and everything it awaits), without mutating the shared instance config.
+     * Concurrent operations with different schemas do not interfere. A falsy schema runs
+     * `fn` unchanged against the configured schema.
+     */
+    public runWithSchema<T>(schema: string | undefined, fn: () => T): T {
+        if (!schema) return fn();
+        return this.schemaContext.run(schema, fn);
     }
 
     public updateTableMetadata(table: string, metaData: MetadataHeader, type: "metaData" | "existingMetaData" = "metaData"): void {

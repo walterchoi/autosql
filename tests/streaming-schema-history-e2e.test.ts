@@ -87,6 +87,7 @@ function makeDb(configOverrides: Partial<DatabaseConfig> = {}) {
     });
 
     return {
+        runWithSchema: (_s: any, fn: any) => fn(),
         getConfig: () => ({
             sqlDialect: "mysql" as const,
             useSchemaLock: false,
@@ -153,7 +154,6 @@ function makeHandle(
         "users",
         "autosql_stream__users__abc12345",
         opts.schema,
-        undefined,
         undefined
     );
     if (opts.stagingCreated) {

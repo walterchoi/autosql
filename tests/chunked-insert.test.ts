@@ -49,6 +49,7 @@ async function* makeChunks(chunks: Record<string, any>[][]): AsyncIterable<Recor
 
 function buildMockDb(overrides: Partial<Database> = {}): Database {
     return {
+        runWithSchema: (_s: any, fn: any) => fn(),
         getConfig: () => ({
             sqlDialect: "mysql" as const,
             useWorkers: false,

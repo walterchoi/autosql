@@ -110,6 +110,7 @@ const OK_RESULT = { start: new Date(), end: new Date(), duration: 0, success: tr
 
 function makeDb(configOverrides: Partial<DatabaseConfig> = {}) {
     return {
+        runWithSchema: (_s: any, fn: any) => fn(),
         getConfig: () => ({
             sqlDialect: "mysql" as const,
             useSchemaLock: false,
@@ -146,14 +147,14 @@ describe("AutoSQLStreamHandle", () => {
     test("write() with empty chunk is a no-op", async () => {
         const db = makeDb();
         const handler = makeHandler(db);
-        const handle = new AutoSQLStreamHandle(handler as any, db as any, "users", "autosql_stream__users__abc12345", undefined, undefined, undefined);
+        const handle = new AutoSQLStreamHandle(handler as any, db as any, "users", "autosql_stream__users__abc12345", undefined, undefined);
         await handle.write([]);
         expect(db.runTransaction).not.toHaveBeenCalled();
     });
 
     test("write() after end() throws", async () => {
         const db = makeDb();
-        const handle = new AutoSQLStreamHandle(makeHandler(db) as any, db as any, "users", "autosql_stream__users__abc12345", undefined, undefined, undefined);
+        const handle = new AutoSQLStreamHandle(makeHandler(db) as any, db as any, "users", "autosql_stream__users__abc12345", undefined, undefined);
         // Mark as ended by calling abort
         await handle.abort();
         await expect(handle.write([{ id: 1 }])).rejects.toThrow("write() called after end()/abort()");
@@ -161,7 +162,7 @@ describe("AutoSQLStreamHandle", () => {
 
     test("abort() drops staging table if created", async () => {
         const db = makeDb();
-        const handle = new AutoSQLStreamHandle(makeHandler(db) as any, db as any, "users", "autosql_stream__users__abc12345", undefined, undefined, undefined);
+        const handle = new AutoSQLStreamHandle(makeHandler(db) as any, db as any, "users", "autosql_stream__users__abc12345", undefined, undefined);
         // Simulate staging created
         (handle as any).stagingCreated = true;
         await handle.abort();
@@ -172,7 +173,7 @@ describe("AutoSQLStreamHandle", () => {
 
     test("abort() is a no-op when staging was never created", async () => {
         const db = makeDb();
-        const handle = new AutoSQLStreamHandle(makeHandler(db) as any, db as any, "users", "autosql_stream__users__abc12345", undefined, undefined, undefined);
+        const handle = new AutoSQLStreamHandle(makeHandler(db) as any, db as any, "users", "autosql_stream__users__abc12345", undefined, undefined);
         await handle.abort();
         expect(db.runTransaction).not.toHaveBeenCalled();
     });
