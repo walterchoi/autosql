@@ -32,9 +32,17 @@ import {
 
 export class AutoSQLHandler {
     private db: Database;
+    // Staging tables of streams that are currently open on this instance. Orphan cleanup must
+    // never drop these — a concurrent stream to the same table would otherwise destroy a live
+    // run's staging data (both share the `${prefix}${table}__` name pattern).
+    private activeStreamStagingTables = new Set<string>();
 
     constructor(dbInstance: MySQLDatabase | PostgresDatabase) {
         this.db = dbInstance;
+    }
+
+    releaseStreamStaging(stagingTable: string): void {
+        this.activeStreamStagingTables.delete(stagingTable);
     }
 
     async autoCreateTable(table: string, newMetaData: MetadataHeader, tableExists?: boolean, runQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
@@ -1035,6 +1043,7 @@ export class AutoSQLHandler {
 
         const runId = generateRunId();
         const stagingTable = buildStreamStagingTableName(table, prefix, runId);
+        this.activeStreamStagingTables.add(stagingTable);
 
         return new AutoSQLStreamHandle(this, this.db, table, stagingTable, schema, primaryKey, originalSchema);
     }
@@ -1054,6 +1063,7 @@ export class AutoSQLHandler {
         for (const row of result.results) {
             const name: string = row.table_name || row.TABLE_NAME;
             if (!isAutosqlStreamTable(name, table, prefix)) continue;
+            if (this.activeStreamStagingTables.has(name)) continue; // live stream on this instance — not an orphan
             this.db.warn(`autoSQLStream: dropping orphaned stream staging table '${name}' from a previous crashed run.`);
             const dropQ = buildDropStreamStagingTableQuery(name, config);
             await this.db.runTransaction([dropQ]).catch(e =>
@@ -1206,6 +1216,7 @@ export class AutoSQLStreamHandle {
                 );
             }
             if (this.schema) this.db.updateSchema(this.originalSchema);
+            this.handler.releaseStreamStaging(this.stagingTable);
         }
     }
 
@@ -1293,5 +1304,6 @@ export class AutoSQLStreamHandle {
             );
         }
         if (this.schema) this.db.updateSchema(this.originalSchema);
+        this.handler.releaseStreamStaging(this.stagingTable);
     }
 }
