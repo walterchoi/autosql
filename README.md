@@ -344,6 +344,7 @@ Defaults to `true`.
 
 - `stagingPrefix`: `string`
   Prefix applied to auto-created staging tables. Change this if your schema already has tables starting with the default prefix. Defaults to `"temp_staging__"`.
+  > **Note:** autosql identifies its throwaway staging tables by this prefix (they skip primary-key reconciliation, are dropped after each run, etc.). Do not name a real target table with the `stagingPrefix`, or it will be treated as a staging table.
 
 - `historyTableSuffix`: `string`
   Suffix applied to auto-created history tables. Change this if your schema already has tables ending with the default suffix. Defaults to `"__history"`.
