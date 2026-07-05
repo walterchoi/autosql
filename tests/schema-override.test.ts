@@ -44,5 +44,31 @@ Object.values(DB_CONFIG).forEach((config) => {
             expect(await countIn(OTHER)).toBe(2); // everything landed in the override schema
             expect(await countIn(BASE)).toBe(-1); // nothing was created in the base schema
         });
+
+        // Staging path (useStagingInsert:true) exercises the temp-table builders too — the
+        // ones the H2 fix routed through getConfig().schema. updatePrimaryKey:false avoids the
+        // separate, pre-existing staging+PK bug (documented) which is orthogonal to schema routing.
+        test("staging path also lands entirely in the override schema", async () => {
+            const stagingTable = "schema_override_staging_test";
+            const sref = (schema: string) => `${qi(schema)}.${qi(stagingTable)}`;
+            const stagingDb = Database.create({ ...config, schema: BASE, useStagingInsert: true, useWorkers: false, updatePrimaryKey: false }) as Database;
+            await stagingDb.establishConnection();
+            const cleanStaging = async () => {
+                await stagingDb.runQuery({ query: `DROP TABLE IF EXISTS ${sref(OTHER)}`, params: [] }).catch(() => {});
+                await stagingDb.runQuery({ query: `DROP TABLE IF EXISTS ${sref(BASE)}`, params: [] }).catch(() => {});
+            };
+            try {
+                await cleanStaging();
+                const res = await stagingDb.autoSQL(stagingTable, [{ id: 1, name: "a" }, { id: 2, name: "b" }], OTHER);
+                expect(res.success).toBe(true);
+                const inOther = await stagingDb.runQuery({ query: `SELECT COUNT(*) AS c FROM ${sref(OTHER)}`, params: [] });
+                expect(Number(Object.values(inOther.results![0])[0])).toBe(2);
+                const inBase = await stagingDb.runQuery({ query: `SELECT COUNT(*) AS c FROM ${sref(BASE)}`, params: [] });
+                expect(inBase.success).toBe(false); // base table never created
+            } finally {
+                await cleanStaging();
+                await stagingDb.closeConnection();
+            }
+        });
     });
 });

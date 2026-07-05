@@ -1,6 +1,7 @@
 ## [1.4.2] - 2026-07-05
 ### 🔒 Security
 - **Streaming SQL injection fixed.** The streaming builders (`openStream` → `write()`/`end()`) interpolated caller JSON keys (column names) and table/schema identifiers with bare quotes and no quote-doubling — an identifier break-out injection that the rest of the library already escaped. All streaming identifiers now route through the central escape module, and cast lengths are validated.
+- **Compensating-DDL injection fixed.** The MySQL best-effort DDL-rollback builder (reached when a DDL transaction fails) had the same raw-identifier flaw with inferred column names, plus unvalidated type/length. Now escaped and validated. A full sweep also hardened the remaining raw identifier sites in the dialect adapters (alter-path table/index names, schema-existence helpers). Only config-derived schema-history identifiers remain raw (not attacker-reachable).
 
 ### 🐛 Bug Fixes (re-audit)
 - **Per-call `schema` override now applies to every statement.** ~15 DDL/staging/index builder wrappers still read the shared instance schema after the AsyncLocalStorage refactor, so `autoSQL(table, data, otherSchema)` created the table in one schema and inserted into another. All wrappers now use the effective (context) schema.
