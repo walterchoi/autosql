@@ -11,6 +11,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "jest",
+    "test:unit": "jest --config jest.unit.config.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "prepublishOnly": "npm run test && npm run build",
@@ -47,6 +48,9 @@
     "mysql2": "^3.14.3",
     "pg": "^8.16.3",
     "ssh2": "^1.16.0"
+  },
+  "overrides": {
+    "handlebars": "4.7.9"
   },
   "bugs": {
     "url": "https://github.com/walterchoi/autosql/issues"
