@@ -188,7 +188,7 @@ export class MySQLDatabase extends Database {
     }
 
     getCreateTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
-        return MySQLTableQueryBuilder.getCreateTableQuery(table, headers, this.config);
+        return MySQLTableQueryBuilder.getCreateTableQuery(table, headers, this.getConfig());
     }
 
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
@@ -206,7 +206,7 @@ export class MySQLDatabase extends Database {
             alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
         }
         const queries: QueryInput[] = [];
-        const schemaPrefix = this.config.schema ? `\`${this.config.schema}\`.` : "";
+        const schemaPrefix = this.getConfig().schema ? `\`${this.getConfig().schema}\`.` : "";
         
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getDropPrimaryKeyQuery(table));
@@ -236,7 +236,7 @@ export class MySQLDatabase extends Database {
             }
         }
         
-        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema, this.getConfig());
+        const alterQueries = MySQLTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.getConfig().schema, this.getConfig());
         queries.push(...alterQueries);
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getAddPrimaryKeyQuery(table, alterTableChanges.primaryKeyChanges));
@@ -245,7 +245,7 @@ export class MySQLDatabase extends Database {
     }
 
     getDropTableQuery(table: string): QueryInput {
-        return MySQLTableQueryBuilder.getDropTableQuery(table, this.config.schema);
+        return MySQLTableQueryBuilder.getDropTableQuery(table, this.getConfig().schema);
     }
 
     getTableExistsQuery(schema: string, table: string): QueryInput {
@@ -257,35 +257,35 @@ export class MySQLDatabase extends Database {
     }
 
     getPrimaryKeysQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getPrimaryKeysQuery(table, this.config.schema);
+        return MySQLIndexQueryBuilder.getPrimaryKeysQuery(table, this.getConfig().schema);
     }
 
     getForeignKeyConstraintsQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.config.schema);
+        return MySQLIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.getConfig().schema);
     }
 
     getViewDependenciesQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getViewDependenciesQuery(table, this.config.schema);
+        return MySQLIndexQueryBuilder.getViewDependenciesQuery(table, this.getConfig().schema);
     }
 
     getDropPrimaryKeyQuery(table: string): QueryInput {
-        return MySQLIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.config.schema);
+        return MySQLIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.getConfig().schema);
     }
 
     getDropUniqueConstraintQuery(table: string, indexName: string): QueryInput {
-        return MySQLIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.config.schema);
+        return MySQLIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.getConfig().schema);
     }
 
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
-        return MySQLIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.config.schema);
+        return MySQLIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.getConfig().schema);
     }
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
-        return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
+        return MySQLIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.getConfig().schema);
     }
 
     getSplitTablesQuery(table: string): QueryInput {
-        return MySQLTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
+        return MySQLTableQueryBuilder.getSplitTablesQuery(table, this.getConfig().schema);
     }
 
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
@@ -301,10 +301,10 @@ export class MySQLDatabase extends Database {
     }
 
     getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput {
-        return MySQLTableQueryBuilder.getCreateTempTableQuery(table, this.config.schema, stagingPrefix)
+        return MySQLTableQueryBuilder.getCreateTempTableQuery(table, this.getConfig().schema, stagingPrefix)
     }
 
     getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, stagingPrefix?: string): QueryInput {
-        return MySQLIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.config.schema, stagingPrefix)
+        return MySQLIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.getConfig().schema, stagingPrefix)
     }
 }

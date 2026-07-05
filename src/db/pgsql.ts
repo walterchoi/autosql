@@ -209,7 +209,7 @@ export class PostgresDatabase extends Database {
     }
 
     getCreateTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
-            return PostgresTableQueryBuilder.getCreateTableQuery(table, headers, this.config);
+            return PostgresTableQueryBuilder.getCreateTableQuery(table, headers, this.getConfig());
         }
     
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
@@ -228,7 +228,7 @@ export class PostgresDatabase extends Database {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }
         const queries: QueryInput[] = [];
-        const schemaPrefix = this.config.schema ? `"${this.config.schema}".` : "";
+        const schemaPrefix = this.getConfig().schema ? `"${this.getConfig().schema}".` : "";
 
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getDropPrimaryKeyQuery(table));
@@ -262,7 +262,7 @@ export class PostgresDatabase extends Database {
                 }
         }
         // Get actual ALTER TABLE queries
-        const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.config.schema, this.getConfig());
+        const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.getConfig().schema, this.getConfig());
         queries.push(...alterQueries);
 
         // Add New Primary Key (if changed and allowed)
@@ -276,7 +276,7 @@ export class PostgresDatabase extends Database {
     }
 
     getDropTableQuery(table: string): QueryInput {
-        return PostgresTableQueryBuilder.getDropTableQuery(table, this.config.schema);
+        return PostgresTableQueryBuilder.getDropTableQuery(table, this.getConfig().schema);
     }
 
     getTableExistsQuery(schema: string, table: string): QueryInput {
@@ -288,35 +288,35 @@ export class PostgresDatabase extends Database {
     }
 
     getPrimaryKeysQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getPrimaryKeysQuery(table, this.config.schema);
+        return PostgresIndexQueryBuilder.getPrimaryKeysQuery(table, this.getConfig().schema);
     }
 
     getForeignKeyConstraintsQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.config.schema);
+        return PostgresIndexQueryBuilder.getForeignKeyConstraintsQuery(table, this.getConfig().schema);
     }
 
     getViewDependenciesQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getViewDependenciesQuery(table, this.config.schema);
+        return PostgresIndexQueryBuilder.getViewDependenciesQuery(table, this.getConfig().schema);
     }
 
     getDropPrimaryKeyQuery(table: string): QueryInput {
-        return PostgresIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.config.schema);
+        return PostgresIndexQueryBuilder.getDropPrimaryKeyQuery(table, this.getConfig().schema);
     }
 
     getDropUniqueConstraintQuery(table: string, indexName: string): QueryInput {
-        return PostgresIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.config.schema);
+        return PostgresIndexQueryBuilder.getDropUniqueConstraintQuery(table, indexName, this.getConfig().schema);
     }
 
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[]): QueryInput {
-        return PostgresIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.config.schema);
+        return PostgresIndexQueryBuilder.getAddPrimaryKeyQuery(table, primaryKeys, this.getConfig().schema);
     }
 
     getUniqueIndexesQuery(table: string, column_name?: string): QueryInput {
-        return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.config.schema);
+        return PostgresIndexQueryBuilder.getUniqueIndexesQuery(table, column_name, this.getConfig().schema);
     }
 
     getSplitTablesQuery(table: string): QueryInput {
-        return PostgresTableQueryBuilder.getSplitTablesQuery(table, this.config.schema);
+        return PostgresTableQueryBuilder.getSplitTablesQuery(table, this.getConfig().schema);
     }
 
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
@@ -332,10 +332,10 @@ export class PostgresDatabase extends Database {
     }
 
     getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput {
-        return PostgresTableQueryBuilder.getCreateTempTableQuery(table, this.config.schema, stagingPrefix)
+        return PostgresTableQueryBuilder.getCreateTempTableQuery(table, this.getConfig().schema, stagingPrefix)
     }
 
     getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, stagingPrefix?: string): QueryInput {
-        return PostgresIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.config.schema, stagingPrefix)
+        return PostgresIndexQueryBuilder.generateConstraintConflictBreakdownQuery(table, structure, this.getConfig().schema, stagingPrefix)
     }
 }
