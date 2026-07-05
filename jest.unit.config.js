@@ -25,5 +25,7 @@ module.exports = {
     'tests/exponent-column\\.test\\.ts',
     'tests/schema-history-db\\.test\\.ts',
     'tests/transaction-atomicity\\.test\\.ts',
+    'tests/stream-injection\\.test\\.ts',
+    'tests/schema-override\\.test\\.ts',
   ],
 };
