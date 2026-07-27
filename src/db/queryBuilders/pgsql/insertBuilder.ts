@@ -31,13 +31,17 @@ export class PostgresInsertQueryBuilder {
             throw new Error(`No data provided for insert into table "${table}"`);
         }
 
-        const columns = Object.keys(header);
+        // In surrogate-key mode, omit the database-generated auto-increment (surrogate) column
+        // from the INSERT column list, matching getInsertValues. Gated on `surrogateKey` so a
+        // genuine SERIAL primary key (introspected as autoIncrement:true) whose values a caller
+        // supplies for upsert is not dropped.
+        const columns = Object.keys(header).filter(col => !(databaseConfig?.surrogateKey && header[col].autoIncrement === true));
 
         // Flatten values
         let params: any[] = [];
         if (typeof rows[0] === "object" && !Array.isArray(rows[0])) {
             const normalisedChunk = (rows as Record<string, any>[]).map(row =>
-                getInsertValues(header, row, undefined, undefined, false) // ⬅ false = flatten
+                getInsertValues(header, row, undefined, databaseConfig, false) // ⬅ false = flatten (databaseConfig enables opt-in sanitizeInvalidChars)
             );
             params = normalisedChunk.flat();
         } else {
@@ -111,7 +115,11 @@ export class PostgresInsertQueryBuilder {
         const stagingPrefix = typeof tableOrInput === "object" ? tableOrInput.stagingPrefix : undefined;
         const tempTable = getTempTableName(table, stagingPrefix);
 
-        const columns = Object.keys(header);
+        // In surrogate-key mode, omit the database-generated auto-increment (surrogate) column
+        // from the INSERT column list, matching getInsertValues. Gated on `surrogateKey` so a
+        // genuine SERIAL primary key (introspected as autoIncrement:true) whose values a caller
+        // supplies for upsert is not dropped.
+        const columns = Object.keys(header).filter(col => !(databaseConfig?.surrogateKey && header[col].autoIncrement === true));
         const escapedCols = columns.map(col => q(col)).join(", ");
         const selectCols = columns.map(col => q(col)).join(", ");
 

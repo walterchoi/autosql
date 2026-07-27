@@ -3,6 +3,7 @@ import { PostgresDatabase } from "./pgsql";
 import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
+import { applySurrogateKey } from "../helpers/keys";
 import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
@@ -150,6 +151,10 @@ export class AutoSQLHandler {
                 this.db.log("Fetching metadata since no current metadata was provided...");
                 const { currentMetaData, tableExists: exists } = await this.fetchTableMetadata(table);
                 tableExists = exists;
+
+                // Standalone path (metadata inferred above, not supplied by the caller): apply the
+                // opt-in surrogate key now that the existing table is known, so it stays sticky.
+                updatedMetadata = applySurrogateKey(updatedMetadata, currentMetaData, this.db.getConfig());
 
                 if (currentMetaData) {
                     // ✅ Compare metadata if table exists
@@ -352,21 +357,41 @@ export class AutoSQLHandler {
         const { currentMetaData } = await this.fetchTableMetadata(table);
         
         // Generate new metadata from incoming data
-        const newMetaData = await getMetaData(this.db.getConfig(), data, primaryKey);
+        let newMetaData = await getMetaData(this.db.getConfig(), data, primaryKey);
+        // Apply the opt-in surrogate key, sticky to the existing table so re-ingestion stays
+        // idempotent (see applySurrogateKey). No-op unless config.surrogateKey is enabled.
+        newMetaData = applySurrogateKey(newMetaData, currentMetaData, this.db.getConfig());
         this.db.updateTableMetadata(table, newMetaData, "metaData");
-    
+
         let initialComparedMetaData : { changes: AlterTableChanges; updatedMetaData: MetadataHeader } | undefined;
         let mergedMetaData: MetadataHeader = newMetaData;
         let changes: AlterTableChanges | null = null;
-    
+
         if (currentMetaData) {
             initialComparedMetaData  = compareMetaData(currentMetaData, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
             changes = initialComparedMetaData .changes;
             mergedMetaData = initialComparedMetaData.updatedMetaData;
             this.db.updateTableMetadata(table, mergedMetaData, "metaData");
         }
-    
+
+        // Add the dwh_* timestamp columns to the merged metadata AFTER comparison, so they carry
+        // the calculatedDefault that populates them on insert (comparison would otherwise merge in
+        // the value-less introspected definition on re-ingest, inserting NULL). For an existing
+        // table, a dwh column that is not already on the real table is genuinely new and must be
+        // folded into the ALTER (addColumns) — otherwise the real table never gets it and the
+        // staging copy fails. Columns already on the table are left untouched (re-adding would
+        // duplicate). No-op when addTimestamps is off.
+        const beforeTimestamps = new Set(Object.keys(mergedMetaData));
         mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData, new Date());
+        if (currentMetaData && initialComparedMetaData) {
+            for (const col of Object.keys(mergedMetaData)) {
+                if (!beforeTimestamps.has(col) && !(col in currentMetaData)) {
+                    initialComparedMetaData.changes.addColumns[col] = mergedMetaData[col];
+                }
+            }
+            changes = initialComparedMetaData.changes;
+            this.db.updateTableMetadata(table, mergedMetaData, "metaData");
+        }
     
         return { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData };
     }
@@ -575,12 +600,26 @@ export class AutoSQLHandler {
     }
 
     private async insertStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
+        // The staging temp table was just created with CREATE TABLE AS SELECT from the
+        // already-configured real table, so its columns already match. Re-applying the real
+        // table's ALTER changes (addColumns/modifyColumns) here would try to add columns the
+        // CTAS copy already has ("duplicate column" / "already exists"). Clear the changes so
+        // staging configuration is a no-op, but keep updatedMetaData so the insert still resolves
+        // per-column values (e.g. the dwh_* timestamp defaults) for the temp table.
+        const emptyChanges: AlterTableChanges = {
+            addColumns: {}, modifyColumns: {}, dropColumns: [], renameColumns: [],
+            nullableColumns: [], noLongerUnique: [], primaryKeyChanges: [],
+        };
         const stagingInputs: InsertInput[] = insertInput.map(input => ({
             ...input,
             table: getTempTableName(input.table, input.stagingPrefix),
-            insertType: "INSERT"
+            insertType: "INSERT",
+            previousMetaData: emptyChanges,
+            comparedMetaData: input.comparedMetaData
+                ? { changes: emptyChanges, updatedMetaData: input.comparedMetaData.updatedMetaData }
+                : undefined,
         }));
-        // Configure staging tables where necessary
+        // Configure staging tables where necessary (no-op schema changes; CTAS already matched)
         await this.configureTables(stagingInputs)
         return await this.insertData(stagingInputs)
     }

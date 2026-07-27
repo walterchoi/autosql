@@ -126,7 +126,11 @@ export interface DatabaseConfig {
   updatePrimaryKey?: boolean;
   primaryKey?: string[];
 
-  // Table creation and charset settings
+  // Table creation and charset settings.
+  // These also pin the connection encoding: MySQL connects with `charset` (defaults to the
+  // dialect's utf8mb4) and Postgres with `client_encoding` from `encoding` (defaults to UTF8),
+  // so 4-byte characters (emoji, some CJK) are transferred intact rather than failing with a
+  // MySQL `Incorrect string value` error against an otherwise-utf8mb4 table.
   engine?: string;
   charset?: string;
   collate?: string;
@@ -139,6 +143,11 @@ export interface DatabaseConfig {
   decimalMaxLength?: number;  // Automatically round decimals to a maximum of X decimal places — defaults to 10
   maxKeyLength?: number;      // Limits indexes / primary keys from using columns that are longer than this length — defaults to 255
   maxVarcharLength?: number;  // Prevents varchar columns from exceeding this length, autoconverts to text — defaults to 1024
+
+  // Add an auto-increment surrogate key (BIGINT AUTO_INCREMENT / BIGSERIAL) when no natural
+  // key is found, so a table can still be created. A natural key always wins. Off by default.
+  surrogateKey?: boolean;
+  surrogateKeyColumn?: string; // Column name for the surrogate — defaults to "autosql_id"
 
   // Force specific columns to always be stored as varchar regardless of their content.
   // Use this for string-encoded identifiers that would otherwise be inferred as numeric
@@ -172,6 +181,7 @@ export interface DatabaseConfig {
   addNested?: boolean; // Extracts nested JSON values into separate tables with composite primary keys -- defaults to FALSE
   nestedTables?: string[]; // Nested Table names to apply nested extraction on -- if nesting `columnA` on `tableB`, this would be [`tableB_columnA`]
   excludeBlankColumns?: boolean; // Exclude columns from insert queries if all their values are null or undefined -- defaults to TRUE  
+  sanitizeInvalidChars?: boolean; // Strip NUL bytes and unpaired UTF-16 surrogates from string values before insert -- defaults to FALSE
 
   // Performance scaling
   useWorkers?: boolean;   // Enables parallel worker threads — defaults to true
@@ -328,6 +338,19 @@ Defaults to `false`.
 - `excludeBlankColumns`: `boolean`  
 When enabled, columns that contain only null or undefined values across all rows are excluded from the generated insert queries and parameter lists. This helps to avoid inserting empty data unnecessarily. 
 Defaults to `true`.
+
+- `sanitizeInvalidChars`: `boolean`  
+When enabled, string values are cleaned of characters a SQL text column cannot store before insert: NUL bytes (`U+0000`) are removed, and unpaired UTF-16 surrogates are replaced with the Unicode replacement character (`U+FFFD`). These otherwise hard-fail Postgres (`invalid byte sequence for encoding UTF8`, `unsupported Unicode escape sequence`) and can corrupt MySQL. Well-formed text — including emoji and non-ASCII scripts (日本語, café, Привет) — is left untouched. Enable this when ingesting free-text that may contain pasted or malformed bytes. Note this is a separate concern from connection charset: emoji/CJK that fail with a MySQL `Incorrect string value` error are fixed by the pinned connection charset (see `charset` / `encoding`), not by this option.  
+Defaults to `false` (it mutates data, so it is opt-in).
+
+- `surrogateKey`: `boolean` / `surrogateKeyColumn`: `string`  
+When a dataset has no natural primary key, enabling `surrogateKey` adds an auto-increment surrogate column (`BIGINT AUTO_INCREMENT` on MySQL, `BIGSERIAL` on Postgres) so the table can still be created and Postgres upserts have a conflict target. The column is named `autosql_id` unless you override it with `surrogateKeyColumn`.
+  - **A natural key always wins** — the surrogate is only a fallback used when no single-column or composite key is found.
+  - **Sticky / idempotent** — the surrogate is anchored to the existing table: re-ingestion never thrashes the primary key, a later batch that happens to be unique cannot introduce a competing key, and an existing table without a surrogate never gains one.
+  - **Database-generated** — auto-increment columns are omitted from generated `INSERT` column lists so the database assigns the value.
+  - **Append semantics** — because the surrogate is unique per physical insert, every ingest **appends**; upsert (`insertType: "UPDATE"`) never matches an existing row. Provide a natural `primaryKey` if you need upserts.
+  - Not compatible with `addHistory`, `addNested`, or `autoSplit` (config validation throws). Applies to `autoSQL` / `autoSQLChunked`.
+Defaults to `false`.
 
 
 - `nestedTables`: `string[]`  

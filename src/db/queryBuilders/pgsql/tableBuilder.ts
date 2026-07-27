@@ -34,10 +34,14 @@ export class PostgresTableQueryBuilder {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
 
-            // Use SERIAL for Auto-incrementing Primary Keys
+            // Use SERIAL family for Auto-incrementing Primary Keys. `bigint` must map to
+            // BIGSERIAL (int8) — mapping it to plain SERIAL (int4) silently capped the sequence
+            // at ~2.1B, which matters for large tables and for surrogate keys.
             if (column.autoIncrement) {
-                if (columnType === "int" || columnType === "bigint") {
+                if (columnType === "int") {
                     columnDef = `${q(columnName)} SERIAL`;
+                } else if (columnType === "bigint") {
+                    columnDef = `${q(columnName)} BIGSERIAL`;
                 } else {
                     throw new Error(`AUTO_INCREMENT (SERIAL) is not supported on type ${columnType} in PostgreSQL`);
                 }
@@ -123,8 +127,18 @@ export class PostgresTableQueryBuilder {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal ? `,${assertSafeLength(column.decimal)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
-            if (column.default !== undefined) columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
-    
+            if (column.default !== undefined) {
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+            } else if (!column.allowNull && column.calculated) {
+                // A NOT NULL calculated timestamp (e.g. dwh_created_at) added to a table that may
+                // already contain rows needs a DEFAULT, or ADD COLUMN fails the NOT NULL
+                // constraint on those pre-existing rows. Backfill them with the alter-time value
+                // (their true creation time is unknown); new rows still get the per-row
+                // calculatedDefault at insert. Every calculated column autosql creates is a
+                // timestamp, so CURRENT_TIMESTAMP is the correct backfill.
+                columnDef += ` DEFAULT CURRENT_TIMESTAMP`;
+            }
+
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         };
     

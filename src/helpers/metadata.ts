@@ -189,6 +189,51 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         }
     }
 
+    // Sampling caveat: the unique/pseudounique flags above were derived from the sample only.
+    // A column that is 100% unique across the sample but has duplicates in the unsampled
+    // remainder would otherwise get a UNIQUE constraint at CREATE TABLE (and could be chosen
+    // as the primary key), then fail on insert of the full data — a "passes in test, breaks in
+    // prod" bug. Re-validate just the few columns still flagged `unique` against the full
+    // dataset and demote any that aren't actually unique. Only runs when sampling split the
+    // data (remainingData is empty otherwise, so the flags already reflect the full dataset).
+    // A truly-unique column is never saturated (distinct == sampleSize < cap), so its uniqueSet
+    // holds every sampled value and the continuation below is exact.
+    if (remainingData.length > 0) {
+        const isNullish = (v: any) => v === '' || v === null || v === undefined || v === '\\N' || v === 'null';
+        for (const column in metaData) {
+            if (!metaData[column].unique) continue;
+            const seen = new Set(metaDataInterim[column].uniqueSet);
+            let valueCount = metaDataInterim[column].valueCount;
+            let duplicate = false;
+            for (const row of remainingData) {
+                const value = row[column];
+                if (isNullish(value)) continue;
+                let normalized: any;
+                if (forceStringSet.has(column)) {
+                    normalized = String(value);
+                } else {
+                    const t = predictType(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
+                    normalized = t ? sqlize(value, t, dialectConfig, databaseConfig) : String(value);
+                }
+                valueCount++;
+                if (seen.has(normalized)) {
+                    duplicate = true;
+                } else {
+                    seen.add(normalized);
+                }
+            }
+            if (duplicate) {
+                metaData[column].unique = false;
+                // Demote to pseudounique if still highly distinct across the full data, so the
+                // column can still serve as an index / composite-key candidate downstream.
+                const ratio = valueCount > 0 ? seen.size / valueCount : 0;
+                if (ratio >= (databaseConfig.pseudoUnique || defaults.pseudoUnique)) {
+                    metaData[column].pseudounique = true;
+                }
+            }
+        }
+    }
+
     for (const row of remainingData) {
         for (const column of allColumns) {
             const value = row[column]

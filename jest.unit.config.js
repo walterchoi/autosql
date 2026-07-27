@@ -28,5 +28,10 @@ module.exports = {
     'tests/stream-injection\\.test\\.ts',
     'tests/schema-override\\.test\\.ts',
     'tests/staging-primary-key\\.test\\.ts',
+    'tests/surrogate-key-live\\.test\\.ts',
+    'tests/autoincrement-upsert-live\\.test\\.ts',
+    'tests/encoding-roundtrip-live\\.test\\.ts',
+    'tests/large-data-live\\.test\\.ts',
+    'tests/timestamps-external-table-live\\.test\\.ts',
   ],
 };
