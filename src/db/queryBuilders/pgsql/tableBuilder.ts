@@ -171,15 +171,22 @@ export class PostgresTableQueryBuilder {
             if (column.allowNull || changes.nullableColumns.includes(columnName)) {
                 alterColumnMap[columnName].push(`DROP NOT NULL`);
             }
-            if (column.default !== undefined) {
+            // Only re-assert a genuine, intended default. A null default is an introspection
+            // artefact (a column with no default reports column_default = NULL); emitting
+            // `SET DEFAULT NULL` on every type/length change is a no-op that also risks bad SQL.
+            if (column.default !== undefined && column.default !== null) {
                 alterColumnMap[columnName].push(`SET DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`);
             }
         };
-    
-        // ✅ Generate consolidated `ALTER COLUMN` statements
+
+        // Emit ONE `ALTER COLUMN` action per change. Postgres treats each SET/DROP as its own
+        // ALTER TABLE action; they must not be comma-joined under a single `ALTER COLUMN` prefix —
+        // `ALTER COLUMN c SET DATA TYPE x, SET DEFAULT y` is a syntax error at the bare second
+        // action (this broke widening an existing column on re-ingest).
         Object.keys(alterColumnMap).forEach(columnName => {
-            const changes = alterColumnMap[columnName].join(", ");
-            alterStatements.push(`ALTER COLUMN ${q(columnName)} ${changes}`);
+            for (const action of alterColumnMap[columnName]) {
+                alterStatements.push(`ALTER COLUMN ${q(columnName)} ${action}`);
+            }
         });
 
         // ✅ Handle `NULLABLE COLUMNS` separately (if not already modified)
