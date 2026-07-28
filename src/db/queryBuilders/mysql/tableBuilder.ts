@@ -29,12 +29,15 @@ export class MySQLTableQueryBuilder {
             assertSafeTypeToken(columnType);
             let columnDef = `${q(columnName)} ${columnType}`;
 
-            // Handle column lengths
-            if (column.length && !dialectConfig.noLength.includes(columnType)) {
+            // Handle column lengths. Never emit a display width for `tinyint`: it is cosmetic in
+            // MySQL, and `tinyint(1)` specifically is the boolean convention — a non-boolean
+            // tinyint written as `tinyint(1)` would be read back as boolean and trigger a
+            // destructive re-typing on the next ingest.
+            if (column.length && !dialectConfig.noLength.includes(columnType) && columnType !== "tinyint") {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
 
-            // Convert BOOLEAN → TINYINT(1) for MySQL
+            // Convert BOOLEAN → TINYINT(1) for MySQL (MySQL has no native boolean type).
             if (column.type === "boolean") {
                 columnDef = `${q(columnName)} TINYINT(1)`;
             }
@@ -122,8 +125,13 @@ export class MySQLTableQueryBuilder {
                 columnType = dialectConfig.translate.localToServer[columnType];
             }
             assertSafeTypeToken(columnType);
+            // Same tinyint invariant as CREATE: boolean → TINYINT(1); a non-boolean tinyint never
+            // carries a display width (a `tinyint(1)` would be read back as boolean). Keeping this
+            // consistent with CREATE/MODIFY is what makes the boolean/small-int round-trip converge.
             let columnDef = `${q(columnName)} ${columnType}`;
-            if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
+            if (column.type === "boolean") {
+                columnDef = `${q(columnName)} TINYINT(1)`;
+            } else if (column.length && !dialectConfig.noLength.includes(columnType) && columnType !== "tinyint") {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
@@ -150,8 +158,12 @@ export class MySQLTableQueryBuilder {
                 columnType = dialectConfig.translate.localToServer[columnType];
             }
             assertSafeTypeToken(columnType);
+            // Same tinyint invariant as CREATE/ADD: boolean → TINYINT(1); a non-boolean tinyint
+            // never carries a display width.
             let columnDef = `${q(columnName)} ${columnType}`;
-            if (column.length && !dialectConfig.noLength.includes(column.type || "")) {
+            if (column.type === "boolean") {
+                columnDef = `${q(columnName)} TINYINT(1)`;
+            } else if (column.length && !dialectConfig.noLength.includes(columnType) && columnType !== "tinyint") {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
 
@@ -213,9 +225,10 @@ export class MySQLTableQueryBuilder {
 
     static getTableMetaDataQuery(schema: string, table: string): QueryInput {
         return {
-            query: `SELECT 
-    c.COLUMN_NAME, 
+            query: `SELECT
+    c.COLUMN_NAME,
     c.DATA_TYPE,
+    c.COLUMN_TYPE,
     c.EXTRA,
     CASE 
         WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL THEN CONCAT(c.NUMERIC_PRECISION,',',c.NUMERIC_SCALE)
@@ -271,9 +284,10 @@ export class MySQLTableQueryBuilder {
         return {
             query: `
                 SELECT 
-                    c.COLUMN_NAME, 
+                    c.COLUMN_NAME,
                     c.TABLE_NAME,
                     c.DATA_TYPE,
+                    c.COLUMN_TYPE,
                     c.EXTRA,
                     CASE 
                         WHEN c.NUMERIC_PRECISION IS NOT NULL AND c.NUMERIC_SCALE IS NOT NULL 

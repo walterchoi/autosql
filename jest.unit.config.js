@@ -36,5 +36,7 @@ module.exports = {
     'tests/assume-schema-live\\.test\\.ts',
     'tests/column-widening-live\\.test\\.ts',
     'tests/orphan-staging-live\\.test\\.ts',
+    'tests/tinyint-roundtrip-live\\.test\\.ts',
+    'tests/reingest-idempotent-live\\.test\\.ts',
   ],
 };

@@ -306,9 +306,18 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
         if (!normalizedRow.column_name) return; // Skip invalid rows
 
         const lengthInfo = parseDatabaseLength(String(normalizedRow["length"]));
-        const dataType =
-            dialectConfig?.translate?.serverToLocal[normalizedRow.data_type.toLowerCase()] ||
-            normalizedRow["data_type"].toLowerCase();
+        const serverType = normalizedRow["data_type"].toLowerCase();
+        // MySQL has no native boolean: `tinyint(1)` is the boolean convention, while a plain
+        // `tinyint` is a small integer (autosql itself stores 0–255 values as `tinyint`). DATA_TYPE
+        // is just "tinyint" for both, so `serverToLocal` mapped every tinyint to boolean — on
+        // re-ingest that produced a spurious boolean→int conversion (`SET x = CASE WHEN x THEN 1
+        // ELSE 0 END`) that collapsed values to 0/1. Use COLUMN_TYPE (which carries the display
+        // width) to map only `tinyint(1)` to boolean; any other tinyint stays an integer.
+        const columnType = String(normalizedRow["column_type"] || "").toLowerCase();
+        const isNonBooleanTinyint = serverType === "tinyint" && columnType !== "" && columnType !== "tinyint(1)";
+        const dataType = isNonBooleanTinyint
+            ? "tinyint"
+            : (dialectConfig?.translate?.serverToLocal[serverType] || serverType);
         const columnKey = (normalizedRow["column_key"] || "").toUpperCase();
 
         let normalizedLength: number | undefined = lengthInfo.length;
