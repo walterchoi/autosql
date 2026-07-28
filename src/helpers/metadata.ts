@@ -364,18 +364,20 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         }
     }
 
-    const excludeBlankColumns = databaseConfig.excludeBlankColumns;
-    if(excludeBlankColumns) {
-        const emptyOrNullKeys = Object.entries(metaDataInterim)
-        .filter(([_, meta]) => 
-            meta.uniqueSet.size === 0 &&
-            meta.valueCount === 0 &&
-            meta.nullCount > 0
-        )
+    // An all-null column has no data to infer a type from, so it is deferred: it is NOT added to
+    // the schema now, and is created — correctly typed — when a later batch first carries data for
+    // it. Materialising it with a guessed type is wrong: a `varchar` guess locks the column, so
+    // later int/date data collates back to varchar (values stored as strings), and a bare `varchar`
+    // is invalid DDL on MySQL anyway. A column that already exists in the table is unaffected — it
+    // comes through the existing (old) metadata during comparison and is still inserted as null.
+    // (This was previously gated on `excludeBlankColumns`, whose only effect was to *disable* this
+    // deferral — i.e. to enable the type-guess — when set to false; that is a footgun, so the
+    // deferral is now unconditional. See decisions.md D-C.)
+    const emptyOrNullKeys = Object.entries(metaDataInterim)
+        .filter(([_, meta]) => meta.uniqueSet.size === 0 && meta.valueCount === 0 && meta.nullCount > 0)
         .map(([key]) => key);
-        for (const key of emptyOrNullKeys) {
-            delete metaData[key];
-        }
+    for (const key of emptyOrNullKeys) {
+        delete metaData[key];
     }
     return metaData
 }
@@ -500,8 +502,14 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
     // ✅ Identify added & modified columns
     for (const [columnName, newColumn] of Object.entries(newHeaders)) {
         if (!oldHeaders.hasOwnProperty(columnName)) {
-            // New column - needs to be added
-            addColumns[columnName] = newColumn;
+            // New column added to an EXISTING table (this branch only runs when oldHeaders is
+            // present). The pre-existing rows have no value for it, so it must be nullable — a
+            // NOT NULL add fails on Postgres ("column contains null values") and silently
+            // back-fills 0/'' on MySQL (a data-quality trap). A column that can back-fill — a
+            // calculated timestamp (dwh_*, added with DEFAULT CURRENT_TIMESTAMP) or one with an
+            // explicit default — keeps its NOT NULL. (R11 / decisions.md D-A.)
+            const canBackfill = newColumn.calculated === true || newColumn.default !== undefined;
+            addColumns[columnName] = canBackfill ? newColumn : { ...newColumn, allowNull: true };
         } else {
             const oldColumn = oldHeaders[columnName];
             let modified = false;

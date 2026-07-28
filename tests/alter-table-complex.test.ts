@@ -66,10 +66,10 @@ Object.values(DB_CONFIG).forEach((config) => {
 
             if (config.sqlDialect === "mysql") {
                 expect(alterTableQuery).toContain("MODIFY COLUMN `name` varchar(100) NOT NULL");
-                expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255) NOT NULL");
+                expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255),");
             } else if (config.sqlDialect === "pgsql") {
                 expect(alterTableQuery).toContain("ALTER COLUMN \"name\" SET DATA TYPE varchar(100)");
-                expect(alterTableQuery).toContain("ADD COLUMN \"email\" varchar(255) NOT NULL");
+                expect(alterTableQuery).toContain("ADD COLUMN \"email\" varchar(255),");
             }
         });
 
