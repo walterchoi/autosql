@@ -46,6 +46,9 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             excludeBlankColumns: defaults.excludeBlankColumns,
             stagingPrefix: defaults.stagingPrefix,
             historyTableSuffix: defaults.historyTableSuffix,
+            sanitizeInvalidChars: defaults.sanitizeInvalidChars,
+            surrogateKey: defaults.surrogateKey,
+            surrogateKeyColumn: defaults.surrogateKeyColumn,
             useSchemaLock: defaults.useSchemaLock,
             schemaLockTimeout: defaults.schemaLockTimeout,
             schemaHistory: defaults.schemaHistory,
@@ -84,6 +87,19 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         }
         if ((merged.thousandsSeparator === undefined) !== (merged.decimalSeparator === undefined)) {
             throw new Error("thousandsSeparator and decimalSeparator must be provided together.");
+        }
+        if (merged.surrogateKey) {
+            // A surrogate is unique per physical insert, so these features are incoherent with it:
+            // history diffs join on the primary key (nothing to match), nested extraction keys
+            // child tables off the parent key, and split tables would each need their own key.
+            const incompatible = [
+                merged.addHistory && "addHistory",
+                merged.addNested && "addNested",
+                merged.autoSplit && "autoSplit",
+            ].filter(Boolean);
+            if (incompatible.length > 0) {
+                throw new Error(`surrogateKey is not compatible with: ${incompatible.join(", ")}.`);
+            }
         }
 
         return merged;
@@ -602,10 +618,34 @@ export function splitInsertData(data: Record<string, any>[], config: DatabaseCon
     return chunks;
 }  
 
+/**
+ * Remove characters that a SQL text column cannot store, so free-text values with
+ * pasted/garbage bytes do not hard-fail the insert. Strips NUL (U+0000) - illegal in
+ * Postgres text and a statement-truncation risk elsewhere - and replaces unpaired UTF-16
+ * surrogates (a lone high or low surrogate, which cannot encode to valid UTF-8) with the
+ * Unicode replacement character U+FFFD. Well-formed text (including emoji, whose surrogates
+ * are paired) is returned unchanged. Opt-in via `databaseConfig.sanitizeInvalidChars`.
+ */
+export function sanitizeString(value: string): string {
+    return value
+        .replace(/\u0000/g, "")
+        .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
+}
+
 export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig?: DialectConfig, databaseConfig?: DatabaseConfig, sqlizeValues: boolean = false): any[] {
-    const newRow = Object.entries(metaData).map(([column, meta]) => {
+    const sanitize = databaseConfig?.sanitizeInvalidChars === true;
+    // In surrogate-key mode the auto-increment column is database-generated and carries no data
+    // value, so it must be omitted from the value list (Postgres would reject a NULL into a
+    // BIGSERIAL NOT NULL column). This is gated on `surrogateKey`: a genuine AUTO_INCREMENT /
+    // SERIAL primary key on an ordinary table is introspected as autoIncrement:true too, and
+    // callers legitimately supply values for it to upsert — those must NOT be dropped. The insert
+    // builders apply the same gate to the column list, keeping columns and params aligned.
+    const excludeAutoIncrement = databaseConfig?.surrogateKey === true;
+    const newRow = Object.entries(metaData)
+      .filter(([, meta]) => !(excludeAutoIncrement && meta.autoIncrement === true))
+      .map(([column, meta]) => {
       let value = row[column];
-    
+
       if (value === null || value === undefined) {
         // Use calculated default if provided
         if (meta.calculatedDefault !== undefined) {
@@ -616,12 +656,19 @@ export function getInsertValues(metaData: MetadataHeader, row: Record<string, an
             value = null;
         }
       }
+      let out: any;
       if(sqlizeValues && dialectConfig) {
-        const sqlizedValue = sqlize(value, meta.type, dialectConfig, databaseConfig);
-        return sqlizedValue
+        out = sqlize(value, meta.type, dialectConfig, databaseConfig);
       } else {
-        return value
+        out = value;
       }
+      // Applied after value resolution so it covers both the raw and sqlized paths, and only
+      // to strings — the driver still parameter-binds the result, so this is purely about
+      // storability, not escaping.
+      if (sanitize && typeof out === "string") {
+        out = sanitizeString(out);
+      }
+      return out;
     });
     return newRow
 }

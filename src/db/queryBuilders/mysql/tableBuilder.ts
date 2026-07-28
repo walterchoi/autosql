@@ -127,7 +127,17 @@ export class MySQLTableQueryBuilder {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
-            if (column.default !== undefined) columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+            if (column.default !== undefined) {
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+            } else if (!column.allowNull && column.calculated) {
+                // A NOT NULL calculated timestamp (e.g. dwh_created_at) added to a table that may
+                // already contain rows needs a DEFAULT, or ADD COLUMN fails the NOT NULL
+                // constraint on those pre-existing rows. Backfill them with the alter-time value
+                // (their true creation time is unknown); new rows still get the per-row
+                // calculatedDefault at insert. Every calculated column autosql creates is a
+                // timestamp, so CURRENT_TIMESTAMP is the correct backfill.
+                columnDef += ` DEFAULT CURRENT_TIMESTAMP`;
+            }
 
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         };

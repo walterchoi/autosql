@@ -3,7 +3,7 @@ import { normalizeNumber, validateConfig, shuffleArray, sqlize } from './utiliti
 import { groupings } from '../config/groupings';
 import { collateTypes } from './columnTypes';
 import { predictType } from './columnTypes';
-import { defaults, nonCategoricalTypes } from '../config/defaults';
+import { defaults, nonCategoricalTypes, DEFAULT_LENGTHS } from '../config/defaults';
 import { predictIndexes } from './keys';
 import { Database } from '../db/database';
 import { DialectConfig, ColumnDefinition, MetadataHeader, metaDataInterim, AlterTableChanges } from '../config/types';
@@ -29,6 +29,66 @@ export function initializeMetaData(headers: string[]): Record<string, any>[] {
     } catch (error) {
         throw new Error(`Error in initializeMetaData: ${error}`);
     }
+}
+
+/**
+ * Provided-schema ("assumeSchema", A-4) helpers. A caller that already knows the schema — e.g. a
+ * SproutSpec `columns` block mapped to a `MetadataHeader` — can hand it in so AutoSQL skips
+ * per-value type inference (the expensive `predictType`/`sqlize` regex over every value), which also
+ * side-steps inference footguns like small integers being mis-typed as boolean.
+ */
+
+/** Every distinct column key present across the data rows. Cheap — key iteration, no per-value regex. */
+export function collectDataColumns(data: Record<string, any>[]): Set<string> {
+    const cols = new Set<string>();
+    for (const row of data) {
+        for (const key in row) cols.add(key);
+    }
+    return cols;
+}
+
+/** True when the provided schema declares every column present in the data (inference can be skipped). */
+export function schemaCoversColumns(schema: MetadataHeader, columns: Set<string>): boolean {
+    for (const col of columns) {
+        if (!(col in schema)) return false;
+    }
+    return true;
+}
+
+/** Overlay provided column definitions onto an inferred header — provided wins per declared column. */
+export function overlaySchema(inferred: MetadataHeader, provided: MetadataHeader): MetadataHeader {
+    return { ...inferred, ...provided };
+}
+
+/**
+ * Fill a provided (possibly sparse) schema with sensible `ColumnDefinition` defaults so the DDL
+ * builders always receive complete definitions. Provided values win; only `type` is required. A
+ * length-requiring type (varchar/decimal) given no length gets a default so the generated DDL is valid.
+ */
+export function fillColumnDefaults(schema: MetadataHeader): MetadataHeader {
+    const result: MetadataHeader = {};
+    for (const [col, def] of Object.entries(schema)) {
+        if (!def || !def.type) {
+            throw new Error(`assumeSchema: column "${col}" is missing a required "type".`);
+        }
+        const filled: ColumnDefinition = {
+            length: 0,
+            allowNull: false,
+            unique: false,
+            index: false,
+            pseudounique: false,
+            primary: false,
+            autoIncrement: false,
+            decimal: 0,
+            ...def,
+        };
+        const defaultLen = DEFAULT_LENGTHS[filled.type as keyof typeof DEFAULT_LENGTHS];
+        if ((filled.length ?? 0) === 0 && defaultLen) {
+            filled.length = defaultLen;
+        }
+        result[col] = filled;
+    }
+    return result;
 }
 
 export async function getDataHeaders(data: Record<string, any>[], databaseConfig: DatabaseConfig): Promise<MetadataHeader> {
@@ -186,6 +246,51 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         }
         if(metaData[column].type === 'varchar' && metaData[column].length > (databaseConfig.maxVarcharLength || defaults.maxVarcharLength)) {
             metaData[column].type = 'text'
+        }
+    }
+
+    // Sampling caveat: the unique/pseudounique flags above were derived from the sample only.
+    // A column that is 100% unique across the sample but has duplicates in the unsampled
+    // remainder would otherwise get a UNIQUE constraint at CREATE TABLE (and could be chosen
+    // as the primary key), then fail on insert of the full data — a "passes in test, breaks in
+    // prod" bug. Re-validate just the few columns still flagged `unique` against the full
+    // dataset and demote any that aren't actually unique. Only runs when sampling split the
+    // data (remainingData is empty otherwise, so the flags already reflect the full dataset).
+    // A truly-unique column is never saturated (distinct == sampleSize < cap), so its uniqueSet
+    // holds every sampled value and the continuation below is exact.
+    if (remainingData.length > 0) {
+        const isNullish = (v: any) => v === '' || v === null || v === undefined || v === '\\N' || v === 'null';
+        for (const column in metaData) {
+            if (!metaData[column].unique) continue;
+            const seen = new Set(metaDataInterim[column].uniqueSet);
+            let valueCount = metaDataInterim[column].valueCount;
+            let duplicate = false;
+            for (const row of remainingData) {
+                const value = row[column];
+                if (isNullish(value)) continue;
+                let normalized: any;
+                if (forceStringSet.has(column)) {
+                    normalized = String(value);
+                } else {
+                    const t = predictType(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
+                    normalized = t ? sqlize(value, t, dialectConfig, databaseConfig) : String(value);
+                }
+                valueCount++;
+                if (seen.has(normalized)) {
+                    duplicate = true;
+                } else {
+                    seen.add(normalized);
+                }
+            }
+            if (duplicate) {
+                metaData[column].unique = false;
+                // Demote to pseudounique if still highly distinct across the full data, so the
+                // column can still serve as an index / composite-key candidate downstream.
+                const ratio = valueCount > 0 ? seen.size / valueCount : 0;
+                if (ratio >= (databaseConfig.pseudoUnique || defaults.pseudoUnique)) {
+                    metaData[column].pseudounique = true;
+                }
+            }
         }
     }
 

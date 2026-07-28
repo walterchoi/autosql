@@ -38,6 +38,11 @@ export class PostgresDatabase extends Database {
             database: this.config.database,
             port: this.config.port || 5432,
             max: 5,
+            // Pin the client encoding to UTF8 so multibyte text is transferred intact
+            // regardless of the client's locale-derived default (e.g. WIN1252 on Windows).
+            // Defense-in-depth only: a UTF8 database already stores valid emoji fine — this
+            // does NOT rescue malformed source bytes (see sanitizeInvalidChars for those).
+            client_encoding: this.config.encoding || dialectConfig.encoding || "UTF8",
             stream: this.config.sshStream ? () => this.config.sshStream! : undefined
         });
     }

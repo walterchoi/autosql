@@ -36,6 +36,11 @@ export class MySQLDatabase extends Database {
             database: this.config.database || this.config.schema,
             port: this.config.port || 3306,
             connectionLimit: 5,
+            // Pin the connection charset to a 4-byte-capable encoding. Without this mysql2
+            // negotiates its default (historically 3-byte utf8_general_ci), so a 4-byte
+            // character (emoji, some CJK) throws `Incorrect string value: '\xF0\x9F...'` on
+            // INSERT even when the target table is utf8mb4 — the bytes can't cross the wire.
+            charset: this.config.charset || dialectConfig.charset,
             ...(this.config.sshStream ? { stream: this.config.sshStream } : {})
         });
     }
