@@ -474,9 +474,10 @@ This is the core interface for managing connections, generating queries, and exe
 
 #### 🔹 AutoSQL Methods (Exposed on `db`)
 
-- **`autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[])`**  
+- **`autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: { assumeSchema?: MetadataHeader })`**  
   The simplest way to handle everything — metadata inference, schema changes, batching, inserting, history, workers, and nested structures — in one call.  
-  Designed for production-ready automation and one-liner ingestion.
+  Designed for production-ready automation and one-liner ingestion.  
+  Pass `options.assumeSchema` when you already know the schema (e.g. a mapped column spec) to **skip type inference**: columns it declares are authoritative (which also avoids inference footguns like small integers being read as boolean), and any undeclared columns are inferred as a fallback. Skipping inference is the main compute saving on recurring pipelines.
 
 - **`autoInsertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery = true, inputInsertType?: 'UPDATE' | 'INSERT')`**  
   Executes a full insert using the dialect-aware batching engine.  

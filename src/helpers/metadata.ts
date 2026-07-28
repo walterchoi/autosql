@@ -3,7 +3,7 @@ import { normalizeNumber, validateConfig, shuffleArray, sqlize } from './utiliti
 import { groupings } from '../config/groupings';
 import { collateTypes } from './columnTypes';
 import { predictType } from './columnTypes';
-import { defaults, nonCategoricalTypes } from '../config/defaults';
+import { defaults, nonCategoricalTypes, DEFAULT_LENGTHS } from '../config/defaults';
 import { predictIndexes } from './keys';
 import { Database } from '../db/database';
 import { DialectConfig, ColumnDefinition, MetadataHeader, metaDataInterim, AlterTableChanges } from '../config/types';
@@ -29,6 +29,66 @@ export function initializeMetaData(headers: string[]): Record<string, any>[] {
     } catch (error) {
         throw new Error(`Error in initializeMetaData: ${error}`);
     }
+}
+
+/**
+ * Provided-schema ("assumeSchema", A-4) helpers. A caller that already knows the schema — e.g. a
+ * SproutSpec `columns` block mapped to a `MetadataHeader` — can hand it in so AutoSQL skips
+ * per-value type inference (the expensive `predictType`/`sqlize` regex over every value), which also
+ * side-steps inference footguns like small integers being mis-typed as boolean.
+ */
+
+/** Every distinct column key present across the data rows. Cheap — key iteration, no per-value regex. */
+export function collectDataColumns(data: Record<string, any>[]): Set<string> {
+    const cols = new Set<string>();
+    for (const row of data) {
+        for (const key in row) cols.add(key);
+    }
+    return cols;
+}
+
+/** True when the provided schema declares every column present in the data (inference can be skipped). */
+export function schemaCoversColumns(schema: MetadataHeader, columns: Set<string>): boolean {
+    for (const col of columns) {
+        if (!(col in schema)) return false;
+    }
+    return true;
+}
+
+/** Overlay provided column definitions onto an inferred header — provided wins per declared column. */
+export function overlaySchema(inferred: MetadataHeader, provided: MetadataHeader): MetadataHeader {
+    return { ...inferred, ...provided };
+}
+
+/**
+ * Fill a provided (possibly sparse) schema with sensible `ColumnDefinition` defaults so the DDL
+ * builders always receive complete definitions. Provided values win; only `type` is required. A
+ * length-requiring type (varchar/decimal) given no length gets a default so the generated DDL is valid.
+ */
+export function fillColumnDefaults(schema: MetadataHeader): MetadataHeader {
+    const result: MetadataHeader = {};
+    for (const [col, def] of Object.entries(schema)) {
+        if (!def || !def.type) {
+            throw new Error(`assumeSchema: column "${col}" is missing a required "type".`);
+        }
+        const filled: ColumnDefinition = {
+            length: 0,
+            allowNull: false,
+            unique: false,
+            index: false,
+            pseudounique: false,
+            primary: false,
+            autoIncrement: false,
+            decimal: 0,
+            ...def,
+        };
+        const defaultLen = DEFAULT_LENGTHS[filled.type as keyof typeof DEFAULT_LENGTHS];
+        if ((filled.length ?? 0) === 0 && defaultLen) {
+            filled.length = defaultLen;
+        }
+        result[col] = filled;
+    }
+    return result;
 }
 
 export async function getDataHeaders(data: Record<string, any>[], databaseConfig: DatabaseConfig): Promise<MetadataHeader> {

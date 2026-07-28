@@ -1,8 +1,8 @@
 import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
 import { Database } from "./database";
-import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput } from "../config/types";
-import { getMetaData, compareMetaData } from "../helpers/metadata";
+import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions } from "../config/types";
+import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
@@ -352,12 +352,28 @@ export class AutoSQLHandler {
         return insertStatements;
     }
 
-    async handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[]) {
+    async handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[], options?: AutoSQLOptions) {
         // Fetch existing metadata
         const { currentMetaData } = await this.fetchTableMetadata(table);
-        
-        // Generate new metadata from incoming data
-        let newMetaData = await getMetaData(this.db.getConfig(), data, primaryKey);
+
+        // A-4 fast path: when the caller provides the schema (assumeSchema) it is authoritative.
+        // If it declares every column present in the data, skip per-value inference entirely; if it
+        // only covers some columns, infer the rest and let the provided definitions win (fallback).
+        // This is the main compute win for recurring pipelines and side-steps inference footguns
+        // (e.g. small integers mis-typed as boolean) for declared columns.
+        let newMetaData: MetadataHeader;
+        const assumeSchema = options?.assumeSchema;
+        if (assumeSchema && Object.keys(assumeSchema).length > 0) {
+            const provided = fillColumnDefaults(assumeSchema);
+            if (schemaCoversColumns(provided, collectDataColumns(data))) {
+                newMetaData = provided; // fully declared → no inference
+            } else {
+                const inferred = await getMetaData(this.db.getConfig(), data, primaryKey);
+                newMetaData = overlaySchema(inferred, provided); // infer undeclared, provided wins
+            }
+        } else {
+            newMetaData = await getMetaData(this.db.getConfig(), data, primaryKey);
+        }
         // Apply the opt-in surrogate key, sticky to the existing table so re-ingestion stays
         // idempotent (see applySurrogateKey). No-op unless config.surrogateKey is enabled.
         newMetaData = applySurrogateKey(newMetaData, currentMetaData, this.db.getConfig());
@@ -409,9 +425,9 @@ export class AutoSQLHandler {
         return [];
     }
 
-    private async prepareInsertData(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[]): Promise<InsertInput[]> {
+    private async prepareInsertData(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<InsertInput[]> {
         // 🔹 Step 1: Handle Metadata
-        const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(table, data, primaryKey);
+        const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(table, data, primaryKey, options);
     
         // 🔹 Step 2: Attempt Table Split
         let insertInput: InsertInput[] = await this.attemptTableSplit(table, data, mergedMetaData);
@@ -886,7 +902,7 @@ export class AutoSQLHandler {
         return nestedInputs;
     } 
     
-    async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[]): Promise<QueryResult> {
+    async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<QueryResult> {
       return this.db.runWithSchema(schema, async () => {
         const start = new Date();
         const config = this.db.getConfig();
@@ -902,7 +918,7 @@ export class AutoSQLHandler {
             if (useSchemaLock) await this.db.acquireSchemaLock(table, lockTimeout);
             let historyId: number | undefined;
             try {
-                insertInput = await this.prepareInsertData(table, data, schema, primaryKey);
+                insertInput = await this.prepareInsertData(table, data, schema, primaryKey, options);
                 let nestedInputs = await this.extractNestedInputs(insertInput);
                 insertInput = [...insertInput, ...nestedInputs];
 

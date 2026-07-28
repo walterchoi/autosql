@@ -33,5 +33,6 @@ module.exports = {
     'tests/encoding-roundtrip-live\\.test\\.ts',
     'tests/large-data-live\\.test\\.ts',
     'tests/timestamps-external-table-live\\.test\\.ts',
+    'tests/assume-schema-live\\.test\\.ts',
   ],
 };
