@@ -37,7 +37,7 @@ export class PostgresDatabase extends Database {
             password: this.config.password,
             database: this.config.database,
             port: this.config.port || 5432,
-            max: 5,
+            max: this.config.connectionLimit || 5,
             // Pin the client encoding to UTF8 so multibyte text is transferred intact
             // regardless of the client's locale-derived default (e.g. WIN1252 on Windows).
             // Defense-in-depth only: a UTF8 database already stores valid emoji fine — this
