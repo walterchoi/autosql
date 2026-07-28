@@ -55,6 +55,12 @@ export interface DatabaseConfig {
       port?: number;
       schema?: string;
       table?: string;
+      /**
+       * Max connections in the driver pool (MySQL `connectionLimit` / Postgres `max`). Defaults to 5.
+       * Raise it for parallel/worker loads so pool acquisition doesn't serialise; keep it under the
+       * server's own connection limit and size it against `maxWorkers`.
+       */
+      connectionLimit?: number;
 
       metaData?: {
         [tableName: string]: MetadataHeader;

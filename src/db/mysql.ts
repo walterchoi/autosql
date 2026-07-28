@@ -35,7 +35,7 @@ export class MySQLDatabase extends Database {
             password: this.config.password,
             database: this.config.database || this.config.schema,
             port: this.config.port || 3306,
-            connectionLimit: 5,
+            connectionLimit: this.config.connectionLimit || 5,
             // Pin the connection charset to a 4-byte-capable encoding. Without this mysql2
             // negotiates its default (historically 3-byte utf8_general_ci), so a 4-byte
             // character (emoji, some CJK) throws `Incorrect string value: '\xF0\x9F...'` on
@@ -46,7 +46,9 @@ export class MySQLDatabase extends Database {
     }
 
     public getMaxConnections(): number {
-        return (this.connection as any)?.config?.connectionLimit ?? 5;
+        // mysql2's promise wrapper keeps the pool config on the underlying `.pool` (not `.config`).
+        const conn = this.connection as any;
+        return conn?.pool?.config?.connectionLimit ?? conn?.config?.connectionLimit ?? 5;
     }
 
     public async acquireSchemaLock(table: string, timeoutSeconds: number): Promise<void> {
