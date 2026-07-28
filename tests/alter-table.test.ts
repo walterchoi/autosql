@@ -45,10 +45,10 @@ Object.values(DB_CONFIG).forEach((config) => {
             const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
             if (config.sqlDialect === "mysql") {
-                expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255) NOT NULL");
+                expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255),");
                 expect(alterTableQuery).toContain("MODIFY COLUMN `name` varchar(100) NOT NULL");
             } else if (config.sqlDialect === "pgsql") {
-                expect(alterTableQuery).toContain("ADD COLUMN \"email\" varchar(255) NOT NULL");
+                expect(alterTableQuery).toContain("ADD COLUMN \"email\" varchar(255),");
                 expect(alterTableQuery).toContain("ALTER COLUMN \"name\" SET DATA TYPE varchar(100)");
             }
         });
@@ -60,7 +60,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
                 expect(alterTableQuery).toContain("MODIFY COLUMN `name` varchar(100) NOT NULL");
-                expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255) NOT NULL");
+                expect(alterTableQuery).toContain("ADD COLUMN `email` varchar(255),");
             });
         } else if (config.sqlDialect === "pgsql") {
             test("Check PostgreSQL-specific query format", async () => {
@@ -69,7 +69,7 @@ Object.values(DB_CONFIG).forEach((config) => {
                 const alterTableQuery = typeof firstQuery === "string" ? firstQuery : firstQuery.query;
 
                 expect(alterTableQuery).toContain("ALTER COLUMN \"name\" SET DATA TYPE varchar(100)");
-                expect(alterTableQuery).toContain("ADD COLUMN \"email\" varchar(255) NOT NULL");
+                expect(alterTableQuery).toContain("ADD COLUMN \"email\" varchar(255),");
             });
         }
     });

@@ -123,7 +123,10 @@ export class PostgresTableQueryBuilder {
             }
             assertSafeTypeToken(columnType);
             let columnDef = `${q(columnName)} ${columnType}`;
-            if (column.length && !pgsqlConfig.noLength.includes(column.type ?? "")) {
+            // Only length-requiring types carry a length in Postgres (matching CREATE). Postgres has
+            // no integer display width — `smallint(3)` / `int(11)` is a syntax error — so an integer
+            // added via ALTER must render as a bare `smallint` / `integer`.
+            if (column.length && dialectConfig.requireLength.includes(columnType)) {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal ? `,${assertSafeLength(column.decimal)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
@@ -158,7 +161,9 @@ export class PostgresTableQueryBuilder {
                 }
                 assertSafeTypeToken(columnType);
                 let columnDef = `SET DATA TYPE ${columnType}`;
-                if (column.length && !dialectConfig.noLength.includes(column.type ?? "")) {
+                // Only length-requiring types carry a length (matching CREATE/ADD) — Postgres has no
+                // integer display width, so a `SET DATA TYPE smallint(3)` is a syntax error.
+                if (column.length && dialectConfig.requireLength.includes(columnType)) {
                     columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
                 }
                 if (column.previousType && column.previousType !== column.type) {

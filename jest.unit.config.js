@@ -38,5 +38,7 @@ module.exports = {
     'tests/orphan-staging-live\\.test\\.ts',
     'tests/tinyint-roundtrip-live\\.test\\.ts',
     'tests/reingest-idempotent-live\\.test\\.ts',
+    'tests/add-column-existing-live\\.test\\.ts',
+    'tests/all-null-column-live\\.test\\.ts',
   ],
 };

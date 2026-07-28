@@ -347,7 +347,9 @@ Object.values(DB_CONFIG).forEach((config) => {
                 }
               }
               const { changes: result } = compareMetaData(oldMetaData, newMetaData, dialectConfig);
-              expect(result.addColumns.email).toEqual(newMetaData.email)
+              // R11: a column added to an existing table is emitted nullable (existing rows have no
+              // value for it), even though it was inferred NOT NULL.
+              expect(result.addColumns.email).toEqual({ ...newMetaData.email, allowNull: true })
               expect(result.modifyColumns).toEqual({})
               expect(result.primaryKeyChanges).toEqual([])
         })

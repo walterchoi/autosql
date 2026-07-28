@@ -974,7 +974,10 @@ export class AutoSQLHandler {
             affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
             const allResults = insertResults.flatMap(res => res.results || []);
             const end = new Date();
-            return { start, end, success: true, duration: end.getTime() - start.getTime(), affectedRows, results: allResults, table };
+            // Return the resolved schema (incl. managed dwh_*/surrogate columns) so callers can
+            // cache it and skip re-introspection next load — the `existingSchema` fast path.
+            const resolvedMetaData = insertInput[0]?.comparedMetaData?.updatedMetaData || insertInput[0]?.metaData;
+            return { start, end, success: true, duration: end.getTime() - start.getTime(), affectedRows, results: allResults, table, metaData: resolvedMetaData };
         } catch (error: any) {
             const end = new Date();
             return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error) };
