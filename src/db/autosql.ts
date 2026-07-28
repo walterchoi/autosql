@@ -607,7 +607,12 @@ export class AutoSQLHandler {
         const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
 
         const stagingQueries: QueryInput[][] = uniqueTables.map(table => {
-            return [this.db.getCreateTempTableQuery(table, stagingPrefix)];
+            // Drop any leftover staging table BEFORE recreating it. A prior run that crashed before
+            // removeStagingTables leaves an orphan; the create uses CREATE TABLE IF NOT EXISTS, which
+            // would then reuse that orphan's stale schema and corrupt this load. Dropping first
+            // guarantees the temp table always matches the current (just-configured) real table.
+            const tempTableName = getTempTableName(table, stagingPrefix);
+            return [this.db.getDropTableQuery(tempTableName), this.db.getCreateTempTableQuery(table, stagingPrefix)];
         });
         const allCreateResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingQueries);
 

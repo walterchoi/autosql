@@ -34,5 +34,7 @@ module.exports = {
     'tests/large-data-live\\.test\\.ts',
     'tests/timestamps-external-table-live\\.test\\.ts',
     'tests/assume-schema-live\\.test\\.ts',
+    'tests/column-widening-live\\.test\\.ts',
+    'tests/orphan-staging-live\\.test\\.ts',
   ],
 };
