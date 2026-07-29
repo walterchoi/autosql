@@ -40,5 +40,9 @@ module.exports = {
     'tests/reingest-idempotent-live\\.test\\.ts',
     'tests/add-column-existing-live\\.test\\.ts',
     'tests/all-null-column-live\\.test\\.ts',
+    'tests/existing-schema-live\\.test\\.ts',
+    'tests/bulk-load-live\\.test\\.ts',
+    'tests/boolean-inference-live\\.test\\.ts',
+    'tests/stream-small-int-live\\.test\\.ts',
   ],
 };

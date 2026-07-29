@@ -12,6 +12,7 @@ import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
 import { PostgresInsertQueryBuilder } from "./queryBuilders/pgsql/insertBuilder";
 import { AutoSQLHandler } from "./autosql";
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
+import { serializeRowsToCopyText } from "../helpers/bulkLoad";
 import { SchemaLockTimeoutError } from "../errors";
 const dialectConfig = pgsqlConfig
 
@@ -49,6 +50,40 @@ export class PostgresDatabase extends Database {
 
     public getMaxConnections(): number {
         return (this.connection as Pool)?.options?.max ?? 5;
+    }
+
+    public async bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult> {
+        const start = new Date();
+        if (!this.connection) await this.establishConnection();
+        if (rows.length === 0) {
+            return { start, end: new Date(), duration: 0, success: true, affectedRows: 0 };
+        }
+        let copyFrom: any;
+        try {
+            copyFrom = require("pg-copy-streams").from;
+        } catch {
+            throw new Error("Missing optional dependency 'pg-copy-streams' (required for bulkLoad on PostgreSQL).");
+        }
+        const schema = this.getConfig().schema;
+        const schemaPrefix = schema ? `${escapeIdentifier(schema, "pgsql")}.` : "";
+        const colList = columns.map(c => escapeIdentifier(c, "pgsql")).join(", ");
+        // COPY runs on a single pinned client.
+        const client = await (this.connection as Pool).connect();
+        try {
+            const stream: NodeJS.WritableStream = client.query(
+                copyFrom(`COPY ${schemaPrefix}${escapeIdentifier(table, "pgsql")} (${colList}) FROM STDIN`)
+            ) as any;
+            await new Promise<void>((resolve, reject) => {
+                stream.on("error", reject);
+                stream.on("finish", () => resolve());
+                stream.write(serializeRowsToCopyText(rows));
+                stream.end();
+            });
+            const end = new Date();
+            return { start, end, duration: end.getTime() - start.getTime(), success: true, affectedRows: rows.length };
+        } finally {
+            client.release();
+        }
     }
 
     /**

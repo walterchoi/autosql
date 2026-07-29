@@ -448,6 +448,14 @@ export abstract class Database {
     public abstract getMaxConnections(): number;
 
     /**
+     * Bulk-load already-sqlized value rows into `table` using the dialect's native mechanism
+     * (Postgres `COPY FROM STDIN` / MySQL `LOAD DATA LOCAL INFILE`). `columns` is the ordered column
+     * list each row's values align to. Returns a QueryResult; throws on failure so the caller can
+     * fall back to parameterised INSERT.
+     */
+    public abstract bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult>;
+
+    /**
      * Acquire a database-native advisory lock scoped to the given table.
      * MySQL: uses GET_LOCK on a dedicated pool connection.
      * PostgreSQL: uses pg_try_advisory_lock on a dedicated pool client.

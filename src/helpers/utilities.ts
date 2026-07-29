@@ -47,6 +47,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             stagingPrefix: defaults.stagingPrefix,
             historyTableSuffix: defaults.historyTableSuffix,
             sanitizeInvalidChars: defaults.sanitizeInvalidChars,
+            bulkLoad: defaults.bulkLoad,
             surrogateKey: defaults.surrogateKey,
             surrogateKeyColumn: defaults.surrogateKeyColumn,
             useSchemaLock: defaults.useSchemaLock,
@@ -714,6 +715,22 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
         }
         
         let strValue = typeof value === "string" ? value : String(value);
+
+        // Boolean columns store a canonical 0/1. Without this, a string flag ("true"/"false",
+        // as CSV and most text sources deliver them) reaches the driver unchanged: MySQL rejects
+        // it against a TINYINT(1) (`Incorrect integer value: 'true'`) and the raw distinct strings
+        // ("true"/"TRUE"/1) also inflate the sampled cardinality into a spurious UNIQUE. Normalise
+        // the boolean domain to "1"/"0" — both dialects accept it (MySQL tinyint, PG boolean input).
+        if (columnType === "boolean") {
+            const b = strValue.trim().toLowerCase();
+            // Absence stays null (matches the inference layer, which treats ""/"null" as nullish) —
+            // a missing flag must not silently become false.
+            if (b === "" || b === "null") return null;
+            if (b === "1" || b === "true" || b === "t" || b === "yes") return "1";
+            if (b === "0" || b === "false" || b === "f" || b === "no") return "0";
+            // Out of domain: leave unchanged so the DB surfaces it rather than silently coercing.
+            return strValue;
+        }
 
         const isDateLike = groupings.dateGroup.includes(columnType);
         if (isDateLike) {

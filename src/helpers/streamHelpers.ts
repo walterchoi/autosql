@@ -140,9 +140,14 @@ const MYSQL_DATETIME = ['datetime', 'datetimetz', 'timestamp'];
 const MYSQL_TIME    = ['time'];
 const MYSQL_BOOL    = ['boolean'];
 
-const PG_INT     = ['int', 'integer'];
+// Postgres has no tinyint/mediumint — they map to smallint/integer (same as the CREATE-path
+// dialect translation), so the stream-merge cast must map them too. Without this a tinyint
+// column falls through uncast and the text→smallint INSERT is rejected (`column "id" is of
+// type smallint but expression is of type text`). Previously masked because a bare 0/1
+// inferred as boolean; now that 0/1 is a small integer (R3), the merge must cast it.
+const PG_INT     = ['int', 'integer', 'mediumint'];
 const PG_BIGINT  = ['bigint'];
-const PG_SMALL   = ['smallint'];
+const PG_SMALL   = ['smallint', 'tinyint'];
 const PG_FLOAT   = ['float', 'double'];
 const PG_DATE    = ['date'];
 const PG_TS      = ['datetime', 'datetimetz', 'timestamp', 'timestamptz'];
