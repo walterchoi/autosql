@@ -1,4 +1,7 @@
 ## [Unreleased]
+### 🔧 Maintenance
+- **`npm audit` is clean (0 vulnerabilities).** Production was always unaffected — the package ships no regular `dependencies`, only optional `mysql2`/`pg`/`pg-copy-streams`/`ssh2`. The remaining dev-only test-tooling advisories (handlebars, js-yaml, brace-expansion, @babel/core) are resolved via `overrides` pinned to each advisory's actual fixed version, plus a lockfile regeneration that made the pre-existing `handlebars@4.7.9` override effective (the committed lock had a stale `4.7.8`). No consumer-facing change.
+
 ### 🐛 Bug Fixes (robustness)
 - **Adding a new column to a populated table no longer fails on Postgres.** A column added to an existing table is now emitted nullable — pre-existing rows have no value for it, so forcing `NOT NULL` either errored on Postgres (`column "x" contains null values`) or silently back-filled `0`/`''` on MySQL. A column that can back-fill (a calculated timestamp, or one with an explicit default) keeps `NOT NULL`.
 - **A new column that arrives with no data (all null) is deferred, not mis-typed.** Such a column has no inferable type; it previously errored on MySQL (`varchar` with no length) or would have been guessed as `varchar` (locking it, so later int/date data collates back to strings). It is now deferred — created with the correct type when a later batch first carries data. (Made unconditional; `excludeBlankColumns: false` no longer forces a guessed-type placeholder. Existing blank columns are unaffected.)
