@@ -22,6 +22,21 @@ services:
       - pg_data:/var/lib/postgresql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
+  # SQL Server / Azure SQL (Class A row-store — the first warehouse-adjacent destination).
+  # azure-sql-edge is the lightweight, cross-arch (amd64/arm64) Azure-branded image; it speaks
+  # the same T-SQL/TDS as Azure SQL Database. Schema bootstrap (the "test_schema" schema) is done
+  # by the sqlserver adapter/test harness — SQL Server has no /docker-entrypoint-initdb.d hook.
+  sqlserver:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Str0ng!Passw0rd"
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+
 volumes:
   mysql_data:
   pg_data:
+  sqlserver_data:
