@@ -291,6 +291,39 @@ export class MySQLDatabase extends Database {
         return queries;
     }
 
+    /**
+     * R8: detect text columns on a pre-existing table whose charset differs from the target
+     * (`charset`, default utf8mb4) and, if any, return one `CONVERT TO CHARACTER SET` statement.
+     * Numeric/date columns have a NULL `CHARACTER_SET_NAME` and are ignored. Convergent: once every
+     * text column is the target charset the detect finds nothing and this returns `[]`.
+     */
+    public async getCharsetUpgradeQueries(table: string): Promise<QueryInput[]> {
+        const targetCharset = this.config.charset || dialectConfig.charset;
+        const targetCollate = this.config.collate || dialectConfig.collate;
+        // charset/collate are config-derived identifiers, not row data — validate before
+        // interpolating (they can't be parameter-bound in a CONVERT clause).
+        const idOk = /^[A-Za-z0-9_]+$/;
+        if (!idOk.test(targetCharset) || !idOk.test(targetCollate)) {
+            throw new Error(`Invalid charset/collate for upgrade: ${JSON.stringify({ targetCharset, targetCollate })}`);
+        }
+        const schema = this.getConfig().schema;
+        const detect: QueryInput = {
+            query:
+                `SELECT COUNT(*) AS c FROM information_schema.COLUMNS ` +
+                `WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ` +
+                `AND CHARACTER_SET_NAME IS NOT NULL AND CHARACTER_SET_NAME <> ?`,
+            params: [schema, table, targetCharset],
+        };
+        const res = await this.runQuery(detect);
+        const count = Number(Object.values(res.results?.[0] ?? { c: 0 })[0] ?? 0);
+        if (!count) return [];
+        const schemaPrefix = schema ? `${escapeIdentifier(schema, "mysql")}.` : "";
+        return [{
+            query: `ALTER TABLE ${schemaPrefix}${escapeIdentifier(table, "mysql")} CONVERT TO CHARACTER SET ${targetCharset} COLLATE ${targetCollate};`,
+            params: [],
+        }];
+    }
+
     getDropTableQuery(table: string): QueryInput {
         return MySQLTableQueryBuilder.getDropTableQuery(table, this.getConfig().schema);
     }

@@ -98,6 +98,18 @@ export interface DatabaseConfig {
       collate?: string;
       encoding?: string;
 
+      /**
+       * Opt-in (default `false`, MySQL only): when configuring a **pre-existing** table, convert its
+       * text columns to the target charset (`charset`, default `utf8mb4`) so externally-created 3-byte
+       * `utf8`/`utf8mb3` columns accept 4-byte characters (emoji, some CJK). Connection-charset pinning
+       * and defaulting new tables to utf8mb4 do NOT fix an already-existing utf8 column — this does, via
+       * a one-time `ALTER TABLE ... CONVERT TO CHARACTER SET`. Detect-and-convert is convergent (once
+       * every text column matches, it is a no-op) and best-effort — a `CONVERT` that fails (e.g. an
+       * over-long index: 4 bytes/char can exceed the key-length limit) is logged and skipped, not fatal.
+       * No-op on Postgres (its `UTF8` already stores 4-byte characters).
+       */
+      upgradeCharset?: boolean;
+
       pseudoUnique?: number;
       categorical?: number;
       autoIndexing?: boolean;

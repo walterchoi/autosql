@@ -188,7 +188,26 @@ export class AutoSQLHandler {
                 this.db.log(`Creating table: ${table}`);
                 return await this.autoCreateTable(table, updatedMetadata, false, runQuery);
             }
-    
+
+            // R8 (opt-in): migrate a pre-existing table's text columns to the target charset
+            // (utf8mb4) so externally-created 3-byte utf8 columns accept 4-byte characters. Runs on
+            // the real table only (staging temp tables are throwaway CTAS copies that already match),
+            // before any other ALTER/insert, and even when there are no other schema changes.
+            // Best-effort: a CONVERT that fails (e.g. an over-long index) is logged and skipped, not
+            // fatal. Convergent: once every text column is utf8mb4 the detect returns nothing.
+            const stagingPrefix = this.db.getConfig().stagingPrefix ?? "temp_staging__";
+            if (this.db.getConfig().upgradeCharset && !table.startsWith(stagingPrefix)) {
+                try {
+                    const charsetQueries = await this.db.getCharsetUpgradeQueries(table);
+                    if (charsetQueries.length > 0) {
+                        await this.db.runTransaction(charsetQueries);
+                        this.db.log(`[autoConfigureTable] Upgraded existing charset for '${table}'.`);
+                    }
+                } catch (charsetErr) {
+                    this.db.warn(`[autoConfigureTable] Charset upgrade for '${table}' skipped (continuing): ${charsetErr instanceof Error ? charsetErr.message : String(charsetErr)}`);
+                }
+            }
+
             // ✅ If table exists but no changes, return success
             if (!tableChanges || !tableChangesExist(tableChanges)) {
                 this.db.log(`Table exists, no changes detected. Skipping ALTER TABLE.`);
