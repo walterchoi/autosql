@@ -48,6 +48,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             historyTableSuffix: defaults.historyTableSuffix,
             sanitizeInvalidChars: defaults.sanitizeInvalidChars,
             bulkLoad: defaults.bulkLoad,
+            upgradeCharset: defaults.upgradeCharset,
             surrogateKey: defaults.surrogateKey,
             surrogateKeyColumn: defaults.surrogateKeyColumn,
             useSchemaLock: defaults.useSchemaLock,

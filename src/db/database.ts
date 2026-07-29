@@ -75,6 +75,16 @@ export abstract class Database {
         }
     }
 
+    /**
+     * Opt-in charset upgrade (R8) for a pre-existing table: detect text columns whose charset differs
+     * from the target and return the DDL to convert them. Base implementation is a no-op — only MySQL
+     * has the 3-byte `utf8`/`utf8mb3` vs 4-byte `utf8mb4` split; Postgres `UTF8` already stores 4-byte
+     * characters, so there is nothing to migrate. See `upgradeCharset`.
+     */
+    public async getCharsetUpgradeQueries(_table: string): Promise<QueryInput[]> {
+        return [];
+    }
+
     static create(config: DatabaseConfig): Database {
         const DIALECTS: Record<string, new (config: DatabaseConfig) => Database> = {
             mysql: MySQLDatabase,

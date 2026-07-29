@@ -45,5 +45,6 @@ module.exports = {
     'tests/boolean-inference-live\\.test\\.ts',
     'tests/stream-small-int-live\\.test\\.ts',
     'tests/no-credential-logging-live\\.test\\.ts',
+    'tests/charset-upgrade-live\\.test\\.ts',
   ],
 };

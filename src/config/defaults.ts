@@ -23,6 +23,7 @@ export const defaults = {
     excludeBlankColumns: true,
     sanitizeInvalidChars: false,
     bulkLoad: false,
+    upgradeCharset: false,
     surrogateKey: false,
     surrogateKeyColumn: "autosql_id",
     useSchemaLock: false,
