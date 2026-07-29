@@ -51,7 +51,10 @@
     "ssh2": "^1.16.0"
   },
   "overrides": {
-    "handlebars": "4.7.9"
+    "handlebars": "4.7.9",
+    "js-yaml": "^4.1.0",
+    "brace-expansion": "^5.0.8",
+    "@babel/core": "^7.29.7"
   },
   "bugs": {
     "url": "https://github.com/walterchoi/autosql/issues"
