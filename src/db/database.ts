@@ -57,6 +57,24 @@ export abstract class Database {
     public warn(msg: string): void { this.config.logger?.warn?.(msg); }
     public error(msg: string): void { this.config.logger?.error?.(msg); }
 
+    /**
+     * Make blocked schema changes observable (R9). `deleteColumns` and `updatePrimaryKey` default
+     * to `false` — the safe default — so `compareMetaData` can *compute* a column drop or primary-key
+     * change that is then silently not executed. For an ETL product "the schema changed and autosql
+     * didn't apply it" should be visible, not silent. Warns (once, real-table only; the caller guards
+     * on `isStagingTable`) naming the columns and the flag to flip. `primaryKeyChanges` is only
+     * populated on a genuine structural/rename delta (not in steady state), and `dropColumns` is the
+     * final rename-folded list, so neither warning fires spuriously on an unchanged re-ingest.
+     */
+    protected warnBlockedSchemaChanges(table: string, changes: AlterTableChanges): void {
+        if (changes.dropColumns?.length && !this.config.deleteColumns) {
+            this.warn(`Schema change not applied to '${table}': ${changes.dropColumns.length} column(s) would be dropped (${changes.dropColumns.join(", ")}) but 'deleteColumns' is off. Set deleteColumns: true to apply the drop, or leave it off to keep the columns.`);
+        }
+        if (changes.primaryKeyChanges?.length && !this.config.updatePrimaryKey) {
+            this.warn(`Schema change not applied to '${table}': a primary-key change is pending (${changes.primaryKeyChanges.join(", ")}) but 'updatePrimaryKey' is off. Set updatePrimaryKey: true to apply it.`);
+        }
+    }
+
     static create(config: DatabaseConfig): Database {
         const DIALECTS: Record<string, new (config: DatabaseConfig) => Database> = {
             mysql: MySQLDatabase,

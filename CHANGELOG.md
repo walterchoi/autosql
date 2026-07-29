@@ -1,5 +1,9 @@
 ## [Unreleased]
+### ✨ New
+- **Blocked schema changes are now surfaced (R9).** `deleteColumns` and `updatePrimaryKey` default to `false` (the safe default), so a column drop or primary-key change can be *computed* from the incoming data and then silently not applied. AutoSQL now logs a warning (via the configured `logger`) naming the affected columns and the flag to set — so "the schema changed and AutoSQL didn't apply it" is observable instead of silent. Fires once, on the real table only (not staging temp tables), and only on a genuine computed change (no spurious warning on an unchanged re-ingest).
+
 ### 🔧 Maintenance
+- **Confirmed: credentials are never logged (R7).** Audited both dialect connection paths — the library logs schema/identifier/error-message detail but never the config object or the `password`. A driver's own error string may include the host/user (its convention), never the secret. Added a regression test that drives a failed (wrong-password) connection and asserts the password never appears in any `log`/`warn`/`error` output. (Secrets-at-rest / vault-KMS is a product-layer concern, out of the engine's scope.)
 - **`npm audit` is clean (0 vulnerabilities).** Production was always unaffected — the package ships no regular `dependencies`, only optional `mysql2`/`pg`/`pg-copy-streams`/`ssh2`. The remaining dev-only test-tooling advisories (handlebars, js-yaml, brace-expansion, @babel/core) are resolved via `overrides` pinned to each advisory's actual fixed version, plus a lockfile regeneration that made the pre-existing `handlebars@4.7.9` override effective (the committed lock had a stale `4.7.8`). No consumer-facing change.
 
 ### 🐛 Bug Fixes (robustness)
