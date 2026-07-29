@@ -251,7 +251,10 @@ export class MySQLDatabase extends Database {
         }
         const queries: QueryInput[] = [];
         const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "mysql")}.` : "";
-        
+
+        // R9: surface schema changes that are computed but blocked by the safe-default flags.
+        if (!isStagingTable) this.warnBlockedSchemaChanges(table, alterTableChanges);
+
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }

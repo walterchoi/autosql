@@ -44,5 +44,6 @@ module.exports = {
     'tests/bulk-load-live\\.test\\.ts',
     'tests/boolean-inference-live\\.test\\.ts',
     'tests/stream-small-int-live\\.test\\.ts',
+    'tests/no-credential-logging-live\\.test\\.ts',
   ],
 };
