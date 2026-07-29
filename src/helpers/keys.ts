@@ -75,7 +75,10 @@ export function applySurrogateKey(
     return { [name]: surrogateColumnDefinition(), ...metaData };
 }
 
-export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: number, primaryKey?: string[], data?: Record<string, any>[]): MetadataHeader {
+export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: number, primaryKey?: string[], data?: Record<string, any>[], maxCompositeKeyColumns?: number): MetadataHeader {
+    // P4: bound the composite-key search. Without a cap it tries every subset of pseudo-unique
+    // columns (O(2^N)), each scanned over all rows — a real hang on a wide, key-less table.
+    const maxComposite = Math.max(1, maxCompositeKeyColumns ?? 4);
     try {
         const headers: MetadataHeader = JSON.parse(JSON.stringify(meta_data)); // Deep copy to avoid mutation
         const maxKeyLength = maxKeyLengthInput || defaults.maxKeyLength;
@@ -193,7 +196,8 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             
             if (!selectedPrimaryKey && data && data.length > 0) {
                 // Find the smallest set of pseudo-unique columns that together are unique
-                for (let i = 1; i <= potentialCompositeKeys.length; i++) {
+                const cap1 = Math.min(potentialCompositeKeys.length, maxComposite);
+                for (let i = 1; i <= cap1; i++) {
                     const combinations = generateCombinations(potentialCompositeKeys, i);
         
                     for (const combo of combinations) {
@@ -211,7 +215,8 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             if (!selectedPrimaryKey && !foundUniqueCombination && data && data.length > 0) {
                 const extendedColumns = [...potentialCompositeKeys, ...dateColumns];
 
-                for (let i = 1; i <= extendedColumns.length; i++) {
+                const cap2 = Math.min(extendedColumns.length, maxComposite);
+                for (let i = 1; i <= cap2; i++) {
                     const combinations = generateCombinations(extendedColumns, i);
     
                     for (const combo of combinations) {
