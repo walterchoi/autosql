@@ -42,14 +42,19 @@ describe("predictType function", () => {
         expect(predictType("1.23e10")).toBe("exponent");
     });
 
-    /** ✅ Boolean Tests */
+    /** ✅ Boolean Tests — only the literals true/false infer boolean (R3). */
     test("detects boolean values correctly", async () => {
         expect(predictType("true")).toBe("boolean");
         expect(predictType("True")).toBe("boolean");
         expect(predictType("false")).toBe("boolean");
         expect(predictType("False")).toBe("boolean");
-        expect(predictType("1")).toBe("boolean");
-        expect(predictType("0")).toBe("boolean");
+    });
+
+    /** ✅ R3: a bare 0/1 is a small integer, NOT a boolean. Columns that store flags as
+     * 0/1 opt in explicitly via the `booleanColumns` config hint. */
+    test("bare 0/1 types as a small integer, not boolean", async () => {
+        expect(predictType("1")).toBe("tinyint");
+        expect(predictType("0")).toBe("tinyint");
     });
 
     /** ✅ Digit-string fidelity: numbers stay numbers; leading zeros stay identifiers */

@@ -353,8 +353,13 @@ export class AutoSQLHandler {
     }
 
     async handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[], options?: AutoSQLOptions) {
-        // Fetch existing metadata
-        const { currentMetaData } = await this.fetchTableMetadata(table);
+        // Existing table schema. When the caller supplies `existingSchema` (N1 fast path), trust it
+        // and skip live introspection of the target table — the main per-run DB round-trip for a
+        // stable, no-drift pipeline. It must be a prior run's resolved schema (see AutoSQLOptions),
+        // so it already carries the managed dwh_*/surrogate columns and the timestamp step won't
+        // re-add them.
+        const currentMetaData = options?.existingSchema
+            ?? (await this.fetchTableMetadata(table)).currentMetaData;
 
         // A-4 fast path: when the caller provides the schema (assumeSchema) it is authoritative.
         // If it declares every column present in the data, skip per-value inference entirely; if it
@@ -642,7 +647,40 @@ export class AutoSQLHandler {
         }));
         // Configure staging tables where necessary (no-op schema changes; CTAS already matched)
         await this.configureTables(stagingInputs)
+        if (this.db.getConfig().bulkLoad) {
+            return await this.bulkLoadStaging(stagingInputs)
+        }
         return await this.insertData(stagingInputs)
+    }
+
+    /**
+     * Populate the staging temp tables with the dialect's bulk-copy mechanism (Postgres COPY /
+     * MySQL LOAD DATA LOCAL INFILE) instead of parameterised INSERT — the opt-in `bulkLoad` fast
+     * path. The subsequent merge (temp → real) is unchanged, so upsert semantics are preserved. If a
+     * table's bulk load fails for any reason (server local_infile off, missing pg-copy-streams, a
+     * value the text protocol rejects), it falls back to parameterised INSERT for that table so the
+     * load still completes. COPY is all-or-nothing, so the temp table is empty when the fallback runs.
+     */
+    private async bulkLoadStaging(stagingInputs: InsertInput[]): Promise<QueryResult[]> {
+        const config = this.db.getConfig();
+        const dialectConfig = this.db.getDialectConfig();
+        const excludeAutoIncrement = config.surrogateKey === true;
+        const results: QueryResult[] = [];
+        for (const input of stagingInputs) {
+            const header = input.comparedMetaData?.updatedMetaData || input.metaData;
+            // Same column set the INSERT path uses: drop auto-increment (surrogate) columns so the
+            // DB assigns them. getInsertValues drops the same columns from each value row, so the
+            // columns and value arrays stay aligned.
+            const columns = Object.keys(header).filter(col => !(excludeAutoIncrement && header[col].autoIncrement === true));
+            const valueRows = input.data.map(row => getInsertValues(header, row, dialectConfig, config, true));
+            try {
+                results.push(await this.db.bulkLoadRows(input.table, columns, valueRows));
+            } catch (err) {
+                this.db.warn(`bulkLoad failed for '${input.table}', falling back to INSERT: ${(err as Error).message}`);
+                results.push(...await this.insertData([input]));
+            }
+        }
+        return results;
     }
 
     private async removeStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {

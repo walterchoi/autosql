@@ -1,8 +1,9 @@
 import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
+import { serializeRowsToCopyText } from "../helpers/bulkLoad";
 import { mysqlConfig } from "./config/mysqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { escapeIdentifier, escapeLiteral } from './utils/escape';
@@ -49,6 +50,33 @@ export class MySQLDatabase extends Database {
         // mysql2's promise wrapper keeps the pool config on the underlying `.pool` (not `.config`).
         const conn = this.connection as any;
         return conn?.pool?.config?.connectionLimit ?? conn?.config?.connectionLimit ?? 5;
+    }
+
+    public async bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult> {
+        const start = new Date();
+        if (!this.connection) await this.establishConnection();
+        if (rows.length === 0) {
+            return { start, end: new Date(), duration: 0, success: true, affectedRows: 0 };
+        }
+        const { Readable } = require("stream");
+        const schema = this.getConfig().schema;
+        const schemaPrefix = schema ? `${escapeIdentifier(schema, "mysql")}.` : "";
+        const colList = columns.map(c => escapeIdentifier(c, "mysql")).join(", ");
+        const body = serializeRowsToCopyText(rows);
+        const client = await (this.connection as Pool).getConnection();
+        try {
+            // The stream body matches serializeRowsToCopyText: TAB fields, newline rows, `\` escape,
+            // `\N` NULL. CHARACTER SET utf8mb4 so 4-byte characters load intact.
+            const sql =
+                `LOAD DATA LOCAL INFILE 'autosql-bulk' INTO TABLE ${schemaPrefix}${escapeIdentifier(table, "mysql")} ` +
+                `CHARACTER SET utf8mb4 FIELDS TERMINATED BY '\\t' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' (${colList})`;
+            // mysql2 streams the infile as Buffers (it calls Buffer.copy), so yield a Buffer.
+            await client.query({ sql, infileStreamFactory: () => Readable.from([Buffer.from(body, "utf8")]) } as any);
+            const end = new Date();
+            return { start, end, duration: end.getTime() - start.getTime(), success: true, affectedRows: rows.length };
+        } finally {
+            client.release();
+        }
     }
 
     public async acquireSchemaLock(table: string, timeoutSeconds: number): Promise<void> {

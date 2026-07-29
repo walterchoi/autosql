@@ -47,6 +47,7 @@
   "optionalDependencies": {
     "mysql2": "^3.14.3",
     "pg": "^8.16.3",
+    "pg-copy-streams": "^7.0.0",
     "ssh2": "^1.16.0"
   },
   "overrides": {

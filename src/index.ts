@@ -4,6 +4,8 @@ export { SchemaLockTimeoutError } from "./errors";
 export { validateConfig } from "./helpers/utilities";
 
 export { getDataHeaders, compareMetaData, getMetaData, initializeMetaData } from "./helpers/metadata";
+export { buildColumnProfile } from "./helpers/columnProfile";
+export type { ColumnProfile, ColumnRole, Cardinality, SemanticHint } from "./helpers/columnProfile";
 
 export type {
     DatabaseConfig,
@@ -16,7 +18,8 @@ export type {
     QueryWithParams,
     QueryResult,
     InsertResult,
-    SSHKeys
+    SSHKeys,
+    AutoSQLOptions
 } from "./config/types";
 
 export { getSchemaAt, detectSchemaDrift, computeChecksum } from "./helpers/schemaHistory";

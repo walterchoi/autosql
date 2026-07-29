@@ -124,6 +124,21 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     // be confirmed for any dense column of ~10+ rows — it was always mislabeled pseudounique.
     const uniqueSetCap = sampleData.length + 1;
     const forceStringSet = new Set<string>(databaseConfig.forceStringColumns ?? []);
+    const booleanSet = new Set<string>(databaseConfig.booleanColumns ?? []);
+    // A value in a `booleanColumns`-hinted column must be a real boolean: the literals
+    // true/false or the flags 0/1 (case-insensitive), or a null/blank. Anything else is
+    // rejected — forcing a column to boolean is lossy, so an unexpected value (e.g. 2,
+    // "yes") is surfaced as an error rather than silently coerced. Nullish is allowed and
+    // handled by the normal null path.
+    const isBooleanDomainValue = (v: any): boolean => {
+        if (v === '' || v === null || v === undefined || v === '\\N' || v === 'null') return true;
+        return ["0", "1", "true", "false"].includes(String(v).trim().toLowerCase());
+    };
+    const assertBooleanColumn = (column: string, value: any) => {
+        if (booleanSet.has(column) && !isBooleanDomainValue(value)) {
+            throw new Error(`Column "${column}" is declared in booleanColumns but received a non-boolean value: ${JSON.stringify(value)}. Allowed: true/false, 0/1, or null.`);
+        }
+    };
 
     for (const row of sampleData) {
         const rowColumns = Object.keys(row);
@@ -164,6 +179,10 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 metaDataInterim[column].nullCount++;
                 continue;
             }
+
+            // booleanColumns: reject out-of-domain values early (the type is forced to
+            // boolean at collation below).
+            assertBooleanColumn(column, value);
 
             // forceStringColumns: skip type inference, track only raw string length
             if (forceStringSet.has(column)) {
@@ -214,8 +233,13 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     for (const column in metaDataInterim) {
-        // forceStringColumns always resolve to varchar regardless of observed types
-        const type = forceStringSet.has(column) ? "varchar" : collateTypes(metaDataInterim[column].types);
+        // forceStringColumns always resolve to varchar, booleanColumns always to boolean,
+        // regardless of observed types (0/1 would otherwise infer as int).
+        const type = forceStringSet.has(column)
+            ? "varchar"
+            : booleanSet.has(column)
+                ? "boolean"
+                : collateTypes(metaDataInterim[column].types);
         metaDataInterim[column].collated_type = type;
         metaData[column].type = type;
         metaData[column].length = metaDataInterim[column].length || 0;
@@ -298,6 +322,9 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         for (const column of allColumns) {
             const value = row[column]
             if (value === null || value === undefined) continue;
+            // booleanColumns: validate non-sampled values too (the type is forced to boolean
+            // at recollation below).
+            assertBooleanColumn(column, value);
             // Re-evaluate the type on non-sampled rows too (not just length): a wider value —
             // an integer needing int/bigint, or a decimal/float on an int column — must upgrade
             // the inferred type set, otherwise it overflows/truncates on insert. The type is
@@ -331,7 +358,11 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         // default (no-sampling) path is completely untouched. Text promotion is re-applied
         // below off the final length.
         if (remainingData.length > 0) {
-            const recollated = forceStringSet.has(column) ? "varchar" : collateTypes(metaDataInterim[column].types);
+            const recollated = forceStringSet.has(column)
+                ? "varchar"
+                : booleanSet.has(column)
+                    ? "boolean"
+                    : collateTypes(metaDataInterim[column].types);
             metaDataInterim[column].collated_type = recollated;
             metaData[column].type = recollated;
         }

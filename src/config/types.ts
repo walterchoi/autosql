@@ -23,14 +23,24 @@ export interface ColumnDefinition {
 export type MetadataHeader = Record<string, ColumnDefinition>;
 
 /**
- * Per-call options for `autoSQL`. Currently the provided-schema fast path (A-4): when the caller
- * already knows the schema (e.g. a SproutSpec `columns` block mapped to a `MetadataHeader`), passing
- * it as `assumeSchema` lets AutoSQL skip per-value type inference. Declared columns are authoritative
- * (which also side-steps inference footguns such as small integers being mis-typed as boolean); any
- * data column not declared is still inferred as a fallback.
+ * Per-call options for `autoSQL`.
+ *
+ * - `assumeSchema` (A-4): the caller already knows the schema (e.g. a SproutSpec `columns` block
+ *   mapped to a `MetadataHeader`). AutoSQL skips per-value type inference for declared columns
+ *   (which also side-steps inference footguns such as small integers being mis-typed as boolean);
+ *   any data column not declared is still inferred as a fallback.
+ *
+ * - `existingSchema` (N1 / v1b): the caller already knows the CURRENT table's schema and passes it
+ *   so AutoSQL skips live introspection (`getTableMetaData`) of the target table. It must be
+ *   AutoSQL's own **last resolved schema** — i.e. a previous run's `QueryResult.metaData`, which
+ *   already includes managed columns (`dwh_*` timestamps, an auto-increment surrogate) — NOT a bare
+ *   spec: a baseline missing the managed columns would make the timestamp step re-`ADD` them. Only
+ *   pass it in steady state (the table exists and hasn't drifted); on a load error or a detected
+ *   drift, drop it so AutoSQL re-introspects.
  */
 export interface AutoSQLOptions {
   assumeSchema?: MetadataHeader;
+  existingSchema?: MetadataHeader;
 }
 
 
@@ -100,6 +110,15 @@ export interface DatabaseConfig {
 
       insertType?: "UPDATE" | "INSERT";
       insertStack?: number;
+      /**
+       * Load rows with the dialect's bulk-copy mechanism (Postgres `COPY` / MySQL
+       * `LOAD DATA LOCAL INFILE`) instead of parameterised multi-row `INSERT` — much faster and
+       * cheaper for large loads. Applies to the staging-table population (so upsert semantics are
+       * preserved by the unchanged merge step) and requires `useStagingInsert`. On a bulk-load error
+       * the batch falls back to parameterised `INSERT` so a single bad row can still surface a clear
+       * error. Off by default. Postgres `COPY` needs the optional `pg-copy-streams` dependency.
+       */
+      bulkLoad?: boolean;
 
       safeMode?: boolean;
       deleteColumns?: boolean;
@@ -133,6 +152,17 @@ export interface DatabaseConfig {
        * padded codes) that would otherwise be inferred as numeric types.
        */
       forceStringColumns?: string[];
+
+      /**
+       * Column names that should always be stored as a boolean flag. By default AutoSQL
+       * only infers boolean from the literals `true`/`false` — a bare `0`/`1` is treated
+       * as an integer. Use this hint for columns that encode a real flag as `0`/`1` (or
+       * `true`/`false`) so they are created as a boolean column. Values outside the
+       * boolean domain (`0`, `1`, `true`, `false`, case-insensitive, plus null/blank) are
+       * rejected with an error rather than silently coerced — forcing a column to boolean
+       * is lossy, so an unexpected value is surfaced, not hidden.
+       */
+      booleanColumns?: string[];
 
       /**
        * Explicit number-format separators for locale-aware ingestion. Set BOTH to
