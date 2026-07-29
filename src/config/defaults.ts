@@ -5,6 +5,11 @@ export const defaults = {
     samplingMinimum: 100,
     maxKeyLength: 255,
     maxVarcharLength: 1024,
+    // Cap the composite-primary-key search: try key combinations up to this many columns. Bounds an
+    // otherwise O(2^N) search (every subset of pseudo-unique columns, each scanned over all rows) —
+    // a real hang risk on a wide table with no natural key. 4 covers effectively every real composite
+    // key; raise it only if a genuine 5+ column natural key must be auto-detected.
+    maxCompositeKeyColumns: 4,
     autoIndexing: true,
     insertType: "UPDATE",
     insertStack: 100,

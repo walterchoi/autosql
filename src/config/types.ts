@@ -115,6 +115,14 @@ export interface DatabaseConfig {
       autoIndexing?: boolean;
       decimalMaxLength?: number;
       maxKeyLength?: number;
+      /**
+       * Cap the auto-detected composite primary key at this many columns (default 4). The key search
+       * tries combinations of pseudo-unique columns and scans the data for uniqueness; without a cap
+       * it is O(2^N) in the number of candidate columns — a real hang risk on a wide table with no
+       * natural key. 4 covers effectively every real composite key; raise it only to auto-detect a
+       * genuine 5+ column natural key.
+       */
+      maxCompositeKeyColumns?: number;
       maxVarcharLength?: number,
 
       sampling?: number;

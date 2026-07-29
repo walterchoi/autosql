@@ -438,7 +438,7 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
         const headers = await getDataHeaders(data, validatedConfig)
         let metaData : MetadataHeader
         if(validatedConfig.autoIndexing) {
-            metaData = predictIndexes(headers, validatedConfig.maxKeyLength, primaryKey || validatedConfig.primaryKey, data)
+            metaData = predictIndexes(headers, validatedConfig.maxKeyLength, primaryKey || validatedConfig.primaryKey, data, validatedConfig.maxCompositeKeyColumns)
         } else {
             metaData = headers
         }

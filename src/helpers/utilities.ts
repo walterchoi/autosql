@@ -30,6 +30,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             samplingMinimum: defaults.samplingMinimum,
             metaData: config.metaData || {}, // Ensuring headers remain intact
             maxKeyLength: defaults.maxKeyLength,
+            maxCompositeKeyColumns: defaults.maxCompositeKeyColumns,
             maxVarcharLength: defaults.maxVarcharLength,
             autoSplit: defaults.autoSplit,
             insertStack: defaults.insertStack,
