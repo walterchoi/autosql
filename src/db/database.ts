@@ -88,7 +88,8 @@ export abstract class Database {
     static create(config: DatabaseConfig): Database {
         const DIALECTS: Record<string, new (config: DatabaseConfig) => Database> = {
             mysql: MySQLDatabase,
-            pgsql: PostgresDatabase
+            pgsql: PostgresDatabase,
+            sqlserver: SqlServerDatabase
         };
 
         const dialect = config.sqlDialect?.toLowerCase();
@@ -540,5 +541,6 @@ export abstract class Database {
 
 import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
+import { SqlServerDatabase } from "./sqlserver";
 
-export { MySQLDatabase, PostgresDatabase };
+export { MySQLDatabase, PostgresDatabase, SqlServerDatabase };

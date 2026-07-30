@@ -44,7 +44,7 @@ export interface AutoSQLOptions {
 }
 
 
-export type supportedDialects = "mysql" | "pgsql";
+export type supportedDialects = "mysql" | "pgsql" | "sqlserver";
 
 export interface AlterTableChanges {
   addColumns: MetadataHeader;

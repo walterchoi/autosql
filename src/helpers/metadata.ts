@@ -9,6 +9,7 @@ import { Database } from '../db/database';
 import { DialectConfig, ColumnDefinition, MetadataHeader, metaDataInterim, AlterTableChanges } from '../config/types';
 import { mysqlConfig } from "../db/config/mysqlConfig";
 import { pgsqlConfig } from "../db/config/pgsqlConfig";
+import { sqlServerConfig } from "../db/config/sqlServerConfig";
 
 export function initializeMetaData(headers: string[]): Record<string, any>[] {
     try {
@@ -103,7 +104,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     const dialect = databaseConfig.sqlDialect;
-    const dialectConfig: DialectConfig = dialect === 'mysql' ? mysqlConfig : pgsqlConfig;
+    const dialectConfig: DialectConfig = dialect === 'mysql' ? mysqlConfig : dialect === 'sqlserver' ? sqlServerConfig : pgsqlConfig;
 
     let sampleData = data;
     let remainingData: Record<string, any>[] = [];
@@ -430,6 +431,8 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
                 dialectConfig = mysqlConfig;
             } else if(validatedConfig.sqlDialect == 'pgsql') {
                 dialectConfig = pgsqlConfig;
+            } else if(validatedConfig.sqlDialect == 'sqlserver') {
+                dialectConfig = sqlServerConfig;
             } else {
                 throw new Error(`Unsupported SQL dialect: ${validatedConfig.sqlDialect}`);
             }

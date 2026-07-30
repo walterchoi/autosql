@@ -17,6 +17,7 @@ import { supportedDialects, DialectConfig } from "../../config/types";
 const IDENTIFIER_QUOTE: Record<supportedDialects, string> = {
     mysql: "`",
     pgsql: '"',
+    sqlserver: "]", // SQL Server wraps in [ ... ] with a doubled closing bracket ]] as the escape
 };
 
 /**
@@ -34,6 +35,11 @@ export function escapeIdentifier(name: string, dialect: supportedDialects): stri
     }
     if (name.includes("\0")) {
         throw new Error(`Invalid SQL identifier: NUL byte is not permitted (${JSON.stringify(name)})`);
+    }
+    // SQL Server: bracket-quote, doubling only the closing bracket ("]" -> "]]"). The quote pair is
+    // asymmetric ([ ]) so it can't use the symmetric doubling below.
+    if (dialect === "sqlserver") {
+        return `[${name.split("]").join("]]")}]`;
     }
     const quote = IDENTIFIER_QUOTE[dialect];
     return `${quote}${name.split(quote).join(quote + quote)}${quote}`;

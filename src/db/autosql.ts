@@ -1,5 +1,6 @@
 import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
+import { SqlServerDatabase } from "./sqlserver";
 import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
@@ -38,7 +39,7 @@ export class AutoSQLHandler {
     // run's staging data (both share the `${prefix}${table}__` name pattern).
     private activeStreamStagingTables = new Set<string>();
 
-    constructor(dbInstance: MySQLDatabase | PostgresDatabase) {
+    constructor(dbInstance: MySQLDatabase | PostgresDatabase | SqlServerDatabase) {
         this.db = dbInstance;
     }
 
