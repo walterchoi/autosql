@@ -14,6 +14,7 @@
     "test:unit": "jest --config jest.unit.config.js",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "bench": "jest --config jest.bench.config.js --runInBand",
     "prepublishOnly": "npm run test && npm run build",
     "testPublish": "tsc && npm pack",
     "prepare": "npm run build",

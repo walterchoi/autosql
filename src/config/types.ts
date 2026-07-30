@@ -343,6 +343,10 @@ export interface metaDataInterim {
     byteLength: number;
     decimal: number;
     trueMaxDecimal: number;
+    // Running max of integer-part digits for a numeric column. Precision must be
+    // maxIntegerDigits + maxScale; tracking the integer part separately avoids under-counting
+    // when the widest-integer value and the widest-scale value are different rows.
+    intLen?: number;
   }
 }
 

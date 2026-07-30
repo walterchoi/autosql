@@ -13,6 +13,29 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         let currentType: string | null = null;
         let strData : string | null = null;
         let json : boolean = false;
+
+        // Fast path for native JS scalars. JSON sources deliver most values as native numbers and
+        // booleans, yet the string path below stringifies every value and runs a `JSON.parse` + the
+        // full regex chain + `normalizeNumber` on it — the dominant per-value inference cost. A native
+        // boolean/finite-number is unambiguous, so short-circuit to the same result and fall straight
+        // into the shared numeric-differentiation / length logic. (Non-finite numbers, Dates, objects
+        // and strings still take the full string path.)
+        if (typeof data === "boolean") {
+            return "boolean";
+        }
+        if (typeof data === "number" && Number.isFinite(data)) {
+            strData = String(data);
+            // Check exponential form first: a huge integer can stringify as "1e+21" (which the string
+            // path types as `exponent`, not `int`). Leading-zero identifiers and locale separators
+            // never apply to a native number.
+            if (/[eE]/.test(strData)) {
+                currentType = "exponent";
+            } else if (Number.isInteger(data)) {
+                currentType = "int";
+            } else {
+                currentType = "decimal";
+            }
+        } else {
         if (typeof data === "object" && data !== null) {
             strData = JSON.stringify(data);
         } else if (typeof data === "string") {
@@ -62,6 +85,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         } else {
             currentType = "varchar";
         }
+        } // end string-path branch (native number/boolean took the fast path above)
 
         // Handle integer type differentiation
         if (currentType === "int") {

@@ -171,7 +171,8 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                     length: 0,
                     byteLength: 0,
                     decimal: 0,
-                    trueMaxDecimal: 0
+                    trueMaxDecimal: 0,
+                    intLen: 0
                 }
             }
 
@@ -221,11 +222,16 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 }
                 const decimalLen = valueStr.includes(".") ? valueStr.split(".")[1].length : 0;
                 const integerLen = valueStr.split(".")[0].length;
+                metaDataInterim[column].intLen = Math.max(metaDataInterim[column].intLen ?? 0, integerLen);
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].trueMaxDecimal = Math.max(metaDataInterim[column].trueMaxDecimal, metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
 
-                metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal);
+                // Precision = max integer digits + max scale — taken as independent running maxes.
+                // Summing this row's integer length with the running scale (the old behaviour)
+                // under-counted when the widest-integer and widest-scale values were different rows
+                // (e.g. [10.5, 5.25] -> decimal(3,2), which overflows on 10.5).
+                metaDataInterim[column].length = Math.max(metaDataInterim[column].length, (metaDataInterim[column].intLen ?? 0) + metaDataInterim[column].decimal);
             } else {
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, String(value).length);
                 metaDataInterim[column].byteLength = Math.max(metaDataInterim[column].byteLength, Buffer.byteLength(String(value), "utf8"));
@@ -341,11 +347,14 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 const decimalLen = valueStr.includes(".") ? valueStr.split(".")[1].length : 0;
                 const integerLen = valueStr.split(".")[0].length;
 
+                metaDataInterim[column].intLen = Math.max(metaDataInterim[column].intLen ?? 0, integerLen);
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].trueMaxDecimal = Math.max(metaDataInterim[column].trueMaxDecimal, metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
 
-                metaDataInterim[column].length = Math.max(metaDataInterim[column].length, integerLen + metaDataInterim[column].decimal);
+                // Precision = max integer digits + max scale (independent running maxes); see the
+                // sample-loop comment above.
+                metaDataInterim[column].length = Math.max(metaDataInterim[column].length, (metaDataInterim[column].intLen ?? 0) + metaDataInterim[column].decimal);
             } else {
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, String(value).length);
                 metaDataInterim[column].byteLength = Math.max(metaDataInterim[column].byteLength, Buffer.byteLength(String(value), "utf8"));
