@@ -274,6 +274,12 @@ export interface DatabaseConfig {
           log?: (msg: string) => void;
           warn?: (msg: string) => void;
           error?: (msg: string) => void;
+          /**
+           * Structured per-run metrics sink (see `QueryStats`). Called once per `autoSQL` load with
+           * the phase timings and throughput, so a pipeline can forward them to its observability /
+           * stats store without parsing log strings. Optional; omit to not collect metrics.
+           */
+          stats?: (stats: QueryStats) => void;
       };
 
       sshConfig?: SSHKeys;
@@ -358,6 +364,38 @@ export interface QueryResult {
      * pass it back to skip re-introspection on the next load (see the `existingSchema` fast path).
      */
     metaData?: MetadataHeader;
+    /** Per-run performance metrics (phase timings + throughput). Populated on a successful `autoSQL`
+     *  load; the same object is passed to `logger.stats`. See `QueryStats`. */
+    stats?: QueryStats;
+}
+
+/**
+ * Per-run performance metrics for one `autoSQL` load — for production observability and for building
+ * a stats history (e.g. to size batches, spot drift in load times, or bill by throughput). Durations
+ * are milliseconds of wall-clock time for that phase.
+ */
+export interface QueryStats {
+    table: string;
+    /** Number of input rows passed to `autoSQL`. */
+    rows: number;
+    /** Rows the database reported affected by the load (insert + update). */
+    affectedRows: number;
+    /** Total wall-clock time for the whole `autoSQL` call. */
+    durationMs: number;
+    /** `rows / (durationMs / 1000)` — input-row throughput. */
+    rowsPerSecond: number;
+    phases: {
+        /** Input prep + schema inference/resolution (`predictType`/introspection/compare). */
+        prepare?: number;
+        /** DDL: CREATE / ALTER to make the table match the resolved schema. */
+        configure?: number;
+        /** Data load: staging populate + merge into the target, or a direct insert. */
+        load?: number;
+    };
+    /** Whether the staging-table path was used (vs a direct insert). */
+    staged: boolean;
+    /** Whether the bulk-copy path (`COPY` / `LOAD DATA`) was used to populate. */
+    bulkLoad: boolean;
 }
 
 export interface metaDataInterim {

@@ -2,7 +2,7 @@ import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
 import { SqlServerDatabase } from "./sqlserver";
 import { Database } from "./database";
-import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions } from "../config/types";
+import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, QueryStats } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults } from "../helpers/utilities";
@@ -978,12 +978,19 @@ export class AutoSQLHandler {
             let insertResults: QueryResult[];
             let insertInput: InsertInput[];
 
+            // Per-run instrumentation (QueryStats): wall-clock per phase. `perf` is monotonic and
+            // sub-millisecond, independent of the Date-based start/end used for the result envelope.
+            const perf = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+            const phases: { prepare?: number; configure?: number; load?: number } = {};
+
             if (useSchemaLock) await this.db.acquireSchemaLock(table, lockTimeout);
             let historyId: number | undefined;
             try {
+                const tPrepare = perf();
                 insertInput = await this.prepareInsertData(table, data, schema, primaryKey, options);
                 let nestedInputs = await this.extractNestedInputs(insertInput);
                 insertInput = [...insertInput, ...nestedInputs];
+                phases.prepare = perf() - tPrepare;
 
                 // Schema history: drift detection + record start
                 if (useHistory) {
@@ -1002,7 +1009,9 @@ export class AutoSQLHandler {
                 }
 
                 try {
+                    const tConfigure = perf();
                     await this.configureTables(insertInput);
+                    phases.configure = perf() - tConfigure;
                     if (historyId !== undefined) {
                         const updatedMeta = insertInput[0]?.comparedMetaData?.updatedMetaData;
                         if (updatedMeta) await recordMigrationSuccess(this.db, historyId, updatedMeta);
@@ -1018,6 +1027,7 @@ export class AutoSQLHandler {
                 if (useSchemaLock) await this.db.releaseSchemaLock(table);
             }
 
+            const tLoad = perf();
             if (config.useStagingInsert) {
                 await this.prepareStagingTables(insertInput);
                 await this.insertStagingTables(insertInput);
@@ -1028,6 +1038,7 @@ export class AutoSQLHandler {
             } else {
                 insertResults = await this.insertData(insertInput);
             }
+            phases.load = perf() - tLoad;
 
             affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
             const allResults = insertResults.flatMap(res => res.results || []);
@@ -1035,7 +1046,27 @@ export class AutoSQLHandler {
             // Return the resolved schema (incl. managed dwh_*/surrogate columns) so callers can
             // cache it and skip re-introspection next load — the `existingSchema` fast path.
             const resolvedMetaData = insertInput[0]?.comparedMetaData?.updatedMetaData || insertInput[0]?.metaData;
-            return { start, end, success: true, duration: end.getTime() - start.getTime(), affectedRows, results: allResults, table, metaData: resolvedMetaData };
+
+            // Per-run metrics: attach to the result (so the caller can store them) and emit to the
+            // structured stats sink if one is configured.
+            const durationMs = end.getTime() - start.getTime();
+            const stats: QueryStats = {
+                table,
+                rows: data.length,
+                affectedRows,
+                durationMs,
+                rowsPerSecond: durationMs > 0 ? Math.round((data.length / durationMs) * 1000) : 0,
+                phases: {
+                    prepare: phases.prepare !== undefined ? Math.round(phases.prepare) : undefined,
+                    configure: phases.configure !== undefined ? Math.round(phases.configure) : undefined,
+                    load: phases.load !== undefined ? Math.round(phases.load) : undefined,
+                },
+                staged: !!config.useStagingInsert,
+                bulkLoad: !!config.bulkLoad,
+            };
+            try { config.logger?.stats?.(stats); } catch { /* a metrics sink must never break a load */ }
+
+            return { start, end, success: true, duration: durationMs, affectedRows, results: allResults, table, metaData: resolvedMetaData, stats };
         } catch (error: any) {
             const end = new Date();
             return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error) };
