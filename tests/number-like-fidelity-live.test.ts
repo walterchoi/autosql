@@ -51,5 +51,35 @@ Object.values(DB_CONFIG).forEach((config) => {
             expect(row.phone).toBe("0412345678");              // leading zero preserved
             expect(row.big_id).toBe("12345678901234567890");   // 20 digits, not rounded
         });
+
+        test("a high-precision decimal is preserved exactly when forced to text", async () => {
+            const T2 = "numlike_deepdec_test";
+            const r2 = `${qi("test_schema")}.${qi(T2)}`;
+            const fdb = Database.create({ ...config, schema: "test_schema", useWorkers: false, forceStringColumns: ["pi"] });
+            await fdb.establishConnection();
+            try {
+                await fdb.runQuery({ query: `DROP TABLE IF EXISTS ${r2}`, params: [] }).catch(() => {});
+                expect((await fdb.autoSQL(T2, [{ id: 1, pi: "3.14159265358979323846" }])).success).toBe(true);
+                const r = await fdb.runQuery({ query: `SELECT ${qi("pi")} AS pi FROM ${r2} WHERE ${qi("id")} = 1`, params: [] });
+                expect((r.results![0] as any).pi).toBe("3.14159265358979323846"); // full precision, no rounding
+                await fdb.runQuery({ query: `DROP TABLE IF EXISTS ${r2}`, params: [] }).catch(() => {});
+            } finally {
+                await fdb.closeConnection();
+            }
+        });
+
+        test("by default a high-precision decimal is preserved (fits the dialect's numeric scale — no rounding)", async () => {
+            const T3 = "numlike_defaultdec_test";
+            const r3 = `${qi("test_schema")}.${qi(T3)}`;
+            // 20 fractional digits — within MySQL (30) and Postgres (16383) numeric limits, so the
+            // default fits the column to the data and stores it exactly, no forceStringColumns needed.
+            await db.runQuery({ query: `DROP TABLE IF EXISTS ${r3}`, params: [] }).catch(() => {});
+            expect((await db.autoSQL(T3, [{ id: 1, pi: "3.14159265358979323846" }])).success).toBe(true);
+            const { currentMetaData } = await (db as any).autoSQLHandler.fetchTableMetadata(T3);
+            expect((currentMetaData as any).pi.type).toBe("decimal");
+            const r = await db.runQuery({ query: `SELECT ${qi("pi")} AS pi FROM ${r3} WHERE ${qi("id")} = 1`, params: [] });
+            expect(String((r.results![0] as any).pi)).toBe("3.14159265358979323846"); // exact, not rounded to 6dp
+            await db.runQuery({ query: `DROP TABLE IF EXISTS ${r3}`, params: [] }).catch(() => {});
+        });
     });
 });

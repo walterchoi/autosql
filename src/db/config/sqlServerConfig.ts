@@ -83,4 +83,5 @@ export const sqlServerConfig: DialectConfig = {
     { regex: "Z$", replace: "", type: ["date", "datetime", "datetimetz"] },
   ],
   maxIndexCount: 250,
+  maxDecimalScale: 38, // SQL Server DECIMAL: max precision/scale 38
 };

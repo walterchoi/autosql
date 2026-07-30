@@ -113,7 +113,21 @@ export interface DatabaseConfig {
       pseudoUnique?: number;
       categorical?: number;
       autoIndexing?: boolean;
+      /**
+       * Maximum fractional-digit scale for inferred `decimal` columns. When unset (the default), a
+       * decimal is stored at the full scale the data needs, up to the dialect's numeric limit (MySQL
+       * 30, SQL Server 38, Postgres 16383) — so a standard user never silently loses precision. Set
+       * a lower value to deliberately cap scale (e.g. `2` for currency). When a value's true scale
+       * exceeds the cap it is ROUNDED and a warning is logged — unless `decimalToVarchar` is on.
+       */
       decimalMaxLength?: number;
+      /**
+       * When a decimal value's true scale exceeds the cap (`decimalMaxLength` / the dialect limit),
+       * store the whole column as text (`varchar`) to preserve the exact value instead of rounding it.
+       * Off by default (the column stays numeric and is rounded, with a warning). Turn on when exact
+       * high-precision values matter more than being able to do SQL arithmetic on the column.
+       */
+      decimalToVarchar?: boolean;
       maxKeyLength?: number;
       /**
        * Cap the auto-detected composite primary key at this many columns (default 4). The key search
@@ -293,6 +307,10 @@ export interface DialectConfig {
     collate: string;
     encoding: string;
     maxIndexCount?: number;
+    /** Maximum fractional-digit scale the dialect's decimal/numeric type can hold (MySQL 30,
+     *  SQL Server 38, Postgres 16383). Used as the default decimal scale ceiling so a decimal is
+     *  stored at full precision up to what the DB supports, rather than an arbitrary low cap. */
+    maxDecimalScale: number;
 }
 
 export interface InsertResult { 

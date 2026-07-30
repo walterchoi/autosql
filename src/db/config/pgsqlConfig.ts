@@ -43,5 +43,6 @@ export const pgsqlConfig: DialectConfig = {
     { regex: "\\.\\d{3,}Z$", replace: "", type: ["date", "datetime"] },
     { regex: "Z$", replace: "", type: ["date", "datetime", "datetimetz"] }
   ],
-  maxIndexCount: 64
+  maxIndexCount: 64,
+  maxDecimalScale: 16383 // Postgres NUMERIC: max scale 16383 (effectively unbounded for real data)
 };

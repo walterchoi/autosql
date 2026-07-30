@@ -15,7 +15,11 @@ export const defaults = {
     insertStack: 100,
     safeMode: false,
     deleteColumns: false,
-    decimalMaxLength: 6,
+    // decimalMaxLength intentionally has NO hard default: when unset, a decimal is stored at the
+    // full scale the data needs, up to the dialect's numeric limit (DialectConfig.maxDecimalScale).
+    // Set it to deliberately cap scale (e.g. 2 for currency). See decimalToVarchar for the
+    // preserve-as-text-instead-of-round option.
+    decimalToVarchar: false,
     autoSplit: false,
     useWorkers: true,
     maxWorkers: 8,

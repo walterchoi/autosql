@@ -48,6 +48,42 @@ describe("number-like fidelity — the fast path is native-only and doesn't chan
     });
 });
 
+describe("deep-decimal fidelity — precision handling (D-G)", () => {
+    test("by default a high-precision decimal is preserved (scale fits the data, up to the dialect max — no rounding, no warn)", async () => {
+        const warnings: string[] = [];
+        const cfg: DatabaseConfig = { ...BASE, logger: { warn: (m: string) => warnings.push(m) } };
+        const data = [{ val: "3.14159265358979323846" }, { val: "2.5" }]; // 20 vs 1 fractional digits
+        const r = await getDataHeaders(data, cfg);
+        expect(r.val.type).toBe("decimal");
+        expect(r.val.decimal).toBe(20);          // full scale kept (Postgres ceiling is 16383)
+        expect(r.val.length).toBe(21);           // 1 integer digit + 20 fractional
+        expect(warnings).toHaveLength(0);        // nothing rounded, so nothing to warn about
+    });
+
+    test("a deliberately low decimalMaxLength caps the scale and WARNS (rounding is observable, not silent)", async () => {
+        const warnings: string[] = [];
+        const cfg: DatabaseConfig = { ...BASE, decimalMaxLength: 6, logger: { warn: (m: string) => warnings.push(m) } };
+        const r = await getDataHeaders([{ val: "3.14159265358979323846" }], cfg);
+        expect(r.val.type).toBe("decimal");
+        expect(r.val.decimal).toBe(6);
+        expect(warnings.some((w) => /val/.test(w) && /ROUNDED/.test(w))).toBe(true);
+    });
+
+    test("decimalToVarchar stores the column as text when a value exceeds the cap (exact, no rounding)", async () => {
+        const warnings: string[] = [];
+        const cfg: DatabaseConfig = { ...BASE, decimalMaxLength: 6, decimalToVarchar: true, logger: { warn: (m: string) => warnings.push(m) } };
+        const r = await getDataHeaders([{ val: "3.14159265358979323846" }], cfg);
+        expect(r.val.type).toBe("varchar"); // promoted to text to preserve precision
+        expect(warnings.some((w) => /val/.test(w) && /text/.test(w))).toBe(true);
+    });
+
+    test("forceStringColumns preserves a high-precision decimal exactly (as text)", async () => {
+        const data = [{ val: "3.14159265358979323846" }];
+        const r = await getDataHeaders(data, { ...BASE, forceStringColumns: ["val"] });
+        expect(r.val.type).toBe("varchar"); // stored verbatim, no rounding
+    });
+});
+
 describe("number-like fidelity — column-level inference", () => {
     test("a column of leading-zero zip strings infers varchar", async () => {
         const data = [{ zip: "07030" }, { zip: "10001" }, { zip: "02139" }];

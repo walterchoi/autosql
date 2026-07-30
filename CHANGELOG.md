@@ -1,4 +1,7 @@
 ## [Unreleased]
+### ⚠️ Behavior change
+- **High-precision decimals are preserved by default instead of silently rounded.** `decimalMaxLength` previously defaulted to **6**, so any value with more than 6 fractional digits was silently rounded on insert (e.g. `3.14159265358979323846` → `3.141592` on both MySQL and Postgres). It now has **no hard default**: a decimal is stored at the full scale the data needs, up to the dialect's numeric limit (`maxDecimalScale` — MySQL 30, SQL Server 38, Postgres 16383). Set `decimalMaxLength` to deliberately cap scale (e.g. `2` for currency). When a value's scale exceeds the cap it is rounded **with a warning** (no longer silent), or — with the new opt-in **`decimalToVarchar: true`** — the column is stored as text (`varchar`) to preserve the exact value. `forceStringColumns` remains the per-column exact-text option. (Design: decisions.md D-G.)
+
 ### 🐛 Bug Fixes (robustness)
 - **Decimal precision is no longer under-counted (mixed-scale overflow fix).** Precision was computed as `max(row's integer digits + running scale)` per value, so when the widest-integer value and the widest-scale value were *different* rows the total precision was too small and the load overflowed on insert — e.g. `[10.5, 20.0, 5.25]` inferred `decimal(3,2)`, which cannot store `10.5` (`numeric field overflow` on Postgres, out-of-range on MySQL). Precision is now `maxIntegerDigits + maxScale` taken as independent running maxes, so `[10.5, 20.0, 5.25]` → `decimal(4,2)`. Affected all dialects.
 

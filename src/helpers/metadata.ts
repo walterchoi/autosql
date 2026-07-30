@@ -105,6 +105,11 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
 
     const dialect = databaseConfig.sqlDialect;
     const dialectConfig: DialectConfig = dialect === 'mysql' ? mysqlConfig : dialect === 'sqlserver' ? sqlServerConfig : pgsqlConfig;
+    // Decimal scale ceiling: the configured cap if set, else the dialect's numeric limit (so a
+    // standard user keeps full precision up to what the DB can hold, rather than an arbitrary low
+    // default). A value deeper than this is rounded (with a warning) — or, with `decimalToVarchar`,
+    // stored as text to preserve it exactly.
+    const decimalScaleCap = databaseConfig.decimalMaxLength ?? dialectConfig.maxDecimalScale;
 
     let sampleData = data;
     let remainingData: Record<string, any>[] = [];
@@ -225,7 +230,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 metaDataInterim[column].intLen = Math.max(metaDataInterim[column].intLen ?? 0, integerLen);
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].trueMaxDecimal = Math.max(metaDataInterim[column].trueMaxDecimal, metaDataInterim[column].decimal, decimalLen);
-                metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
+                metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, decimalScaleCap);
 
                 // Precision = max integer digits + max scale — taken as independent running maxes.
                 // Summing this row's integer length with the running scale (the old behaviour)
@@ -251,6 +256,23 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         metaData[column].type = type;
         metaData[column].length = metaDataInterim[column].length || 0;
         metaData[column].decimal = metaDataInterim[column].decimal || 0;
+
+        // A decimal whose true scale exceeds the cap (`decimalMaxLength`, else the dialect's numeric
+        // limit) can't be stored at full precision as a number. Rather than silently rounding, either
+        // (opt-in `decimalToVarchar`) store the column as exact text, or round + warn so it's visible.
+        // See decisions.md D-G.
+        if (type === "decimal" && (metaDataInterim[column].trueMaxDecimal ?? 0) > decimalScaleCap) {
+            const trueScale = metaDataInterim[column].trueMaxDecimal ?? 0;
+            const intLen = metaDataInterim[column].intLen ?? 0;
+            if (databaseConfig.decimalToVarchar) {
+                metaData[column].type = "varchar";
+                metaData[column].length = intLen + trueScale + 2;
+                metaData[column].decimal = 0;
+                databaseConfig.logger?.warn?.(`Column "${column}": decimal values carry up to ${trueScale} fractional digit(s), beyond the ${decimalScaleCap}-digit scale ceiling — storing as text (varchar) to preserve exact precision (decimalToVarchar).`);
+            } else {
+                databaseConfig.logger?.warn?.(`Column "${column}": decimal values carry up to ${trueScale} fractional digit(s) but the column scale is capped at ${metaData[column].decimal} — stored values will be ROUNDED. Raise decimalMaxLength, or set decimalToVarchar to store the exact value as text.`);
+            }
+        }
 
         const uniqueSize = metaDataInterim[column].uniqueSet.size;
         const valueCount = metaDataInterim[column].valueCount;
@@ -350,7 +372,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 metaDataInterim[column].intLen = Math.max(metaDataInterim[column].intLen ?? 0, integerLen);
                 metaDataInterim[column].decimal = Math.max(metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].trueMaxDecimal = Math.max(metaDataInterim[column].trueMaxDecimal, metaDataInterim[column].decimal, decimalLen);
-                metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, databaseConfig.decimalMaxLength || 10);
+                metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, decimalScaleCap);
 
                 // Precision = max integer digits + max scale (independent running maxes); see the
                 // sample-loop comment above.

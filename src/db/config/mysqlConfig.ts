@@ -39,5 +39,6 @@ export const mysqlConfig: DialectConfig = {
     { regex: "\\.\\d{3,}Z$", replace: "", type: ["date", "datetime", "datetimetz"] },
     { regex: "Z$", replace: "", type: ["date", "datetime", "datetimetz"] }
   ],
-  maxIndexCount: 64
+  maxIndexCount: 64,
+  maxDecimalScale: 30 // MySQL DECIMAL: max scale 30 (max precision 65)
 };
