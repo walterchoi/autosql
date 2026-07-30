@@ -43,10 +43,18 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         } else {
             strData = String(data); // For non-objects, just convert to string
         }
-        try {
-            JSON.parse(strData);
-            json = true
-        } catch (e) {}
+        // `json` only affects the result in the final fallback (a value matching no other type).
+        // The only inputs that reach it AND parse as JSON are arrays/objects/quoted-strings — i.e.
+        // strData starts with `[`, `{`, or `"`. Numbers/booleans/dates are matched by the regex chain
+        // first, so `json` is unused for them. Gating the parse on that first char is behaviour-
+        // identical but skips a JSON.parse on every plain string/number/date — and crucially avoids
+        // the try/catch EXCEPTION THROW (very slow in V8) that a non-JSON string triggered every time.
+        if (/^\s*[[{"]/.test(strData)) {
+            try {
+                JSON.parse(strData);
+                json = true
+            } catch (e) {}
+        }
 
         // Fidelity: a digit string with a leading zero (e.g. "007", "07030", phone numbers)
         // is an identifier, not a number — coercing it to an integer would silently drop the
