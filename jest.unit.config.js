@@ -47,5 +47,6 @@ module.exports = {
     'tests/no-credential-logging-live\\.test\\.ts',
     'tests/charset-upgrade-live\\.test\\.ts',
     'tests/sqlserver-live\\.test\\.ts',
+    'tests/number-like-fidelity-live\\.test\\.ts',
   ],
 };
