@@ -6,7 +6,10 @@ import { QueryStats } from "../src/config/types";
 // QueryResult.stats and, if a stats sink is configured, calls logger.stats once with the same object.
 // This is what a pipeline forwards to its observability / stats store.
 
-const ROWS = Array.from({ length: 300 }, (_, i) => ({ id: i + 1, name: "n" + (i % 7), amount: (i + 1) * 1.5, active: i % 2 === 0 }));
+// id starts at 1000 so the first chunk (for the chunked test) already infers a wide-enough integer
+// type — the chunked path locks the first chunk's schema, and ids 1..100 would infer tinyint and then
+// overflow on a later chunk's larger id.
+const ROWS = Array.from({ length: 300 }, (_, i) => ({ id: 1000 + i, name: "n" + (i % 7), amount: (i + 1) * 1.5, active: i % 2 === 0 }));
 
 Object.values(DB_CONFIG).forEach((config) => {
     const qi = (n: string) => escapeIdentifier(n, config.sqlDialect);
@@ -60,6 +63,35 @@ Object.values(DB_CONFIG).forEach((config) => {
             // The sink was called once with the same stats.
             expect(collected).toHaveLength(1);
             expect(collected[0]).toEqual(s);
+        });
+
+        test("autoSQLChunked aggregates stats across chunks (rows summed, load accumulated)", async () => {
+            const CHUNK_TABLE = "query_stats_chunked_test";
+            const cref = `${qi("test_schema")}.${qi(CHUNK_TABLE)}`;
+            await db.runQuery({ query: `DROP TABLE IF EXISTS ${qi("test_schema")}.${qi("temp_staging__" + CHUNK_TABLE)}`, params: [] }).catch(() => {});
+            await db.runQuery({ query: `DROP TABLE IF EXISTS ${cref}`, params: [] }).catch(() => {});
+            collected.length = 0;
+
+            async function* gen() {
+                yield ROWS.slice(0, 100);
+                yield ROWS.slice(100, 200);
+                yield ROWS.slice(200, 300);
+            }
+            const res = await (db as any).autoSQLHandler.autoSQLChunked(CHUNK_TABLE, gen(), "test_schema");
+            expect(res.success).toBe(true);
+
+            const s = res.stats!;
+            expect(s.rows).toBe(300);                              // summed across the 3 chunks
+            expect(s.phases.prepare).toBeGreaterThanOrEqual(0);    // inference on the first chunk only
+            expect(s.phases.configure).toBeGreaterThanOrEqual(0);  // DDL on the first chunk only
+            expect(s.phases.load).toBeGreaterThanOrEqual(0);       // accumulated over all chunks
+            expect(s.rowsPerSecond).toBeGreaterThan(0);
+            expect(collected).toHaveLength(1);
+            expect(collected[0]).toEqual(s);
+
+            const c = await db.runQuery({ query: `SELECT COUNT(*) AS c FROM ${cref}`, params: [] });
+            expect(Number(Object.values(c.results![0])[0])).toBe(300);
+            await db.runQuery({ query: `DROP TABLE IF EXISTS ${cref}`, params: [] }).catch(() => {});
         });
     });
 });
