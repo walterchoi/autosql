@@ -1103,9 +1103,16 @@ export class AutoSQLHandler {
         let totalAffectedRows = 0;
         let lockedInsertInput: InsertInput[] | null = null;
 
+        // Per-run instrumentation (QueryStats), aggregated across chunks: prepare/configure are the
+        // first-chunk schema inference + DDL; load accumulates every chunk's insert time.
+        const perf = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+        const phases: { prepare?: number; configure?: number; load?: number } = {};
+        let totalRows = 0;
+
         try {
             for await (const chunk of chunks) {
                 if (chunk.length === 0) continue;
+                totalRows += chunk.length;
 
                 let chunkInsertInput: InsertInput[];
 
@@ -1113,10 +1120,14 @@ export class AutoSQLHandler {
                     // First chunk: full schema inference + table configuration.
                     if (useSchemaLock) await this.db.acquireSchemaLock(table, lockTimeout);
                     try {
+                        const tPrepare = perf();
                         chunkInsertInput = await this.prepareInsertData(table, chunk, schema, primaryKey);
                         const nestedInputs = await this.extractNestedInputs(chunkInsertInput);
                         chunkInsertInput = [...chunkInsertInput, ...nestedInputs];
+                        phases.prepare = perf() - tPrepare;
+                        const tConfigure = perf();
                         await this.configureTables(chunkInsertInput);
+                        phases.configure = perf() - tConfigure;
                     } finally {
                         if (useSchemaLock) await this.db.releaseSchemaLock(table);
                     }
@@ -1127,6 +1138,7 @@ export class AutoSQLHandler {
                 }
 
                 let insertResults: QueryResult[];
+                const tLoad = perf();
                 if (this.db.getConfig().useStagingInsert) {
                     await this.prepareStagingTables(chunkInsertInput);
                     await this.insertStagingTables(chunkInsertInput);
@@ -1137,18 +1149,36 @@ export class AutoSQLHandler {
                 } else {
                     insertResults = await this.insertData(chunkInsertInput);
                 }
+                phases.load = (phases.load ?? 0) + (perf() - tLoad);
 
                 totalAffectedRows += insertResults.reduce((s, r) => s + (r.affectedRows || 0), 0);
             }
 
             const end = new Date();
+            const durationMs = end.getTime() - start.getTime();
+            const stats: QueryStats = {
+                table,
+                rows: totalRows,
+                affectedRows: totalAffectedRows,
+                durationMs,
+                rowsPerSecond: durationMs > 0 ? Math.round((totalRows / durationMs) * 1000) : 0,
+                phases: {
+                    prepare: phases.prepare !== undefined ? Math.round(phases.prepare) : undefined,
+                    configure: phases.configure !== undefined ? Math.round(phases.configure) : undefined,
+                    load: phases.load !== undefined ? Math.round(phases.load) : undefined,
+                },
+                staged: !!this.db.getConfig().useStagingInsert,
+                bulkLoad: !!this.db.getConfig().bulkLoad,
+            };
+            try { this.db.getConfig().logger?.stats?.(stats); } catch { /* a metrics sink must never break a load */ }
             return {
                 start,
                 end,
                 success: true,
-                duration: end.getTime() - start.getTime(),
+                duration: durationMs,
                 affectedRows: totalAffectedRows,
-                table
+                table,
+                stats
             };
         } catch (error: any) {
             const end = new Date();
@@ -1278,6 +1308,10 @@ export class AutoSQLStreamHandle {
         const config = this.db.getConfig();
         const insertType = config.insertType ?? 'UPDATE';
         const maxRetries = config.streamMaxRetries ?? defaults.streamMaxRetries;
+        // Per-run instrumentation (QueryStats). For a stream these cover the `end()` FLUSH — read
+        // staging + infer (prepare) → DDL (configure) → merge (load) — not the incremental write()s.
+        const perf = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
+        const phases: { prepare?: number; configure?: number; load?: number } = {};
 
         try {
             if (!this.stagingCreated) {
@@ -1297,9 +1331,11 @@ export class AutoSQLStreamHandle {
             }
 
             // Infer schema from staging data
+            const tPrepare = perf();
             const inferredMeta = await getMetaData(config, stagingRows, this.primaryKey);
             const { currentMetaData } = await this.handler.fetchTableMetadata(this.table);
             const { changes, updatedMetaData } = compareMetaData(currentMetaData, inferredMeta, this.db.getDialectConfig(), config.logger);
+            phases.prepare = perf() - tPrepare;
 
             // Configure main table (with schema lock + history if enabled)
             const insertInput = [{
@@ -1326,7 +1362,9 @@ export class AutoSQLStreamHandle {
                     }
                 }
                 try {
+                    const tConfigure = perf();
                     await this.handler['configureTables'](insertInput);
+                    phases.configure = perf() - tConfigure;
                     if (historyId !== undefined) await recordMigrationSuccess(this.db, historyId, updatedMetaData);
                 } catch (ddlErr) {
                     if (historyId !== undefined) await recordMigrationFailed(this.db, historyId).catch(() => {});
@@ -1337,6 +1375,7 @@ export class AutoSQLStreamHandle {
             }
 
             // Attempt bulk merge with casts
+            const tLoad = perf();
             const mergeQ = buildMergeFromStreamQuery(this.table, this.stagingTable, updatedMetaData, insertType as 'UPDATE' | 'INSERT', config);
             const mergeResult = await this.db.runTransaction([mergeQ]);
 
@@ -1346,9 +1385,26 @@ export class AutoSQLStreamHandle {
                 // Fallback: per-row retry with schema widening
                 affectedRows = await this._perRowMerge(stagingRows, updatedMetaData, insertType as 'UPDATE' | 'INSERT', maxRetries);
             }
+            phases.load = perf() - tLoad;
 
             const end = new Date();
-            return { start, end, success: true, duration: end.getTime() - start.getTime(), affectedRows, table: this.table };
+            const durationMs = end.getTime() - start.getTime();
+            const stats: QueryStats = {
+                table: this.table,
+                rows: stagingRows.length,
+                affectedRows,
+                durationMs,
+                rowsPerSecond: durationMs > 0 ? Math.round((stagingRows.length / durationMs) * 1000) : 0,
+                phases: {
+                    prepare: phases.prepare !== undefined ? Math.round(phases.prepare) : undefined,
+                    configure: phases.configure !== undefined ? Math.round(phases.configure) : undefined,
+                    load: phases.load !== undefined ? Math.round(phases.load) : undefined,
+                },
+                staged: true,
+                bulkLoad: !!config.bulkLoad,
+            };
+            try { config.logger?.stats?.(stats); } catch { /* a metrics sink must never break a load */ }
+            return { start, end, success: true, duration: durationMs, affectedRows, table: this.table, stats };
         } catch (error: any) {
             const end = new Date();
             return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error) };
