@@ -42,7 +42,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             useStagingInsert: defaults.useStagingInsert,
             addHistory: defaults.addHistory,
             addTimestamps: defaults.addTimestamps,
-            decimalMaxLength: defaults.decimalMaxLength,
+            decimalToVarchar: defaults.decimalToVarchar,
             addNested: defaults.addNested,
             excludeBlankColumns: defaults.excludeBlankColumns,
             stagingPrefix: defaults.stagingPrefix,
@@ -752,7 +752,9 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
         const isNumberLike = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
         if (isNumberLike) {
             const normalised = normalizeNumber(value, databaseConfig?.thousandsSeparator, databaseConfig?.decimalSeparator) || strValue;
-            const precision = databaseConfig?.decimalMaxLength ?? defaults.decimalMaxLength;
+            // Round the value to the same scale the column is sized to: the configured cap, else the
+            // dialect's numeric limit (so we don't silently round to an arbitrary low default).
+            const precision = databaseConfig?.decimalMaxLength ?? dialectConfig.maxDecimalScale;
             strValue = roundStringDecimal(normalised, precision);
         }
 
@@ -827,12 +829,20 @@ function roundStringDecimal(valueStr: string, precision: number): string {
         : intPart;
     }
   
+    // Float-based half-up rounding is only accurate below ~15 significant digits; beyond that
+    // Number()/Math.pow lose precision. For a large scale (the high dialect-max ceilings), fall back
+    // to truncation at the cap — the difference is a single unit in the last (e.g. 30th) place, far
+    // below what matters, and it avoids corrupting the value via float math.
+    if (precision > 15) {
+        return `${intPart}.${decimalPart}`;
+    }
+
     // Perform manual rounding
     let full = `${intPart}.${decimalPart}`;
     let roundedNum = Number(full);
     const multiplier = Math.pow(10, precision);
     roundedNum = Math.round(roundedNum * multiplier) / multiplier;
-  
+
     return roundedNum.toString();
 }
 
