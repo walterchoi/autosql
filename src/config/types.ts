@@ -160,6 +160,17 @@ export interface DatabaseConfig {
       autoSplit?: boolean;
 
       addTimestamps?: boolean;
+      /**
+       * Load via a staging temp table (default `true`): CTAS an empty clone → populate it → merge
+       * into the real table (upsert via `ON CONFLICT`/`ON DUPLICATE`/`MERGE`) → drop it. This gives an
+       * atomic all-or-nothing merge, is the target for `bulkLoad`, and runs conflict resolution.
+       *
+       * Set to `false` for a **direct load** — rows go straight to the target with
+       * `INSERT … ON CONFLICT/ON DUPLICATE` (upsert still works), skipping the temp-table create /
+       * populate / merge / drop round-trips and the extra write. Faster and cheaper for append-only or
+       * small/frequent loads where the staging atomicity isn't needed. Required (`true`) for
+       * `addHistory` (history diffs the staging table against the target).
+       */
       useStagingInsert?: boolean;
       addHistory?: boolean;
       historyTables?: string[];
