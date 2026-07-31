@@ -119,3 +119,55 @@ describe("advisory lock key determinism", () => {
         expect(key("")).toEqual(key(""));
     });
 });
+
+// ---------------------------------------------------------------------------
+// releaseSchemaLock — connection disposal on unlock failure (F7)
+// ---------------------------------------------------------------------------
+// White-box: inject a fake pooled client into schemaLockConnections and drive
+// releaseSchemaLock directly. No live DB needed — createPool is lazy.
+
+describe("releaseSchemaLock — connection disposal (F7)", () => {
+    test("mysql: returns the connection to the pool on successful RELEASE_LOCK", async () => {
+        const db: any = Database.create(BASE_CONFIG); // mysql
+        const client = { query: jest.fn().mockResolvedValue([[], []]), release: jest.fn(), destroy: jest.fn() };
+        db.schemaLockConnections.set("t", client);
+        await db.releaseSchemaLock("t");
+        expect(client.release).toHaveBeenCalledTimes(1);
+        expect(client.destroy).not.toHaveBeenCalled();
+        expect(db.schemaLockConnections.has("t")).toBe(false);
+    });
+
+    test("mysql: DESTROYS the connection (never returns a lock-holding one) when RELEASE_LOCK fails, and does not throw", async () => {
+        const db: any = Database.create(BASE_CONFIG);
+        const client = { query: jest.fn().mockRejectedValue(new Error("connection lost")), release: jest.fn(), destroy: jest.fn() };
+        db.schemaLockConnections.set("t", client);
+        await expect(db.releaseSchemaLock("t")).resolves.toBeUndefined();
+        expect(client.destroy).toHaveBeenCalledTimes(1);
+        expect(client.release).not.toHaveBeenCalled();
+        expect(db.schemaLockConnections.has("t")).toBe(false);
+    });
+
+    test("mysql: no-op when no lock is registered for the table", async () => {
+        const db: any = Database.create(BASE_CONFIG);
+        await expect(db.releaseSchemaLock("never-locked")).resolves.toBeUndefined();
+    });
+
+    test("pgsql: returns the connection to the pool (release()) on successful unlock", async () => {
+        const db: any = Database.create({ sqlDialect: "pgsql", host: "localhost", user: "u", password: "p", database: "d" });
+        const client = { query: jest.fn().mockResolvedValue({ rows: [] }), release: jest.fn() };
+        db.schemaLockConnections.set("t", client);
+        await db.releaseSchemaLock("t");
+        expect(client.release).toHaveBeenCalledTimes(1);
+        expect(client.release).not.toHaveBeenCalledWith(true);
+        expect(db.schemaLockConnections.has("t")).toBe(false);
+    });
+
+    test("pgsql: DESTROYS the connection (release(true)) when the unlock query fails", async () => {
+        const db: any = Database.create({ sqlDialect: "pgsql", host: "localhost", user: "u", password: "p", database: "d" });
+        const client = { query: jest.fn().mockRejectedValue(new Error("connection lost")), release: jest.fn() };
+        db.schemaLockConnections.set("t", client);
+        await expect(db.releaseSchemaLock("t")).resolves.toBeUndefined();
+        expect(client.release).toHaveBeenCalledWith(true);
+        expect(db.schemaLockConnections.has("t")).toBe(false);
+    });
+});

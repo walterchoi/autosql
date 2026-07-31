@@ -136,11 +136,19 @@ export class PostgresDatabase extends Database {
         const [lockKey1, lockKey2] = this.getLockKey(table);
         const client = this.schemaLockConnections.get(table);
         if (!client) return;
+        // Drop the registration before awaiting so a concurrent acquire/release can't observe a
+        // half-torn-down entry.
+        this.schemaLockConnections.delete(table);
         try {
             await client.query('SELECT pg_advisory_unlock($1, $2)', [lockKey1, lockKey2]);
-        } finally {
             client.release();
-            this.schemaLockConnections.delete(table);
+        } catch (error) {
+            // Unlock failed: destroy the connection instead of returning a lock-holding one to the
+            // pool. Postgres releases session advisory locks when the connection/session ends, so
+            // release(true) (destroy) guarantees the lock is dropped. Releasing a lock is cleanup,
+            // so a failure here is logged, not thrown.
+            this.warn(`releaseSchemaLock: failed to release schema lock for '${table}'; destroying the connection so a lock-holding connection is not returned to the pool — ${error instanceof Error ? error.message : String(error)}`);
+            try { client.release(true); } catch { /* connection already broken */ }
         }
     }
 

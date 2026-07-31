@@ -170,28 +170,28 @@ export abstract class Database {
 
     // Check if schema(s) exist.
     public async checkSchemaExists(schemaName: string | string[]): Promise<Record<string, boolean>> {
-        try {
-            const QueryInput = this.getCheckSchemaQuery(schemaName);
-            const result = await this.runQuery(QueryInput);
-    
-            if (!result.success || !result.results) {
-                throw new Error(`Failed to check schema existence: ${result.error}`);
-            }
-    
-            const resultsArray = result.results;
-    
-            if (Array.isArray(schemaName)) {
-                return schemaName.reduce((acc, db) => {
-                    acc[db] = resultsArray[0]?.[db] === 1;
-                    return acc;
-                }, {} as Record<string, boolean>);
-            }
-    
-            return { [schemaName]: resultsArray[0]?.[schemaName] === 1 };
-        } catch (error) {
-            return { [schemaName.toString()]: false };
+        const QueryInput = this.getCheckSchemaQuery(schemaName);
+        const result = await this.runQuery(QueryInput);
+
+        // A failed query means we could NOT determine existence (connectivity/auth/permissions),
+        // which is not the same as "the schema is absent". Masking it as `false` would mislead a
+        // caller into creating a schema that already exists or skipping one that does — so surface
+        // the failure instead of guessing.
+        if (!result.success) {
+            throw new Error(`checkSchemaExists: could not determine schema existence — ${result.error}`);
         }
-    }    
+
+        const resultsArray = result.results ?? [];
+
+        if (Array.isArray(schemaName)) {
+            return schemaName.reduce((acc, db) => {
+                acc[db] = resultsArray[0]?.[db] === 1;
+                return acc;
+            }, {} as Record<string, boolean>);
+        }
+
+        return { [schemaName]: resultsArray[0]?.[schemaName] === 1 };
+    }
 
     public async createSchema(schemaName: string): Promise<Record<string, boolean>> {
         try {

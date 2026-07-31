@@ -1245,6 +1245,14 @@ export class AutoSQLHandler {
       });
     }
 
+    /**
+     * Open a streaming session and return a handle for incremental writes.
+     *
+     * Contract: this returns a promise that **rejects** on failure (e.g. the initial
+     * connectivity check fails) and must be awaited. The returned handle's methods
+     * (`write`/`end`/`abort`) follow the same reject-on-failure, must-await contract —
+     * they are not fire-and-forget. See {@link AutoSQLStreamHandle.write}.
+     */
     async openStream(
         table: string,
         schema?: string,
@@ -1327,6 +1335,19 @@ export class AutoSQLStreamHandle {
         this.primaryKey = primaryKey;
     }
 
+    /**
+     * Append a chunk of rows to this run's staging table.
+     *
+     * Contract: returns a promise that **rejects** on failure and MUST be awaited (or
+     * `.catch`ed). It is NOT fire-and-forget — an un-awaited write() that fails becomes an
+     * unhandled promise rejection and its error is lost.
+     *
+     * A rejected write() leaves the staging table in an indeterminate state (the chunk may be
+     * partly applied or absent). On rejection, either **retry the same chunk** (write() is
+     * append-only, so re-sending after a transient failure is safe) or call {@link abort} to
+     * discard the run. Do NOT call {@link end} after a failed/un-awaited write() expecting the
+     * gap to be ignored: end() merges whatever is staged, so a lost chunk becomes missing rows.
+     */
     async write(chunk: Record<string, any>[]): Promise<void> {
         if (this.ended) throw new Error(`autoSQLStream: write() called after end()/abort()`);
         if (chunk.length === 0) return;
@@ -1352,6 +1373,15 @@ export class AutoSQLStreamHandle {
         });
     }
 
+    /**
+     * Merge all staged rows into the target table (infer schema, apply DDL, bulk INSERT…SELECT
+     * with a per-row retry fallback), then drop the staging table.
+     *
+     * Contract: returns a promise that **rejects** on failure and must be awaited. end() merges
+     * whatever is currently staged — it does not know about {@link write} calls that failed or
+     * were never awaited, so ensure every chunk resolved (or was retried) before calling this, or
+     * a lost chunk will silently become missing rows. To discard instead of merge, use {@link abort}.
+     */
     async end(): Promise<QueryResult> {
       return this.db.runWithSchema(this.schema, async () => {
         const start = new Date();
@@ -1547,6 +1577,11 @@ export class AutoSQLStreamHandle {
         return totalInserted;
     }
 
+    /**
+     * Discard the run: drop the staging table without merging. Safe to call even if {@link write}
+     * was never called, and the correct way to bail out after a failed write(). Returns a promise
+     * that should be awaited.
+     */
     async abort(): Promise<void> {
         this.ended = true;
         return this.db.runWithSchema(this.schema, async () => {

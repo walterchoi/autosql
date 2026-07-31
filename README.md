@@ -600,6 +600,17 @@ await stream.abort();
 3. **`end()`** — reads all staged rows, infers the schema with `getMetaData`, applies any necessary DDL via `configureTables`, then issues a bulk `INSERT … SELECT` with dialect-specific type casts. If the bulk merge fails, a per-row fallback fires — failed rows trigger a schema widening pass before each retry round (up to `streamMaxRetries`). The staging table is always dropped in the `finally` block.
 4. **`abort()`** — drops the staging table without merging. Safe to call even if `write()` was never called.
 
+### Error handling & the async contract
+
+`openStream()`, `write()`, `end()` and `abort()` each return a promise that **rejects on failure**, so you must `await` them (or attach a `.catch`). They are **not** fire-and-forget: an un-awaited `write()` that fails becomes an unhandled promise rejection and its error is lost.
+
+A rejected `write()` leaves this run's staging table in an **indeterminate** state (the chunk may be partly applied or absent). When a `write()` rejects, take one of two safe paths:
+
+- **retry the same chunk** — `write()` is append-only, so re-sending a chunk after a transient failure is fine; then continue and `end()` as usual; or
+- **`abort()`** — drop the staging table and discard the whole run.
+
+Do **not** call `end()` after a failed/un-awaited `write()` expecting the gap to be ignored: `end()` merges whatever is staged, so a lost chunk becomes missing rows.
+
 ### Rejected rows
 
 If `rejectedRowsTable` is configured, rows that cannot be merged after all retries are written to that table instead of throwing:
