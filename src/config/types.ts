@@ -257,9 +257,17 @@ export interface DatabaseConfig {
       // --- Streaming ---
       /** Prefix for per-run stream staging tables. Default: "autosql_stream__". */
       streamingStagingPrefix?: string;
-      /** Max widening retry rounds during stream merge. Default: 3. */
+      /**
+       * Max per-row widening retry rounds after a bulk insert/merge fails. Default: 3. Applies to the
+       * streaming flush AND the non-streaming direct-insert path (`useStagingInsert: false`).
+       */
       streamMaxRetries?: number;
-      /** Opt-in rejected rows table name. When set, unresolvable rows are written here instead of throwing. */
+      /**
+       * Opt-in rejected-rows table name. When set, rows that still fail after per-row retries are
+       * written here instead of throwing — enabling graceful degradation on the streaming flush and
+       * the non-streaming direct-insert path (`useStagingInsert: false`). Has no effect on the default
+       * staging path, which stays atomic (all-or-nothing) by design.
+       */
       rejectedRowsTable?: string;
       /** Schema for the rejected rows table. Default: same as config.schema. */
       rejectedRowsSchema?: string;
