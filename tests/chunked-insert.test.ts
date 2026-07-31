@@ -8,6 +8,7 @@
 import { AutoSQLHandler } from "../src/db/autosql";
 import { InsertInput, QueryResult } from "../src/config/types";
 import { Database } from "../src/db/database";
+import { mysqlConfig } from "../src/db/config/mysqlConfig";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -62,6 +63,9 @@ function buildMockDb(overrides: Partial<Database> = {}): Database {
             insertStack: 100,
             insertType: "UPDATE" as const,
         } as any),
+        // Subsequent chunks re-infer to detect schema drift; they compare against the locked schema
+        // using the dialect config.
+        getDialectConfig: () => mysqlConfig,
         updateSchema: jest.fn(),
         log: jest.fn(),
         warn: jest.fn(),
