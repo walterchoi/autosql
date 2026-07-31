@@ -244,30 +244,25 @@ export class AutoSQLHandler {
     }
 
     async fetchTableMetadata(table: string): Promise<{ currentMetaData: MetadataHeader | null; tableExists: boolean; }> {
-        // ✅ Check if the table exists
-        const checkTableExistsQuery = this.db.getTableExistsQuery(
-            this.db.getConfig().schema || this.db.getConfig().database || "", 
-            table
-        );
-        const checkTableExists = await this.db.runQuery(checkTableExistsQuery);
-        const tableExists = Boolean(Number(checkTableExists?.results?.[0]?.count || 0));
-    
+        // One introspection round-trip, not two: the column-metadata query already tells us whether
+        // the table exists (a non-existent table returns 0 rows from INFORMATION_SCHEMA/sys), so we
+        // skip the separate exists query. INFORMATION_SCHEMA lookups are slow, so halving them here
+        // shaves latency off every non-cached load (the existingSchema fast path skips this entirely).
+        const schema = this.db.getConfig().schema || this.db.getConfig().database || "";
+        const currentMetaDataQuery = this.db.getTableMetaDataQuery(schema, table);
+        const currentMetaDataResults = await this.db.runQuery(currentMetaDataQuery);
+
+        if (!currentMetaDataResults || !currentMetaDataResults.success) {
+            throw new Error(`Failed to retrieve existing meta data for table ${table}: ${currentMetaDataResults?.error ?? "unknown error"}`);
+        }
+
+        const rows = currentMetaDataResults.results ?? [];
+        const tableExists = rows.length > 0;
         let currentMetaData: MetadataHeader | null = null;
-        
+
         if (tableExists) {
-            // ✅ Fetch metadata ONLY if table exists
-            const currentMetaDataQuery = this.db.getTableMetaDataQuery(
-                this.db.getConfig().schema || this.db.getConfig().database || "",
-                table
-            );
-            const currentMetaDataResults = await this.db.runQuery(currentMetaDataQuery);
-    
-            if (!currentMetaDataResults || !currentMetaDataResults.success || !currentMetaDataResults.results) {
-                throw new Error(`Failed to retrieve existing meta data for table ${table}`);
-            }
-    
-            const parsedMetadata = parseDatabaseMetaData(currentMetaDataResults.results, this.db.getDialectConfig());
-    
+            const parsedMetadata = parseDatabaseMetaData(rows, this.db.getDialectConfig());
+
             if (!parsedMetadata) {
                 currentMetaData = null;
             } else if (typeof parsedMetadata === "object" && !Array.isArray(parsedMetadata)) {
@@ -276,12 +271,12 @@ export class AutoSQLHandler {
             } else {
                 throw new Error("Unexpected metadata format: Multiple tables returned for a single-table query.");
             }
-    
+
             if (currentMetaData) {
                 this.db.updateTableMetadata(table, currentMetaData, "existingMetaData");
             }
         }
-    
+
         return { currentMetaData, tableExists };
     }
 
@@ -1029,12 +1024,17 @@ export class AutoSQLHandler {
 
             const tLoad = perf();
             if (config.useStagingInsert) {
-                await this.prepareStagingTables(insertInput);
-                await this.insertStagingTables(insertInput);
-                await this.resolveConflicts(insertInput);
-                await this.insertHistory(insertInput);
-                insertResults = await this.insertFromStagingTables(insertInput);
-                await this.removeStagingTables(insertInput);
+                try {
+                    await this.prepareStagingTables(insertInput);
+                    await this.insertStagingTables(insertInput);
+                    await this.resolveConflicts(insertInput);
+                    await this.insertHistory(insertInput);
+                    insertResults = await this.insertFromStagingTables(insertInput);
+                } finally {
+                    // Always drop the staging table, even if a step above threw, so a failed load
+                    // doesn't leave an orphaned temp table behind (mirrors the streaming end() path).
+                    await this.removeStagingTables(insertInput).catch(e => this.db.error(`autoSQL: failed to drop staging table(s) for '${table}': ${e instanceof Error ? e.message : String(e)}`));
+                }
             } else {
                 insertResults = await this.insertData(insertInput);
             }
@@ -1097,8 +1097,9 @@ export class AutoSQLHandler {
     ): Promise<QueryResult> {
       return this.db.runWithSchema(schema, async () => {
         const start = new Date();
-        const useSchemaLock = this.db.getConfig().useSchemaLock;
-        const lockTimeout = this.db.getConfig().schemaLockTimeout ?? defaults.schemaLockTimeout;
+        const config = this.db.getConfig();
+        const useSchemaLock = config.useSchemaLock;
+        const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
 
         let totalAffectedRows = 0;
         let lockedInsertInput: InsertInput[] | null = null;
@@ -1117,7 +1118,7 @@ export class AutoSQLHandler {
                 let chunkInsertInput: InsertInput[];
 
                 if (lockedInsertInput === null) {
-                    // First chunk: full schema inference + table configuration.
+                    // First chunk: full schema inference + table configuration (the table is new).
                     if (useSchemaLock) await this.db.acquireSchemaLock(table, lockTimeout);
                     try {
                         const tPrepare = perf();
@@ -1133,19 +1134,60 @@ export class AutoSQLHandler {
                     }
                     lockedInsertInput = chunkInsertInput;
                 } else {
-                    // Subsequent chunks: reuse locked schema, skip inference + DDL.
+                    // Subsequent chunks: reuse the locked schema, but GUARD AGAINST DRIFT. Locking the
+                    // first chunk's inferred types means a later chunk can carry a value the locked
+                    // column can't hold (e.g. ids 1..100 -> tinyint, then id 128 overflows). Re-infer
+                    // this chunk (cheap) and compare ONLY the chunk's data columns against the locked
+                    // schema — the managed columns (dwh_* timestamps, a surrogate) aren't in the chunk
+                    // and must not be seen as "to drop". Widen (ALTER + update the lock) only when a
+                    // column actually needs it; a no-drift chunk skips the DDL entirely.
+                    const lockedMeta = lockedInsertInput[0].metaData as MetadataHeader;
+                    const tPrepare = perf();
+                    const inferred = await getMetaData(config, chunk, primaryKey);
+                    phases.prepare = (phases.prepare ?? 0) + (perf() - tPrepare);
+
+                    const lockedDataOnly: MetadataHeader = {};
+                    for (const col of Object.keys(inferred)) if (lockedMeta[col]) lockedDataOnly[col] = lockedMeta[col];
+                    const { changes } = compareMetaData(lockedDataOnly, inferred, this.db.getDialectConfig(), config.logger);
+
+                    // Drift for a chunked load means only "the locked column can't hold this chunk's
+                    // data": a widened/nullable-relaxed column (modifyColumns) or a brand-new column
+                    // (addColumns). Keys are locked from the first chunk — a later chunk's per-chunk
+                    // uniqueness/primary re-evaluation must NOT drive DDL.
+                    const drift = Object.keys(changes.modifyColumns).length > 0 || Object.keys(changes.addColumns).length > 0;
+                    if (drift) {
+                        this.db.warn(`autoSQLChunked: schema drift in a later chunk for '${table}' — widening the table to fit.`);
+                        // Overlay the widened / newly-added data columns onto the full locked schema so
+                        // managed columns are preserved; autoConfigureTable re-diffs and ALTERs cleanly.
+                        const widened: MetadataHeader = { ...lockedMeta, ...changes.modifyColumns, ...changes.addColumns };
+                        const driftInput: InsertInput = { ...lockedInsertInput[0], data: chunk, previousMetaData: lockedMeta, metaData: widened };
+                        if (useSchemaLock) await this.db.acquireSchemaLock(table, lockTimeout);
+                        try {
+                            const tConfigure = perf();
+                            await this.configureTables([driftInput]);
+                            phases.configure = (phases.configure ?? 0) + (perf() - tConfigure);
+                        } finally {
+                            if (useSchemaLock) await this.db.releaseSchemaLock(table);
+                        }
+                        lockedInsertInput = lockedInsertInput.map((inp, i) => i === 0 ? { ...inp, metaData: widened } : inp);
+                    }
+
                     chunkInsertInput = lockedInsertInput.map(input => ({ ...input, data: chunk }));
                 }
 
                 let insertResults: QueryResult[];
                 const tLoad = perf();
                 if (this.db.getConfig().useStagingInsert) {
-                    await this.prepareStagingTables(chunkInsertInput);
-                    await this.insertStagingTables(chunkInsertInput);
-                    await this.resolveConflicts(chunkInsertInput);
-                    await this.insertHistory(chunkInsertInput);
-                    insertResults = await this.insertFromStagingTables(chunkInsertInput);
-                    await this.removeStagingTables(chunkInsertInput);
+                    try {
+                        await this.prepareStagingTables(chunkInsertInput);
+                        await this.insertStagingTables(chunkInsertInput);
+                        await this.resolveConflicts(chunkInsertInput);
+                        await this.insertHistory(chunkInsertInput);
+                        insertResults = await this.insertFromStagingTables(chunkInsertInput);
+                    } finally {
+                        // Drop staging even if a step above threw, so a failed chunk can't orphan a temp table.
+                        await this.removeStagingTables(chunkInsertInput).catch(e => this.db.error(`autoSQLChunked: failed to drop staging table(s) for '${table}': ${e instanceof Error ? e.message : String(e)}`));
+                    }
                 } else {
                     insertResults = await this.insertData(chunkInsertInput);
                 }

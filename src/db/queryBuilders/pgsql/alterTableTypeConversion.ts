@@ -43,6 +43,14 @@ export function getUsingClause(columnName: string, oldType: string, newType: str
         return `ROUND(${q(columnName)})::${newType}`;
     }
 
+    // ✅ NUMERIC → NUMERIC widening (e.g. smallint → int → bigint, int → decimal): a plain cast.
+    //    The default `NULLIF(col, '')::type` below is only correct for a TEXT source (empty string →
+    //    NULL); on a numeric source Postgres errors (`invalid input syntax for type … : ""`). This is
+    //    what a later chunk hits when autoSQLChunked widens a key column (e.g. tinyint → smallint).
+    if (isNumeric(oldType) && isNumeric(newType)) {
+        return `${q(columnName)}::${newType}`;
+    }
+
     // ✅ TEXT → NUMERIC (Handle empty strings safely)
     if (isText(oldType) && isNumeric(newType)) {
         return `NULLIF(${q(columnName)}, '')::${newType}`;

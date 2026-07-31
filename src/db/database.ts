@@ -133,6 +133,14 @@ export abstract class Database {
             } catch (error: any) {
                 this.error(`Database connection attempt ${attempts + 1} failed: ${error.message}`);
 
+                // Close any SSH tunnel opened on this attempt so a retry (or the final throw) doesn't
+                // leak an SSH connection per failed attempt.
+                if (this.config.sshClient) {
+                    try { this.config.sshClient.end(); } catch { /* already closed / never connected */ }
+                    this.config.sshClient = undefined;
+                    this.config.sshStream = undefined;
+                }
+
                 const permanentErrors = await this.getPermanentErrors();
                 if (permanentErrors.includes(error.code)) {
                     this.error("Permanent error detected. Aborting retry.");
@@ -308,10 +316,18 @@ export abstract class Database {
     }
 
     public async runTransaction(queriesOrStrings: QueryInput[]): Promise<QueryResult> {
-        if (!this.connection) {
-            await this.establishConnection();
-        }
         const start = new Date();
+        // Establishing the connection can fail (bad creds, host down, SSH tunnel failure). Keep it
+        // inside the failure envelope so runTransaction always resolves to a QueryResult and never
+        // rejects — matching runQuery's contract so a caller's process can't crash on a connect error.
+        try {
+            if (!this.connection) {
+                await this.establishConnection();
+            }
+        } catch (error: any) {
+            const end = new Date();
+            return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error instanceof Error ? error.message : String(error) };
+        }
         let end: Date;
         let _error: any;
 
@@ -382,8 +398,17 @@ export abstract class Database {
     }
 
     public async runTransactionsWithConcurrency(queryGroups: QueryInput[][]): Promise<QueryResult[]> {
-        if (!this.connection) {
-            await this.establishConnection();
+        // A connect failure must not reject the whole batch — return one failure result per group so
+        // callers still get a well-formed array they can inspect (matching the per-group failure path
+        // inside runNext below).
+        try {
+            if (!this.connection) {
+                await this.establishConnection();
+            }
+        } catch (error: any) {
+            const now = new Date();
+            const msg = error instanceof Error ? error.message : String(error);
+            return queryGroups.map(() => ({ start: now, end: now, duration: 0, success: false, error: msg }));
         }
         const results: QueryResult[] = [];
         let running: Promise<void>[] = [];
