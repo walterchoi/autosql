@@ -623,6 +623,8 @@ const db = Database.create({
 });
 ```
 
+This same graceful degradation also applies to the **non-streaming direct-insert path** (`useStagingInsert: false`): when a batch insert fails, autosql retries the batch's rows one at a time (widening the schema between rounds) and diverts any that still fail to `rejectedRowsTable`. Without `rejectedRowsTable` set, a failed batch throws (fail-loud is the default). The default **staging** path (`useStagingInsert: true`) is unaffected — it stays atomic (all-or-nothing) by design, so a bad row fails the whole load there.
+
 ### Works with advisory locks and schema history
 
 ```ts
