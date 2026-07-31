@@ -39,6 +39,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             deleteColumns: defaults.deleteColumns,
             useWorkers: defaults.useWorkers,
             maxWorkers: defaults.maxWorkers,
+            workerTaskTimeout: defaults.workerTaskTimeout,
             useStagingInsert: defaults.useStagingInsert,
             addHistory: defaults.addHistory,
             addTimestamps: defaults.addTimestamps,
@@ -72,6 +73,9 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         }
         if (merged.maxWorkers !== undefined && merged.maxWorkers < 1) {
             throw new Error("maxWorkers must be at least 1.");
+        }
+        if (merged.workerTaskTimeout !== undefined && merged.workerTaskTimeout < 0) {
+            throw new Error("workerTaskTimeout must be 0 (disabled) or a positive number of seconds.");
         }
         if (merged.pseudoUnique !== undefined && (merged.pseudoUnique <= 0 || merged.pseudoUnique > 1)) {
             throw new Error("pseudoUnique must be between 0 (exclusive) and 1 (inclusive).");

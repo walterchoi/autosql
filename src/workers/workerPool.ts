@@ -2,15 +2,38 @@ import { Worker } from "worker_threads";
 import { resolve } from "path";
 import { existsSync } from "fs";
 
+interface QueuedTask {
+  method: string;
+  params: any;
+  resolve: (value: any) => void;
+}
+
+interface PendingEntry {
+  resolve: (value: any) => void;
+  timer?: NodeJS.Timeout;
+}
+
 class WorkerPool {
   private workers: Worker[] = [];
   private idleWorkers: Worker[] = [];
-  private pendingTasks: { method: string; params: any; resolve: (value: any) => void }[] = [];
-  private workerPending: Map<Worker, (value: any) => void> = new Map();
+  private pendingTasks: QueuedTask[] = [];
+  private workerPending: Map<Worker, PendingEntry> = new Map();
   private workerFile: string;
+  private taskTimeoutMs: number;
+  private closed = false;
 
-  constructor(size: number, private dbConfig: any) {
-    this.workerFile = resolve(__dirname, "worker.js");
+  // `workerFile` override is for tests only (point the pool at a crash fixture);
+  // production always resolves the compiled worker next to this module.
+  constructor(size: number, private dbConfig: any, workerFile?: string) {
+    this.workerFile = workerFile ?? resolve(__dirname, "worker.js");
+
+    // Per-task timeout (config is in SECONDS -> ms). 0/undefined disables it.
+    // The no-hang guarantee does NOT depend on this: worker death is always caught
+    // by the 'error'/'exit' handlers. The timeout only guards an alive-but-wedged
+    // worker (e.g. a DB call that never returns). Off by default so a legitimately
+    // long-running batch is never spuriously failed.
+    const timeoutSec = Number(this.dbConfig?.workerTaskTimeout) || 0;
+    this.taskTimeoutMs = timeoutSec > 0 ? timeoutSec * 1000 : 0;
 
     if (!existsSync(this.workerFile)) {
       throw new Error(
@@ -20,50 +43,119 @@ class WorkerPool {
     }
 
     for (let i = 0; i < size; i++) {
-      const worker = new Worker(this.workerFile, {
-        workerData: { dbConfig }
-      });
+      this.spawnWorker();
+    }
+  }
 
-      worker.on("message", (msg) => {
-        const pendingResolve = this.workerPending.get(worker);
-        if (pendingResolve) {
-          this.workerPending.delete(worker);
-          pendingResolve(msg);
-        }
+  private spawnWorker(): void {
+    const worker = new Worker(this.workerFile, {
+      workerData: { dbConfig: this.dbConfig }
+    });
 
-        const nextTask = this.pendingTasks.shift();
-        if (nextTask) {
-          this.workerPending.set(worker, nextTask.resolve);
-          worker.postMessage({ method: nextTask.method, params: nextTask.params });
-        } else {
-          this.idleWorkers.push(worker);
-        }
-      });
+    worker.on("message", (msg) => {
+      // Task finished normally: settle it, then hand this worker its next task.
+      this.settleWorker(worker, msg);
+      this.assignNextTask(worker);
+    });
 
-      worker.on("error", (err) => {
-        const pendingResolve = this.workerPending.get(worker);
-        if (pendingResolve) {
-          this.workerPending.delete(worker);
-          pendingResolve({ success: false, error: err.message });
-        }
-        // Drain any remaining queued tasks for this worker with an error result
-        const nextTask = this.pendingTasks.shift();
-        if (nextTask) {
-          nextTask.resolve({ success: false, error: err.message });
-        }
-      });
+    worker.on("error", (err) => {
+      // Uncaught error inside the worker. Node emits 'exit' immediately after;
+      // failWorker is idempotent so the follow-up 'exit' is a harmless no-op.
+      this.failWorker(worker, err?.message || String(err));
+    });
 
-      this.workers.push(worker);
+    worker.on("exit", (code) => {
+      if (this.closed) return; // expected teardown from close()
+      // Worker stopped without returning a result — terminate(), OOM, a native
+      // crash, or process.exit inside the worker. Without this handler the task's
+      // resolver would never fire and WorkerHelper.run would hang the whole load.
+      this.failWorker(worker, `Worker stopped unexpectedly (exit code ${code}) before returning a result`);
+    });
+
+    this.workers.push(worker);
+    this.idleWorkers.push(worker);
+  }
+
+  /**
+   * Resolve a worker's in-flight task exactly once and clear its timeout.
+   * Returns true if there was a pending task to settle (idempotent thereafter).
+   */
+  private settleWorker(worker: Worker, value: any): boolean {
+    const entry = this.workerPending.get(worker);
+    if (!entry) return false;
+    this.workerPending.delete(worker);
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.resolve(value);
+    return true;
+  }
+
+  /** Give a now-free worker the next queued task, or park it as idle. */
+  private assignNextTask(worker: Worker): void {
+    if (this.closed || !this.workers.includes(worker)) return;
+    const nextTask = this.pendingTasks.shift();
+    if (nextTask) {
+      this.dispatch(worker, nextTask);
+    } else {
       this.idleWorkers.push(worker);
+    }
+  }
+
+  private dispatch(worker: Worker, task: QueuedTask): void {
+    let timer: NodeJS.Timeout | undefined;
+    if (this.taskTimeoutMs > 0) {
+      timer = setTimeout(() => this.handleTimeout(worker), this.taskTimeoutMs);
+      // Don't let the timeout alone keep the process alive.
+      if (typeof timer.unref === "function") timer.unref();
+    }
+    this.workerPending.set(worker, { resolve: task.resolve, timer });
+    worker.postMessage({ method: task.method, params: task.params });
+  }
+
+  private handleTimeout(worker: Worker): void {
+    // Only act if this worker still owns the task we timed (it may have just replied).
+    if (!this.workerPending.has(worker)) return;
+    // Fail the wedged task and tear the worker down. failWorker settles it and
+    // drops it from rotation; terminate() there fires 'exit' (idempotent).
+    this.failWorker(worker, `Worker task timed out after ${this.taskTimeoutMs} ms`);
+  }
+
+  /**
+   * A worker died (or timed out). Settle its in-flight task with a failure
+   * envelope, drop it from rotation, and — if no workers remain — fail every
+   * queued task so a caller can never hang waiting on a dead pool. Idempotent:
+   * safe to call for both the 'error' and the following 'exit'.
+   */
+  private failWorker(worker: Worker, reason: string): void {
+    // Settle whatever this worker was running (no-op if already settled).
+    this.settleWorker(worker, { success: false, error: reason });
+    // Drop it from rotation.
+    this.workers = this.workers.filter((w) => w !== worker);
+    this.idleWorkers = this.idleWorkers.filter((w) => w !== worker);
+    // Ensure the OS thread is gone (no-op if it already exited).
+    worker.terminate().catch(() => {});
+
+    // Pool is now empty: nothing will ever drain the queue, so fail it all rather
+    // than leave those resolvers hanging forever.
+    if (this.workers.length === 0 && this.pendingTasks.length > 0) {
+      const orphaned = this.pendingTasks.splice(0, this.pendingTasks.length);
+      for (const task of orphaned) {
+        task.resolve({ success: false, error: reason });
+      }
     }
   }
 
   runTask(method: string, params: any): Promise<any> {
     return new Promise((resolve) => {
+      // Every worker has already died: fail fast instead of queueing a task that
+      // nothing is left to pick up (this is the path WorkerHelper hits when it
+      // dispatches the next task after a crash settled the previous one).
+      if (this.workers.length === 0) {
+        resolve({ success: false, error: "Worker pool has no live workers" });
+        return;
+      }
       const idleWorker = this.idleWorkers.pop();
       if (idleWorker) {
-        this.workerPending.set(idleWorker, resolve);
-        idleWorker.postMessage({ method, params });
+        this.dispatch(idleWorker, { method, params, resolve });
       } else {
         this.pendingTasks.push({ method, params, resolve });
       }
@@ -71,7 +163,15 @@ class WorkerPool {
   }
 
   close() {
-    this.workers.forEach((worker) => worker.terminate());
+    this.closed = true;
+    // Clear any outstanding task timers so they can't fire during/after teardown.
+    for (const entry of this.workerPending.values()) {
+      if (entry.timer) clearTimeout(entry.timer);
+    }
+    this.workerPending.clear();
+    this.workers.forEach((worker) => worker.terminate().catch(() => {}));
+    this.workers = [];
+    this.idleWorkers = [];
   }
 }
 

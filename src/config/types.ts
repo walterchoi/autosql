@@ -192,6 +192,17 @@ export interface DatabaseConfig {
       maxWorkers?: number;
 
       /**
+       * Per-worker-task timeout in SECONDS. `0` (the default) disables it.
+       *
+       * A worker that dies mid-task (terminate/OOM/native crash) is always caught by
+       * the pool's exit/error handlers and surfaced as a failed task — this timeout is
+       * NOT required for that. It only guards an alive-but-wedged worker (e.g. a DB call
+       * that never returns). Off by default so a legitimately long-running batch is not
+       * spuriously failed; set it when you need a hard per-task upper bound.
+       */
+      workerTaskTimeout?: number;
+
+      /**
        * Column names that should always be stored as varchar regardless of their
        * content. Use this for string-encoded identifiers (phone numbers, zip codes,
        * padded codes) that would otherwise be inferred as numeric types.
