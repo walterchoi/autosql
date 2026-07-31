@@ -111,11 +111,20 @@ export class MySQLDatabase extends Database {
         const lockKey = `autosql_schema__${table}`;
         const client = this.schemaLockConnections.get(table);
         if (!client) return;
+        // Drop the registration before awaiting so a concurrent acquire/release can't observe a
+        // half-torn-down entry.
+        this.schemaLockConnections.delete(table);
         try {
             await client.query('SELECT RELEASE_LOCK(?)', [lockKey]);
-        } finally {
             client.release();
-            this.schemaLockConnections.delete(table);
+        } catch (error) {
+            // RELEASE_LOCK failed: the advisory lock may still be held on this connection, so
+            // returning it to the pool would hand the next caller a lock-holding connection.
+            // Destroy it instead — MySQL releases session locks when the connection closes, and
+            // the pool replaces the destroyed connection with a fresh one. Releasing a lock is
+            // cleanup, so a failure here is logged, not thrown.
+            this.warn(`releaseSchemaLock: failed to release schema lock for '${table}'; destroying the connection so a lock-holding connection is not returned to the pool — ${error instanceof Error ? error.message : String(error)}`);
+            try { client.destroy(); } catch { /* connection already broken */ }
         }
     }
 
