@@ -721,8 +721,17 @@ export class AutoSQLHandler {
         const primaryKeyQuery = uniqueTables.map(table => {
             return [this.db.getPrimaryKeysQuery(table)]
         })
-        const allUniqueKeys : QueryResult[] = await this.db.runTransactionsWithConcurrency(uniqueIndexesQuery);
-        const allPrimaryKeys : QueryResult[] = await this.db.runTransactionsWithConcurrency(primaryKeyQuery);
+        // Run the unique-index and primary-key introspection as ONE concurrency-governed batch
+        // instead of two sequential round-trips. Both are independent reads; a single
+        // runTransactionsWithConcurrency call overlaps them under one pool-size cap (Promise.all-ing
+        // two separate calls would instead risk using 2x the pool). Results come back in input order,
+        // so the first N groups are the unique indexes and the next N are the primary keys.
+        const introspection : QueryResult[] = await this.db.runTransactionsWithConcurrency([
+            ...uniqueIndexesQuery,
+            ...primaryKeyQuery,
+        ]);
+        const allUniqueKeys : QueryResult[] = introspection.slice(0, uniqueTables.length);
+        const allPrimaryKeys : QueryResult[] = introspection.slice(uniqueTables.length);
         const tableStructure: Record<string, {
             uniques: Record<string, string[]>,
             primary: string[]
