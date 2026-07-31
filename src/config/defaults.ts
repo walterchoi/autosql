@@ -23,6 +23,11 @@ export const defaults = {
     autoSplit: false,
     useWorkers: true,
     maxWorkers: 8,
+    // Per-worker-task timeout in SECONDS. 0 disables it (default). A dying worker is
+    // always caught by the pool's exit/error handlers regardless of this; the timeout
+    // only guards an alive-but-wedged worker (e.g. a hung DB call). Left off by default
+    // so a legitimately long batch is never spuriously failed — set it deliberately.
+    workerTaskTimeout: 0,
     stagingPrefix: "temp_staging__",
     historyTableSuffix: "__history",
     addTimestamps: true,

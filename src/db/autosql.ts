@@ -488,13 +488,13 @@ export class AutoSQLHandler {
         if (this.db.getConfig().useWorkers) {
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
             try {
-                const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
+                const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error }[];
 
                 const failed = workerResults.filter(w => !w.success);
                 if (failed.length > 0) {
                     throw new Error(
                         `Worker execution failed for ${failed.length} task(s):\n` +
-                        failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
+                        failed.map((f, i) => `- Task #${i + 1}: ${typeof f?.error === "string" ? f.error : (f?.error?.message || "Unknown Error")}`).join("\n")
                     );
                 }
 
@@ -589,13 +589,13 @@ export class AutoSQLHandler {
     
             if (this.db.getConfig().useWorkers) {
                 try {
-                    const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoInsertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: Error }[];
+                    const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoInsertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error }[];
 
                     const failed = workerResults.filter(w => !w.success);
                     if (failed.length > 0) {
                         throw new Error(
                             `Worker execution failed for ${failed.length} task(s):\n` +
-                            failed.map((f, i) => `- Task #${i + 1}: ${f?.error?.message || "Unknown Error"}`).join("\n")
+                            failed.map((f, i) => `- Task #${i + 1}: ${typeof f?.error === "string" ? f.error : (f?.error?.message || "Unknown Error")}`).join("\n")
                         );
                     }
 
