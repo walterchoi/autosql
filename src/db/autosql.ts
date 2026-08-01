@@ -838,83 +838,96 @@ export class AutoSQLHandler {
     private async resolveConflicts(insertInput: InsertInput[]): Promise<void> {
         const stagingPrefix = insertInput[0]?.stagingPrefix;
         const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
-        const uniqueIndexesQuery = uniqueTables.map(table => {
-            return [this.db.getUniqueIndexesQuery(table)]
-        })
-        const primaryKeyQuery = uniqueTables.map(table => {
-            return [this.db.getPrimaryKeysQuery(table)]
-        })
-        // Run the unique-index and primary-key introspection as ONE concurrency-governed batch
-        // instead of two sequential round-trips. Both are independent reads; a single
-        // runTransactionsWithConcurrency call overlaps them under one pool-size cap (Promise.all-ing
-        // two separate calls would instead risk using 2x the pool). Results come back in input order,
-        // so the first N groups are the unique indexes and the next N are the primary keys.
-        const introspection : QueryResult[] = await this.db.runTransactionsWithConcurrency([
-            ...uniqueIndexesQuery,
-            ...primaryKeyQuery,
-        ]);
-        const allUniqueKeys : QueryResult[] = introspection.slice(0, uniqueTables.length);
-        const allPrimaryKeys : QueryResult[] = introspection.slice(uniqueTables.length);
+
+        // First input seen per table — its resolved metadata drives the metadata-derived path.
+        const inputByTable = new Map<string, InsertInput>();
+        for (const input of insertInput) {
+            if (!inputByTable.has(input.table)) inputByTable.set(input.table, input);
+        }
+
         const tableStructure: Record<string, {
             uniques: Record<string, string[]>,
             primary: string[]
         }> = {};
 
-        for (let i = 0; i < uniqueTables.length; i++) {
-            const table = uniqueTables[i];
-            const uniqueIndexes = allUniqueKeys[i];
-            const primaryColumns = allPrimaryKeys[i]
-            if (!uniqueIndexes?.results) continue;
-            if (!primaryColumns?.results) continue;
-    
-            const normalizedUniques = uniqueIndexes.results
-                .map(row => normalizeResultKeys(row))
-                .filter(row => row.columns);
-
-            const normalizedPrimary = primaryColumns.results
-                .map(row => normalizeResultKeys(row))
-                .filter(row => row.column_name);
-
-            if (!tableStructure[table]) {
-                tableStructure[table] = {
-                    uniques: {},
-                    primary: []
-                };
-            }
-            normalizedUniques.forEach(result => {
-                tableStructure[table].uniques[result.index_name] = (result.columns as string)
-                    .split(",")
-                    .map(col => col.trim());
-            });
-        
-            normalizedPrimary.forEach(result => {
-                tableStructure[table].primary.push(result.column_name);
-            });
+        // Derive the constraint structure (non-primary unique indexes → columns, plus primary-key
+        // columns) from already-known metadata where it is provably identical to the live catalog
+        // (see deriveConstraintStructure), and fall back to live introspection otherwise. Deriving
+        // skips the unique-index + primary-key introspection round-trip on the common path — an
+        // idempotent re-ingest of a stable schema, where the metadata was just read from the DB.
+        const tablesToIntrospect: string[] = [];
+        for (const table of uniqueTables) {
+            const derived = this.deriveConstraintStructure(inputByTable.get(table));
+            if (derived) tableStructure[table] = derived;
+            else tablesToIntrospect.push(table);
         }
 
-        const conflictsQuery = Object.keys(tableStructure)
-            .filter(table => {
-                const structure = tableStructure[table];
-                return (structure && Object.keys(structure.uniques || {}).length > 0 && // Must have at least one unique constraint
-                Array.isArray(structure.primary) && structure.primary.length > 0 // Must have at least one primary key
-                );
-            })
-            .map(table => {
-                return [this.db.getConstraintConflictQuery(table, tableStructure[table], stagingPrefix)];
-            });
+        if (tablesToIntrospect.length > 0) {
+            const uniqueIndexesQuery = tablesToIntrospect.map(table => [this.db.getUniqueIndexesQuery(table)]);
+            const primaryKeyQuery = tablesToIntrospect.map(table => [this.db.getPrimaryKeysQuery(table)]);
+            // Run the unique-index and primary-key introspection as ONE concurrency-governed batch
+            // instead of two sequential round-trips. Both are independent reads; a single
+            // runTransactionsWithConcurrency call overlaps them under one pool-size cap. Results come
+            // back in input order, so the first N groups are unique indexes and the next N are PKs.
+            const introspection : QueryResult[] = await this.db.runTransactionsWithConcurrency([
+                ...uniqueIndexesQuery,
+                ...primaryKeyQuery,
+            ]);
+            const allUniqueKeys : QueryResult[] = introspection.slice(0, tablesToIntrospect.length);
+            const allPrimaryKeys : QueryResult[] = introspection.slice(tablesToIntrospect.length);
+
+            for (let i = 0; i < tablesToIntrospect.length; i++) {
+                const table = tablesToIntrospect[i];
+                const uniqueIndexes = allUniqueKeys[i];
+                const primaryColumns = allPrimaryKeys[i]
+                if (!uniqueIndexes?.results) continue;
+                if (!primaryColumns?.results) continue;
+
+                const normalizedUniques = uniqueIndexes.results
+                    .map(row => normalizeResultKeys(row))
+                    .filter(row => row.columns);
+
+                const normalizedPrimary = primaryColumns.results
+                    .map(row => normalizeResultKeys(row))
+                    .filter(row => row.column_name);
+
+                const structure = tableStructure[table] ?? { uniques: {}, primary: [] };
+                normalizedUniques.forEach(result => {
+                    structure.uniques[result.index_name] = (result.columns as string)
+                        .split(",")
+                        .map(col => col.trim());
+                });
+                normalizedPrimary.forEach(result => {
+                    structure.primary.push(result.column_name);
+                });
+                tableStructure[table] = structure;
+            }
+        }
+
+        // Only tables that actually have a unique index AND a primary key need a conflict check.
+        // Carry the table name alongside each query so results correlate robustly even when some
+        // tables are filtered out here.
+        const conflictTables = Object.keys(tableStructure).filter(table => {
+            const structure = tableStructure[table];
+            return (structure && Object.keys(structure.uniques || {}).length > 0 && // at least one unique constraint
+            Array.isArray(structure.primary) && structure.primary.length > 0 // at least one primary key
+            );
+        });
+        const conflictsQuery = conflictTables.map(table => {
+            return [this.db.getConstraintConflictQuery(table, tableStructure[table], stagingPrefix)];
+        });
 
         const allConflicts : QueryResult[] = await this.db.runTransactionsWithConcurrency(conflictsQuery);
-        const constraintViolations: Record<string, string[]> = {};
         let removeConstraintsQuery : QueryInput[][] = []
 
         for (let i = 0; i < allConflicts.length; i++) {
           const result = allConflicts[i];
-          const table = Object.keys(tableStructure)[i];
+          const table = conflictTables[i];
           let tableConstraintsQueries : QueryInput[] = []
-        
+
           const row = result?.results?.[0] || {};
           const violatingIndexes: string[] = [];
-        
+
           for (const [indexName, count] of Object.entries(row)) {
             const numericCount = typeof count === "string" ? parseInt(count) : Number(count);
             if (numericCount > 0) {
@@ -922,9 +935,8 @@ export class AutoSQLHandler {
                 tableConstraintsQueries.push(this.db.getDropUniqueConstraintQuery(table, indexName))
             }
           }
-        
+
           if (violatingIndexes.length) {
-            constraintViolations[table] = violatingIndexes;
             removeConstraintsQuery.push(tableConstraintsQueries)
           }
         }
@@ -932,6 +944,52 @@ export class AutoSQLHandler {
         const removeConstraints : QueryResult[] = await this.db.runTransactionsWithConcurrency(removeConstraintsQuery);
         throwIfFailedResults(removeConstraints, 'unique constraint removal queries')
         return;
+    }
+
+    /**
+     * Derive a table's drop-target constraint structure (non-primary unique indexes → their
+     * columns, plus the primary-key columns) from the resolved metadata, WITHOUT a catalog
+     * round-trip — but only when it is provably identical to the live catalog. Returns null (→ the
+     * caller introspects live) whenever the run changed the constraint structure or any unique lacks
+     * a real, introspected name:
+     *   • no compared/resolved metadata to reason about;
+     *   • a unique was dropped this run (`noLongerUnique`) — `updatedMetaData` still shows it unique;
+     *   • the primary key changed this run (`primaryKeyChanges`) — the conflict-count join keys on it;
+     *   • a newly-added column is unique — its index name isn't introspected yet;
+     *   • any unique column lacks a `uniqueName` — inferred/just-created uniques (incl. every first
+     *     load) and MySQL's column-named uniques can't be reproduced, so the DROP target is unknown;
+     *   • any column belongs to MORE THAN ONE non-primary unique index (`uniqueName` is a
+     *     comma-joined list) — the per-column single-name model can't unambiguously reconstruct each
+     *     composite index's full column set, so grouping could mis-scope (and thus over-drop) a
+     *     constraint. autosql only ever creates single-column uniques, so this is external-table-only.
+     * These are exactly the cases where deriving could drop the wrong (or an already-gone) constraint
+     * — the silent over-drop the introspection fallback exists to avoid.
+     */
+    private deriveConstraintStructure(input?: InsertInput): { uniques: Record<string, string[]>, primary: string[] } | null {
+        if (!input) return null;
+        const changes = input.comparedMetaData?.changes;
+        const meta = input.comparedMetaData?.updatedMetaData || input.metaData;
+        if (!changes || !meta) return null;
+        if (changes.noLongerUnique?.length) return null;
+        if (changes.primaryKeyChanges?.length) return null;
+        if (changes.addColumns && Object.values(changes.addColumns).some(col => col?.unique)) return null;
+
+        const uniques: Record<string, string[]> = {};
+        const primary: string[] = [];
+        for (const [columnName, def] of Object.entries(meta)) {
+            if (!def) continue;
+            if (def.primary) primary.push(columnName);
+            // A column marked unique but without a real DB index name means we don't know the DROP
+            // target (a just-created or inferred unique) — bail to live introspection.
+            if (def.unique && !def.uniqueName) return null;
+            if (def.uniqueName) {
+                // A comma means the column is in >1 non-primary unique index — the single-name model
+                // can't group composite indexes unambiguously, so fall back rather than mis-scope.
+                if (def.uniqueName.includes(',')) return null;
+                (uniques[def.uniqueName] ??= []).push(columnName);
+            }
+        }
+        return { uniques, primary };
     }
 
     private async insertFromStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {

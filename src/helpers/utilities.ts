@@ -344,11 +344,17 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
             metadata[tableName] = {};
         }
 
-        metadata[tableName][normalizedRow.column_name] = { 
+        // Real DB name of a non-primary unique index the column belongs to (when the query
+        // supplies it) — sourced from the same catalog view as getUniqueIndexesQuery so it matches
+        // getDropUniqueConstraintQuery. Empty string → treat as absent.
+        const uniqueIndexName = normalizedRow["unique_index_name"];
+
+        metadata[tableName][normalizedRow.column_name] = {
             type: dataType,
             length: normalizedLength,
             allowNull: normalizedRow["is_nullable"] === "YES",
             unique: columnKey === "UNIQUE",
+            uniqueName: uniqueIndexName ? String(uniqueIndexName) : undefined,
             primary: columnKey === "PRIMARY",
             index: columnKey === "INDEX",
             autoIncrement: autoIncrement,
