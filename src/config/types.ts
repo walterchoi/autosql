@@ -375,15 +375,7 @@ export interface InsertInput {
   runQuery?: boolean,
   insertType?: "UPDATE" | "INSERT",
   stagingPrefix?: string,
-  historyTableSuffix?: string,
-  /**
-   * Engine-supplied `dwh_as_at` for the row-level history INSERT, threaded ONLY on the opt-in
-   * staging-degradation path (`rejectedRowsTable` set). When present, the history rows carry this
-   * exact timestamp instead of the DB's `NOW()`/`CURRENT_TIMESTAMP`, so a per-row divert can
-   * compensate by deleting exactly this run's before-images for the rejected rows. Absent for every
-   * other load, which keeps server-time history semantics byte-for-byte unchanged.
-   */
-  historyAsAt?: string
+  historyTableSuffix?: string
 }
 
 export interface QueryResult {

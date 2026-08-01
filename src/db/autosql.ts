@@ -5,7 +5,7 @@ import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, QueryStats } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
-import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults } from "../helpers/utilities";
+import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults, sqlize } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
@@ -1001,7 +1001,7 @@ export class AutoSQLHandler {
         return { uniques, primary };
     }
 
-    private async insertFromStagingTables(insertInput: InsertInput[], options?: { perRowFallback?: boolean; historyAsAt?: string }): Promise<QueryResult[]> {
+    private async insertFromStagingTables(insertInput: InsertInput[], options?: { perRowFallback?: boolean }): Promise<QueryResult[]> {
         const stagingInputs: InsertInput[] = insertInput.map(input => ({
             ...input,
             insertType: "UPDATE"
@@ -1011,14 +1011,14 @@ export class AutoSQLHandler {
         })
         const allInsertResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingInsertQueries);
 
-        // Opt-in graceful degradation on the (default, atomic) staging path: when the caller passed
-        // perRowFallback AND rejectedRowsTable is configured AND the atomic merge failed for a
-        // table, retry that table's rows one at a time, diverting unrecoverable rows to
-        // rejectedRowsTable and compensating row-level history for the rows that never merged.
-        // Without the opt-in this stays all-or-nothing (throwIfFailedResults) — the current default.
+        // Opt-in graceful degradation WITHOUT row-level history: when perRowFallback is passed AND
+        // rejectedRowsTable is configured AND the atomic merge failed for a table, retry that table's
+        // rows one at a time and divert unrecoverable rows. Without the opt-in this stays
+        // all-or-nothing (the current default). The addHistory case uses the atomic path instead
+        // (insertFromStagingTablesAtomic), so history and data stay transactionally consistent.
         const config = this.db.getConfig();
         if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r?.success)) {
-            return await this.applyStagingPerRowFallback(insertInput, allInsertResults, options.historyAsAt);
+            return await this.applyStagingPerRowFallback(insertInput, allInsertResults);
         }
 
         throwIfFailedResults(allInsertResults, 'insert from staging table queries')
@@ -1026,15 +1026,12 @@ export class AutoSQLHandler {
     }
 
     /**
-     * Graceful-degradation fallback for the STAGING path (opt-in, see insertFromStagingTables): the
-     * atomic `INSERT…SELECT … ON CONFLICT` merge rolled back, so nothing from a failed table landed.
+     * Graceful-degradation fallback for the STAGING path WITHOUT row-level history (opt-in, see
+     * insertFromStagingTables): the atomic merge rolled back, so nothing from a failed table landed.
      * Re-run that table's rows one at a time as an upsert into the real table (matching the merge's
-     * UPDATE semantics), diverting unrecoverable rows to `rejectedRowsTable`. Then compensate
-     * row-level history: `insertHistory` already wrote before-images for the FULL staged set keyed
-     * on this run's `historyAsAt`, so delete exactly this run's before-images for the rejected rows'
-     * primary keys — those rows never changed the real table, so no before-image should remain.
+     * UPDATE semantics), diverting unrecoverable rows to `rejectedRowsTable`.
      */
-    private async applyStagingPerRowFallback(insertInput: InsertInput[], allInsertResults: QueryResult[], historyAsAt?: string): Promise<QueryResult[]> {
+    private async applyStagingPerRowFallback(insertInput: InsertInput[], allInsertResults: QueryResult[]): Promise<QueryResult[]> {
         const config = this.db.getConfig();
         const maxRetries = config.streamMaxRetries ?? defaults.streamMaxRetries;
         for (let i = 0; i < allInsertResults.length; i++) {
@@ -1047,23 +1044,92 @@ export class AutoSQLHandler {
             }
             const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col]?.primary);
             this.db.warn(`autoSQL: staged merge for '${input.table}' failed (${allInsertResults[i]?.error ?? 'unknown error'}); retrying per-row, diverting unrecoverable rows to '${config.rejectedRowsTable}'.`);
-            const { inserted, rejected } = await this.perRowInsertWithRetry(
+            const { inserted } = await this.perRowInsertWithRetry(
                 input.table, input.data, input.metaData, 'UPDATE', maxRetries,
                 primaryKey.length ? primaryKey : undefined
             );
-
-            // Compensate row-level history for the rows that were diverted (never merged).
-            if (rejected.length && historyAsAt && config.addHistory && config.historyTables?.includes(input.table) && primaryKey.length) {
-                const historyTable = getHistoryTableName(input.table, input.historyTableSuffix);
-                const delResult = await this.db.runTransaction([
-                    this.db.getDeleteHistoryRowsQuery(historyTable, primaryKey, rejected, historyAsAt)
-                ]);
-                throwIfFailedResults([delResult], 'history compensation delete');
-            }
-
             allInsertResults[i] = { ...allInsertResults[i], success: true, affectedRows: inserted, error: undefined };
         }
         return allInsertResults;
+    }
+
+    /**
+     * Zero-window staging merge WITH row-level history (case 3: rejectedRowsTable + addHistory). The
+     * before-image capture and the merge run in ONE transaction, so history and data commit — or roll
+     * back — together, with no crash window between them. Per table: attempt the whole-table
+     * [before-image, merge] transaction; if it fails, fall back to a per-PK loop where each PK's
+     * [before-image, single-PK merge] is its own transaction — a PK whose merge violates a constraint
+     * rolls back (no history, no data) and is diverted to `rejectedRowsTable`. `historyByTable` maps a
+     * real table to its (already-created) history input; a table not in `historyTables` merges with no
+     * before-image.
+     */
+    private async insertFromStagingTablesAtomic(insertInput: InsertInput[], historyInputs: InsertInput[]): Promise<QueryResult[]> {
+        const historyByTable = new Map<string, InsertInput>();
+        for (const h of historyInputs) {
+            historyByTable.set(getTrueTableName(h.table, h.stagingPrefix, h.historyTableSuffix), h);
+        }
+        const stagingInputs: InsertInput[] = insertInput.map(input => ({ ...input, insertType: "UPDATE" }));
+
+        // Whole-table attempt: [before-image (if history-eligible), merge] as one transaction per table.
+        const groups: QueryInput[][] = stagingInputs.map((stagingInput, i) => {
+            const group: QueryInput[] = [];
+            const historyInput = historyByTable.get(insertInput[i].table);
+            if (historyInput) group.push(this.db.getInsertChangedRowsToHistoryQuery(historyInput));
+            group.push(this.db.getInsertFromStagingQuery(stagingInput));
+            return group;
+        });
+        const allResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(groups);
+
+        for (let i = 0; i < allResults.length; i++) {
+            if (allResults[i]?.success) continue;
+            allResults[i] = await this.perPkAtomicStagingMerge(insertInput[i], stagingInputs[i], historyByTable.get(insertInput[i].table));
+        }
+        return allResults;
+    }
+
+    /**
+     * Per-PK fallback for the atomic history path: for each row, run [before-image for that PK,
+     * single-PK merge] in ONE transaction. A PK whose merge violates a constraint rolls the whole
+     * transaction back (no history, no data) and is diverted to `rejectedRowsTable`. No schema
+     * widening is attempted here (unlike the shared `perRowInsertWithRetry`): `configureTables`
+     * already fitted the schema to every row before the merge, so a failure here is a data/constraint
+     * issue a re-inference could not fix.
+     */
+    private async perPkAtomicStagingMerge(input: InsertInput, stagingInput: InsertInput, historyInput?: InsertInput): Promise<QueryResult> {
+        const config = this.db.getConfig();
+        const dialectConfig = this.db.getDialectConfig();
+        const header = input.comparedMetaData?.updatedMetaData || input.metaData;
+        const pkCols = Object.keys(header).filter(col => header[col]?.primary);
+        if (!pkCols.length) {
+            throw new Error(`autoSQL: staged merge for '${input.table}' failed and cannot degrade per-row (no primary key to divert on).`);
+        }
+        this.db.warn(`autoSQL: staged merge for '${input.table}' failed; retrying per-row atomically (before-image + merge in one transaction), diverting unrecoverable rows to '${config.rejectedRowsTable}'.`);
+
+        let inserted = 0;
+        const rejected: Record<string, any>[] = [];
+        for (const row of input.data) {
+            const pkFilter: Record<string, any> = {};
+            for (const pk of pkCols) pkFilter[pk] = sqlize(row[pk], header[pk].type, dialectConfig, config);
+            const group: QueryInput[] = [];
+            if (historyInput) group.push(this.db.getInsertChangedRowsToHistoryQuery(historyInput, undefined, pkFilter));
+            group.push(this.db.getInsertFromStagingQuery(stagingInput, undefined, undefined, pkFilter));
+            const result = await this.db.runTransaction(group);
+            if (result.success) inserted += 1; // one data row per PK landed (history rows aren't counted)
+            else rejected.push(row);
+        }
+
+        if (rejected.length) {
+            if (!config.rejectedRowsTable) {
+                throw new Error(`autoSQL: ${rejected.length} row(s) failed to merge into '${input.table}' and rejectedRowsTable is not configured.`);
+            }
+            await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
+            await this.db.runTransaction([
+                buildInsertRejectedRowsQuery(config, input.table, rejected.map(row => ({ row, error: 'failed to merge after per-row retry' })))
+            ]);
+            this.db.warn(`autoSQL: ${rejected.length} row(s) could not be merged into '${input.table}' and were written to '${config.rejectedRowsTable}'.`);
+        }
+        const now = new Date();
+        return { start: now, end: now, duration: 0, success: true, affectedRows: inserted };
     }
 
     private async insertToHistoryTables(insertInputs: InsertInput[]): Promise<QueryResult[]> {
@@ -1071,90 +1137,96 @@ export class AutoSQLHandler {
             return [this.db.getInsertChangedRowsToHistoryQuery(insertInput)]
         })
         const allInsertResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingInsertQueries);
-        throwIfFailedResults(allInsertResults, 'insert from staging table queries') 
+        throwIfFailedResults(allInsertResults, 'insert from staging table queries')
         return allInsertResults
     }
 
-    private async insertHistory(insertInput: InsertInput[], historyAsAt?: string): Promise<QueryResult[]> {
+    /**
+     * Build the per-table history inputs (cleaned metadata + `dwh_as_at` PK) for the tables in
+     * `historyTables`. Shared by `insertHistory` (non-atomic path) and `configureHistoryTables`
+     * (atomic path). Returns [] when history is off or no eligible table is present.
+     */
+    private async buildHistoryInputs(insertInput: InsertInput[]): Promise<InsertInput[]> {
         const config = this.db.getConfig();
         if (!config.addHistory || !config.historyTables?.length) return [];
-        if(!this.db.getConfig().useStagingInsert) { throw new Error('Cannot add history tables without using staging insert') }
-        // `historyAsAt` is supplied only on the opt-in staging-degradation path (rejectedRowsTable
-        // set). The compensating history delete is implemented for mysql/pgsql only, so fail early
-        // and clearly rather than after partially degrading a load.
-        if (historyAsAt && config.sqlDialect === 'sqlserver') {
-            throw new Error('Staging-path per-row degradation (rejectedRowsTable) with addHistory is not supported for SQL Server.');
-        }
+        if (!config.useStagingInsert) { throw new Error('Cannot add history tables without using staging insert'); }
 
         const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
-        const eligibleInputs = uniqueTables.filter(table =>
-            config.historyTables!.includes(table)
-        );
-        if(eligibleInputs.length == 0) {return []}
-        // Check for current table meta data
-        const historyInputs: InsertInput[] = await Promise.all(
+        const eligibleInputs = uniqueTables.filter(table => config.historyTables!.includes(table));
+        if (eligibleInputs.length == 0) { return []; }
+
+        return await Promise.all(
             eligibleInputs.map(async (table) => {
               const matchingInput = insertInput.find(i => i.table === table);
               const historyName = getHistoryTableName(table, matchingInput?.historyTableSuffix);
-          
+
               // Run both metadata fetches in parallel
               const [currentStatus, historyStatus] = await Promise.all([
                 this.fetchTableMetadata(table),
                 this.fetchTableMetadata(historyName),
               ]);
-          
+
               const currentMetaData = currentStatus.currentMetaData;
               const currentHistoryMetaData = historyStatus.currentMetaData;
-          
+
               if (!currentMetaData) {
                 throw new Error(`Could not find structure of ${table} for history table creation`);
               }
-          
+
               // ✅ Clean up metaData for history table
               const cleanedMeta: MetadataHeader = {};
-          
               for (const col in currentMetaData) {
                 const def = { ...currentMetaData[col] };
                 def.unique = false;
                 def.index = false
                 cleanedMeta[col] = def;
               }
-          
+
               // ✅ Add as_at column
-              cleanedMeta["dwh_as_at"] = {
-                type: "datetime",
-                allowNull: false,
-                primary: true,
-              };
+              cleanedMeta["dwh_as_at"] = { type: "datetime", allowNull: false, primary: true };
 
               const automatedColumns = ['dwh_created_at', 'dwh_modified_at', 'dwh_loaded_at']
-
-          
               // ✅ Ensure existing PKs are retained
               for (const col in currentMetaData) {
-                if (currentMetaData[col].primary) {
-                  cleanedMeta[col].primary = true;
-                }
-                if(automatedColumns.includes(col)) {
-                    cleanedMeta[col].calculated = true
-                }
+                if (currentMetaData[col].primary) { cleanedMeta[col].primary = true; }
+                if (automatedColumns.includes(col)) { cleanedMeta[col].calculated = true }
               }
-          
+
               return {
                 table: historyName,
                 data: [],
                 metaData: cleanedMeta,
                 previousMetaData: currentHistoryMetaData,
-                // Engine-supplied as_at (opt-in degradation path only) so the before-images this run
-                // writes can be compensated exactly if a later per-row divert rejects some rows.
-                historyAsAt,
+                // Carry the prefix/suffix so the history/temp/real table names resolve correctly (incl.
+                // custom prefixes) both in the before-image query and in the atomic path's table map.
+                stagingPrefix: matchingInput?.stagingPrefix,
+                historyTableSuffix: matchingInput?.historyTableSuffix,
               };
             })
         );
+    }
 
-        const configuredHistory = await this.configureTables(historyInputs)
-        const insertedHistory = await this.insertToHistoryTables(historyInputs)
-        return insertedHistory
+    private async insertHistory(insertInput: InsertInput[]): Promise<QueryResult[]> {
+        const historyInputs = await this.buildHistoryInputs(insertInput);
+        if (!historyInputs.length) return [];
+        await this.configureTables(historyInputs)
+        return await this.insertToHistoryTables(historyInputs)
+    }
+
+    /**
+     * Create the history tables (DDL only) and return their inputs, for the ATOMIC history path — the
+     * before-image INSERT itself is deferred into the merge transaction (see
+     * `insertFromStagingTablesAtomic`). Errors up-front on SQL Server, whose row-level history is
+     * unverified (D-F), so the opt-in combo fails before any partial work.
+     */
+    private async configureHistoryTables(insertInput: InsertInput[]): Promise<InsertInput[]> {
+        if (this.db.getConfig().sqlDialect === 'sqlserver') {
+            throw new Error('Staging-path per-row degradation (rejectedRowsTable) with addHistory is not supported for SQL Server.');
+        }
+        const historyInputs = await this.buildHistoryInputs(insertInput);
+        if (!historyInputs.length) return [];
+        await this.configureTables(historyInputs);
+        return historyInputs;
     }
 
     private async extractNestedInputs(inputs: InsertInput[]): Promise<InsertInput[]> {
@@ -1284,16 +1356,21 @@ export class AutoSQLHandler {
 
             const tLoad = perf();
             if (config.useStagingInsert) {
-                // Engine-supplied as_at for the opt-in degradation path only (rejectedRowsTable set):
-                // lets a per-row divert compensate exactly this run's history before-images. Absent
-                // otherwise, so existing history loads keep DB-clock (NOW()/CURRENT_TIMESTAMP) semantics.
-                const historyAsAt = config.rejectedRowsTable ? new Date().toISOString().slice(0, 19).replace('T', ' ') : undefined;
+                // Case 3 — opt-in per-row degradation (rejectedRowsTable) WITH row-level history — uses
+                // the zero-window atomic path (before-image + merge in one transaction). Every other
+                // staging load keeps the existing insertHistory-then-merge flow unchanged.
+                const historyDegradation = !!(config.rejectedRowsTable && config.addHistory && config.historyTables?.length);
                 try {
                     await this.prepareStagingTables(insertInput);
                     await this.insertStagingTables(insertInput);
                     await this.resolveConflicts(insertInput);
-                    await this.insertHistory(insertInput, historyAsAt);
-                    insertResults = await this.insertFromStagingTables(insertInput, { perRowFallback: true, historyAsAt });
+                    if (historyDegradation) {
+                        const historyInputs = await this.configureHistoryTables(insertInput);
+                        insertResults = await this.insertFromStagingTablesAtomic(insertInput, historyInputs);
+                    } else {
+                        await this.insertHistory(insertInput);
+                        insertResults = await this.insertFromStagingTables(insertInput, { perRowFallback: !!config.rejectedRowsTable });
+                    }
                 } finally {
                     // Always drop the staging table, even if a step above threw, so a failed load
                     // doesn't leave an orphaned temp table behind (mirrors the streaming end() path).
@@ -1442,14 +1519,19 @@ export class AutoSQLHandler {
                 let insertResults: QueryResult[];
                 const tLoad = perf();
                 if (this.db.getConfig().useStagingInsert) {
-                    // See the non-chunked path: engine-supplied as_at on the opt-in degradation path only.
-                    const historyAsAt = config.rejectedRowsTable ? new Date().toISOString().slice(0, 19).replace('T', ' ') : undefined;
+                    // See the non-chunked path: case 3 (rejectedRowsTable + addHistory) uses the atomic path.
+                    const historyDegradation = !!(config.rejectedRowsTable && config.addHistory && config.historyTables?.length);
                     try {
                         await this.prepareStagingTables(chunkInsertInput);
                         await this.insertStagingTables(chunkInsertInput);
                         await this.resolveConflicts(chunkInsertInput);
-                        await this.insertHistory(chunkInsertInput, historyAsAt);
-                        insertResults = await this.insertFromStagingTables(chunkInsertInput, { perRowFallback: true, historyAsAt });
+                        if (historyDegradation) {
+                            const historyInputs = await this.configureHistoryTables(chunkInsertInput);
+                            insertResults = await this.insertFromStagingTablesAtomic(chunkInsertInput, historyInputs);
+                        } else {
+                            await this.insertHistory(chunkInsertInput);
+                            insertResults = await this.insertFromStagingTables(chunkInsertInput, { perRowFallback: !!config.rejectedRowsTable });
+                        }
                     } finally {
                         // Drop staging even if a step above threw, so a failed chunk can't orphan a temp table.
                         await this.removeStagingTables(chunkInsertInput).catch(e => this.db.error(`autoSQLChunked: failed to drop staging table(s) for '${table}': ${e instanceof Error ? e.message : String(e)}`));

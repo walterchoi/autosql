@@ -86,7 +86,7 @@ export class MySQLInsertQueryBuilder {
         return result;
     }
 
-    static getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
+    static getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT", pkFilter?: Record<string, any>): QueryInput {
         let table: string;
         let header: MetadataHeader;
         let insertType: "UPDATE" | "INSERT";
@@ -115,7 +115,15 @@ export class MySQLInsertQueryBuilder {
         const selectCols = columns.map(col => q(col)).join(", ");
 
         let query = `INSERT INTO ${schemaPrefix}${q(table)} (${escapedCols}) SELECT ${selectCols} FROM ${schemaPrefix}${q(tempTable)}`;
-      
+
+        // Optional single-PK filter: merge exactly one staged row (the atomic degradation path runs
+        // this per rejected-candidate PK, in the same transaction as that PK's before-image capture).
+        const params: any[] = [];
+        if (pkFilter) {
+            const pkCols = Object.keys(header).filter(col => header[col].primary === true);
+            query += " WHERE " + pkCols.map(pk => { params.push(pkFilter[pk]); return `${q(pk)} = ?`; }).join(" AND ");
+        }
+
         if (insertType === "UPDATE") {
             const primaryKeys = Object.keys(header).filter(col => header[col].primary === true);
       
@@ -133,14 +141,14 @@ export class MySQLInsertQueryBuilder {
             query += ` ON DUPLICATE KEY UPDATE ${updateSet}`;
           }
         }
-      
+
         return {
           query,
-          params: []
+          params
         };
     }
 
-    static getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput {
+    static getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, pkFilter?: Record<string, any>): QueryInput {
           let table: string;
           let header: MetadataHeader;
         
@@ -180,46 +188,28 @@ export class MySQLInsertQueryBuilder {
             .map(col => `${t1}.${q(col)} <=> ${t2}.${q(col)} = FALSE`)
             .join(" OR ");
 
-          // On the opt-in staging-degradation path a run-scoped as_at is supplied so a later per-row
-          // divert can compensate exactly this run's before-images; otherwise use the DB clock (the
-          // unchanged default for every existing history user).
-          const asAt = (typeof tableOrInput === "object" && "table" in tableOrInput) ? tableOrInput.historyAsAt : undefined;
-          const asAtExpr = asAt ? "?" : "NOW()";
-          const params = asAt ? [asAt] : [];
+          // Optional single-PK filter: on the atomic degradation path this before-image runs in the
+          // SAME transaction as a single-PK merge, so it is scoped to that one row's primary key.
+          const params: any[] = [];
+          // Non-filtered query is byte-identical to the pre-existing history INSERT (`WHERE
+          // <diff>`); only when a single-PK filter is supplied is the diff parenthesised and ANDed.
+          let whereClause = diffCondition;
+          if (pkFilter) {
+            const pkFilterClause = primaryKeys.map(pk => { params.push(pkFilter[pk]); return `${t1}.${q(pk)} = ?`; }).join(" AND ");
+            whereClause = `(${diffCondition}) AND ${pkFilterClause}`;
+          }
 
           const query = `
             INSERT INTO ${schemaPrefix}${q(historyTable)} (${valuesCols}, \`dwh_as_at\`)
-            SELECT ${selectCols}, ${asAtExpr}
+            SELECT ${selectCols}, NOW()
             FROM ${schemaPrefix}${q(table)} ${t1}
             LEFT JOIN ${schemaPrefix}${q(tempTable)} ${t2}
               ON ${joinCondition}
-            WHERE ${diffCondition};
+            WHERE ${whereClause};
             `.trim();
           return {
             query,
             params
           };
         }
-
-    /**
-     * Delete the row-level history before-images written by THIS run (identified by the exact
-     * engine-supplied `dwh_as_at`) for the given rejected rows' primary keys. Used to compensate
-     * history after a staging merge degraded to per-row and diverted some rows — those rows never
-     * changed the real table, so their before-image must not remain. Keyed on `dwh_as_at` = this
-     * run's value AND the PK tuple, so it can never touch a prior load's history for the same PK.
-     */
-    static getDeleteHistoryRowsQuery(historyTable: string, primaryKeys: string[], rejectedRows: Record<string, any>[], asAt: string, schema?: string): QueryInput {
-        const schemaPrefix = schema ? `${q(schema)}.` : "";
-        const ref = `${schemaPrefix}${q(historyTable)}`;
-        const params: any[] = [asAt];
-        const pkTuple = `(${primaryKeys.map(pk => q(pk)).join(", ")})`;
-        const rowPlaceholders = rejectedRows.map(row => {
-            primaryKeys.forEach(pk => params.push(row[pk]));
-            return `(${primaryKeys.map(() => "?").join(", ")})`;
-        }).join(", ");
-        return {
-            query: `DELETE FROM ${ref} WHERE \`dwh_as_at\` = ? AND ${pkTuple} IN (${rowPlaceholders});`,
-            params
-        };
-    }
 }
