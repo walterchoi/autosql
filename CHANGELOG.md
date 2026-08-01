@@ -1,4 +1,14 @@
 ## [Unreleased]
+
+## [2.0.0] - 2026-08-01
+
+> **Major bump:** this release contains breaking changes — `startTransaction`/`commit`/`rollback` now
+> require a pinned-connection argument (previously silent no-ops), decimals preserve full precision by
+> default instead of rounding to 6, and a bare `0`/`1` now infers as an integer instead of a boolean.
+> See the ⚠️ Behavior change entries below. Also adds the SQL Server / Azure SQL adapter, native
+> bulk-copy (`bulkLoad`), opt-in graceful degradation (`rejectedRowsTable`) across all load paths with
+> transactional row-level history, and a ~8× faster inference path.
+
 ### ⚠️ Behavior change
 - **High-precision decimals are preserved by default instead of silently rounded.** `decimalMaxLength` previously defaulted to **6**, so any value with more than 6 fractional digits was silently rounded on insert (e.g. `3.14159265358979323846` → `3.141592` on both MySQL and Postgres). It now has **no hard default**: a decimal is stored at the full scale the data needs, up to the dialect's numeric limit (`maxDecimalScale` — MySQL 30, SQL Server 38, Postgres 16383). Set `decimalMaxLength` to deliberately cap scale (e.g. `2` for currency). When a value's scale exceeds the cap it is rounded **with a warning** (no longer silent), or — with the new opt-in **`decimalToVarchar: true`** — the column is stored as text (`varchar`) to preserve the exact value. `forceStringColumns` remains the per-column exact-text option. (Design: decisions.md D-G.)
 

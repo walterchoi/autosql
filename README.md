@@ -54,6 +54,19 @@ AutoSQL supports:
 
 - **MySQL** (via `mysql2`)
 - **PostgreSQL** (via `pg`)
+- **SQL Server / Azure SQL** (via `mssql`) — core ETL path: create, insert, idempotent re-ingest,
+  `MERGE` upsert, add-column evolution, and multilingual/emoji via `NVARCHAR`. A few advanced
+  features (streaming, row-level history, split tables, bulk-copy) are not yet implemented for SQL
+  Server — use MySQL/Postgres for those.
+
+The dialect drivers (`mysql2` / `pg` / `mssql`) and `pg-copy-streams` (for `bulkLoad`) are **optional
+peer dependencies** — install only the driver for the dialect you use:
+
+```bash
+npm install autosql mysql2       # MySQL
+npm install autosql pg           # PostgreSQL (+ pg-copy-streams for bulkLoad)
+npm install autosql mssql        # SQL Server / Azure SQL
+```
 
 Optional support for SSH tunneling is available via:
 
@@ -108,12 +121,13 @@ AutoSQL will:
 ```ts
 export interface DatabaseConfig {
   // Required connection settings
-  sqlDialect: 'mysql' | 'pgsql';
+  sqlDialect: 'mysql' | 'pgsql' | 'sqlserver';
   host?: string;
   user?: string;
   password?: string;
   database?: string;
   port?: number;
+  connectionLimit?: number;   // Max pooled connections (governs insert/introspection concurrency) — defaults to 5
 
   // Optional table target
   // ALL SETTINGS BELOW HERE ARE OPTIONAL
@@ -140,8 +154,14 @@ export interface DatabaseConfig {
   pseudoUnique?: number;      // The % of values that must be unique to be considered pseudoUnique — defaults to 0.9 (90%)
   categorical?: number;       // The % of values that must be repeated to be considered categorical — defaults to 0.20 (20%)
   autoIndexing?: boolean;     // Automatically identify and add indexes to tables when altering / creating — defaults to TRUE
-  decimalMaxLength?: number;  // Automatically round decimals to a maximum of X decimal places — defaults to 10
+  // Max fractional-digit scale for inferred decimals. NO hard default (v2.0.0): a decimal keeps the
+  // full scale the data needs, up to the dialect limit (MySQL 30, SQL Server 38, Postgres 16383), so
+  // precision is never silently lost. Set a value (e.g. 2 for currency) to deliberately cap scale —
+  // values beyond the cap are rounded WITH A WARNING, or (see decimalToVarchar) stored as text.
+  decimalMaxLength?: number;
+  decimalToVarchar?: boolean; // When a decimal exceeds the scale cap, store the column as varchar (exact text) instead of rounding — defaults to false
   maxKeyLength?: number;      // Limits indexes / primary keys from using columns that are longer than this length — defaults to 255
+  maxCompositeKeyColumns?: number; // Cap the auto-detected composite primary key at this many columns (bounds the O(2^N) key search) — defaults to 4
   maxVarcharLength?: number;  // Prevents varchar columns from exceeding this length, autoconverts to text — defaults to 1024
 
   // Add an auto-increment surrogate key (BIGINT AUTO_INCREMENT / BIGSERIAL) when no natural
@@ -154,6 +174,16 @@ export interface DatabaseConfig {
   // types: phone numbers, zip codes, padded codes (e.g. "007"), account numbers, etc.
   forceStringColumns?: string[];
 
+  // Force specific columns to be typed boolean. By default a bare 0/1 infers as an INTEGER (v2.0.0):
+  // boolean is only inferred from real true/false. Use this for flags stored as 0/1. An out-of-domain
+  // value (e.g. 2, "yes") in a hinted column throws rather than being silently coerced.
+  booleanColumns?: string[];
+
+  // Opt-in (MySQL only): when configuring a PRE-EXISTING table, convert its text columns to the
+  // target charset (utf8mb4) so externally-created 3-byte utf8/utf8mb3 columns accept 4-byte
+  // characters. Convergent + best-effort (a failed CONVERT is logged, not fatal). Defaults to false.
+  upgradeCharset?: boolean;
+
   // Locale number parsing. Provide BOTH together to disambiguate single-separator values
   // (e.g. thousandsSeparator: "." + decimalSeparator: "," parses "1.000" as 1000, not 1).
   // Omit both to use the default heuristic.
@@ -165,8 +195,9 @@ export interface DatabaseConfig {
   samplingMinimum?: number; // If provided data exceeds this row count, sampling kicks in — defaults to 100
 
   // Insert strategy
-  insertType?: 'UPDATE' | 'INSERT'; // UPDATE automatically replaces non-primary key values with new values that are found
+  insertType?: 'UPDATE' | 'INSERT'; // UPDATE upserts (replaces non-primary-key values); INSERT appends and errors on a duplicate key. Defaults to UPDATE.
   insertStack?: number; // Maximum number of rows to insert in one query - defaults to 100
+  bulkLoad?: boolean; // Populate staging with the dialect's bulk-copy (Postgres COPY / MySQL LOAD DATA LOCAL INFILE) instead of parameterised INSERT — much faster for large loads; falls back to INSERT on failure. MySQL/Postgres only. Defaults to false.
   safeMode?: boolean; // Prevent the altering of tables if needed - defaults to false
   deleteColumns?: boolean; // Drop columns if needed - defaults to false
 
@@ -184,8 +215,9 @@ export interface DatabaseConfig {
   sanitizeInvalidChars?: boolean; // Strip NUL bytes and unpaired UTF-16 surrogates from string values before insert -- defaults to FALSE
 
   // Performance scaling
-  useWorkers?: boolean;   // Enables parallel worker threads — defaults to true
-  maxWorkers?: number;    // Maximum concurrent workers — defaults to 8
+  useWorkers?: boolean;      // Enables parallel worker threads — defaults to true
+  maxWorkers?: number;       // Maximum concurrent workers — defaults to 8
+  workerTaskTimeout?: number; // Seconds before a wedged worker task fails instead of hanging the load (0 = disabled). A dead worker is always caught regardless; this only guards an alive-but-hung one. Defaults to 0.
 
   // Table naming
   // Change these if your schema already has tables that use the default prefixes/suffixes.
@@ -323,10 +355,27 @@ These control how data is batched, inserted, and optionally how schema alteratio
   Enables a staging table strategy where data is first inserted into a temporary table before being merged into the target. Useful for large or high-concurrency environments. Defaults to `true`.
 
 - `addHistory`: `boolean`  
-  If enabled, before overwriting rows (in `UPDATE` mode), AutoSQL writes the previous version into a corresponding history table. Defaults to `false`.
+  If enabled, before overwriting rows (in `UPDATE` mode), AutoSQL writes the previous version into a corresponding history table. Requires `useStagingInsert`. Defaults to `false`. (Not available on SQL Server.)
 
 - `historyTables`: `string[]`  
   List of table names to track with history inserts. Used in conjunction with `addHistory`.
+
+- `bulkLoad`: `boolean`  
+  Populate staging tables with the dialect's native bulk-copy — Postgres `COPY FROM STDIN` (via the optional `pg-copy-streams`) or MySQL `LOAD DATA LOCAL INFILE` — instead of parameterised multi-row `INSERT`. Much faster and cheaper for large loads; the merge (staging → real) and upsert semantics are unchanged. Falls back to `INSERT` (with a warning) if bulk load fails for a table. MySQL/Postgres only. Defaults to `false`.
+
+- `rejectedRowsTable`: `string` — **graceful degradation (opt-in)**  
+  By default a load is all-or-nothing: a row the database rejects fails the whole batch. Set `rejectedRowsTable` and AutoSQL instead retries the failed batch **row-by-row**, lands the good rows, and diverts the unrecoverable ones (with their error and raw data) to this table — so one bad row no longer sinks the load. Works on the streaming path, the direct path (`useStagingInsert: false`), and the default staging path. When combined with `addHistory`, each row's before-image and its merge commit in a single transaction, so a diverted row leaves no data change **and** no spurious history entry. Without `rejectedRowsTable` the fail-loud all-or-nothing default is unchanged.
+
+- **Schema fast paths** (5th arg to `autoSQL` / `autoSQLChunked`: `options`)  
+  For repeated loads you can skip inference and/or introspection:
+  - `assumeSchema`: pass a `MetadataHeader` the caller already knows — AutoSQL skips per-value type inference for the covered columns (any not covered are still inferred).
+  - `existingSchema`: pass the CURRENT table's resolved schema — AutoSQL skips the introspection round-trip. `autoSQL` **returns its resolved `metaData`** in the `QueryResult`, so cache that and pass it back as `existingSchema` on the next load.
+
+  ```ts
+  const first = await db.autoSQL('events', batch1);
+  // reuse the resolved schema to skip re-introspection next time
+  await db.autoSQL('events', batch2, undefined, undefined, { existingSchema: first.metaData });
+  ```
 
 - `autoSplit`: `boolean`  
   Automatically splits datasets across multiple tables when the row size or column count exceeds allowed limits. Prevents failed inserts due to row size limits. Defaults to `false`
@@ -390,6 +439,12 @@ Defaults to `false`.
   ```
 
   Without this, a column containing `"14155550100"` would be inferred as `bigint`. With it, the column stays `varchar` and leading zeros, formatting, and string semantics are preserved.
+
+- `booleanColumns`: `string[]`
+  Column names that should be typed `boolean`. By default (v2.0.0) a bare `0`/`1` infers as an **integer** — boolean is only inferred from real `true`/`false` — so keys/counts/coded categories aren't mis-typed. Use this hint for flags genuinely stored as `0`/`1`. An out-of-domain value (`2`, `"yes"`) in a hinted column **throws** rather than being silently coerced (forcing a value to boolean is lossy).
+
+- `decimalToVarchar`: `boolean`
+  By default a decimal keeps the full scale the data needs, up to the dialect's numeric limit — precision is never silently lost. If you set `decimalMaxLength` to cap scale, values beyond the cap are rounded with a warning; enable `decimalToVarchar` to instead store the whole column as `varchar` (exact text) so no value is rounded. Defaults to `false`.
 
 - `thousandsSeparator`: `string` / `decimalSeparator`: `string`
   Disambiguate locale number formats. By default a value with a single separator like `"1,000"` is treated as a decimal (`1.0`). Provide **both** (they must be set together) to parse explicitly — e.g. with `thousandsSeparator: "."` and `decimalSeparator: ","`, `"1.000"` parses as `1000` and `"1,5"` as `1.5`. Omit both to use the default heuristic.
