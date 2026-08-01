@@ -381,16 +381,12 @@ export class MySQLDatabase extends Database {
         return MySQLInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig(), insertInput)
     }
 
-    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
-        return MySQLInsertQueryBuilder.getInsertFromStagingQuery(tableOrInput, metaData, this.getConfig(), insertInput)
+    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT", pkFilter?: Record<string, any>): QueryInput {
+        return MySQLInsertQueryBuilder.getInsertFromStagingQuery(tableOrInput, metaData, this.getConfig(), insertInput, pkFilter)
     }
 
-    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader): QueryInput {
-        return MySQLInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig())
-    }
-
-    getDeleteHistoryRowsQuery(historyTable: string, primaryKeys: string[], rejectedRows: Record<string, any>[], asAt: string): QueryInput {
-        return MySQLInsertQueryBuilder.getDeleteHistoryRowsQuery(historyTable, primaryKeys, rejectedRows, asAt, this.getConfig().schema)
+    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: Record<string, any>): QueryInput {
+        return MySQLInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig(), pkFilter)
     }
 
     getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput {

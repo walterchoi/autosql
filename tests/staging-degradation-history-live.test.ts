@@ -1,24 +1,26 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
 import { escapeIdentifier } from "../src/db/utils/escape";
 
-// Live proof for staging-path per-row degradation WITH row-level history (decisions.md D-N / Option
-// B). On the default (atomic) staging path, when a merge fails and the user opted in
-// (rejectedRowsTable), autosql retries per-row and diverts unrecoverable rows — and must then
-// COMPENSATE row-level history: insertHistory records a before-image for every changing row BEFORE
-// the merge, so a diverted row (which never actually changed the real table) would otherwise leave a
-// spurious before-image. The compensating delete removes exactly this run's before-images for the
-// rejected rows (keyed on the engine-supplied dwh_as_at + PK), never touching a prior load's history.
+// Live proof for the ZERO-WINDOW staging-path degradation WITH row-level history (decisions.md D-N).
+// On the default staging path, when a merge fails and the user opted in (rejectedRowsTable) with
+// addHistory, autosql retries per primary key and — crucially — runs each PK's before-image capture
+// and its merge in ONE transaction, so history and data commit or roll back together. A diverted row
+// leaves neither a data change nor a history before-image; there is no window in which a spurious
+// before-image could persist.
 //
-// Scenario: pre-existing rows id=1 (val 10) and id=2 (val 20). A staged upsert sets id=1→15 (valid)
-// and id=2→-5 (violates a CHECK). The atomic merge fails and rolls back → per-row: id=1 lands, id=2
-// diverts. Expected end state: id=1 updated, id=2 unchanged, id=2 in rejectedRowsTable, and history
-// holds id=1's before-image but NOT id=2's. The negative-control test disables the compensating
-// delete and asserts id=2's spurious before-image survives — proving the delete is load-bearing.
+// Two tests:
+//  1. Outcome (natural CHECK violation): id=1→valid lands with its before-image; id=2→CHECK-violating
+//     diverts with NO before-image; real table and rejectedRowsTable are correct.
+//  2. Discriminating control (the one that proves the transaction boundary): force the per-PK MERGE to
+//     fail while the before-image query is untouched (would succeed on its own). If before-image and
+//     merge share a transaction, the failing merge rolls the before-image back → history is empty. If
+//     they were separate transactions (the regression this rebuild prevents), the before-image would
+//     persist → history would be non-empty → this test fails.
 
 Object.values(DB_CONFIG).forEach((config) => {
     const qi = (n: string) => escapeIdentifier(n, config.sqlDialect);
 
-    describe(`staging-path degradation + history (live) for ${config.sqlDialect.toUpperCase()}`, () => {
+    describe(`atomic staging degradation + history (live) for ${config.sqlDialect.toUpperCase()}`, () => {
         const TABLE = "staging_degradation_test";
         const HISTORY = TABLE + "__history";
         const REJECTED = "staging_degradation_rejected";
@@ -27,8 +29,6 @@ Object.values(DB_CONFIG).forEach((config) => {
         const rejRef = `${qi("test_schema")}.${qi(REJECTED)}`;
         const tempRef = `${qi("test_schema")}.${qi("temp_staging__" + TABLE)}`;
 
-        // Default staging path (useStagingInsert left true); addTimestamps off keeps the table/history
-        // to id/val; streamMaxRetries:1 makes the CHECK-violating row divert in one per-row round.
         const baseConfig = {
             ...config,
             schema: "test_schema",
@@ -36,7 +36,7 @@ Object.values(DB_CONFIG).forEach((config) => {
             addTimestamps: false,
             addHistory: true,
             historyTables: [TABLE],
-            streamMaxRetries: 1,
+            rejectedRowsTable: REJECTED,
         };
 
         let admin: Database;
@@ -73,19 +73,16 @@ Object.values(DB_CONFIG).forEach((config) => {
             return Number(Object.values(r.results![0])[0]);
         };
         const historyIds = async () => {
-            const r = await admin.runQuery({ query: `SELECT ${qi("id")} AS id FROM ${histRef} ORDER BY ${qi("id")}`, params: [] });
-            return (r.results ?? []).map((row: any) => Number(row.id));
+            const r = await admin.runQuery({ query: `SELECT ${qi("id")} AS id, ${qi("val")} AS val FROM ${histRef} ORDER BY ${qi("id")}`, params: [] });
+            return (r.results ?? []).map((row: any) => ({ id: Number(row.id), val: Number(row.val) }));
         };
 
-        const runDegradedLoad = async (db: Database) =>
-            db.autoSQL(TABLE, [{ id: 1, val: 15 }, { id: 2, val: -5 }]);
-
-        test("diverts the CHECK-violating row and compensates history (no spurious before-image)", async () => {
-            const db = Database.create({ ...baseConfig, rejectedRowsTable: REJECTED });
+        test("diverts the CHECK-violating row with no before-image; the good row lands with its before-image", async () => {
+            const db = Database.create(baseConfig);
             await db.establishConnection();
             try {
-                const r = await runDegradedLoad(db);
-                expect(r.success).toBe(true); // degraded, not a hard failure
+                const r = await db.autoSQL(TABLE, [{ id: 1, val: 15 }, { id: 2, val: -5 }]);
+                expect(r.success).toBe(true);
 
                 // Real table: id=1 updated (10→15), id=2 unchanged (its merge rolled back + diverted).
                 expect(await valOf(1)).toBe(15);
@@ -93,39 +90,38 @@ Object.values(DB_CONFIG).forEach((config) => {
 
                 // The diverted row is captured.
                 expect(await rowCount(rejRef)).toBe(1);
-                const rej = await admin.runQuery({ query: `SELECT ${qi("raw_data")} AS raw_data FROM ${rejRef}`, params: [] });
-                const rawVal = Object.values(rej.results![0])[0];
-                const parsed = typeof rawVal === "string" ? JSON.parse(rawVal) : rawVal;
-                expect(Number(parsed.id)).toBe(2);
 
-                // History holds the before-image of the row that actually changed (id=1) and NOT the
-                // diverted row (id=2) — the compensation removed id=2's spurious before-image.
-                expect(await historyIds()).toEqual([1]);
+                // History holds ONLY the before-image of the row that actually changed (id=1, old val 10).
+                // id=2 never merged, so it has no before-image — captured and rolled back atomically.
+                expect(await historyIds()).toEqual([{ id: 1, val: 10 }]);
             } finally {
                 await db.closeConnection();
             }
         });
 
-        test("negative control: without the compensating delete, the diverted row's before-image survives", async () => {
-            const db = Database.create({ ...baseConfig, rejectedRowsTable: REJECTED });
+        test("discriminating: a per-PK merge failure rolls back its before-image (proves single transaction)", async () => {
+            const db = Database.create(baseConfig);
             await db.establishConnection();
-            // Neutralise ONLY the compensating delete (return a harmless no-op), leaving everything
-            // else identical — proving that delete is what removes id=2's spurious before-image.
-            const delSpy = jest.spyOn(db, "getDeleteHistoryRowsQuery").mockReturnValue({ query: "SELECT 1", params: [] });
+            // Force EVERY staging merge to fail (whole-table attempt AND each per-PK merge), while the
+            // before-image query is left untouched. A failing SELECT against a missing table aborts the
+            // transaction it runs in.
+            const failing = { query: `SELECT * FROM ${qi("test_schema")}.${qi("__no_such_table_xyz__")}`, params: [] as any[] };
+            const mergeSpy = jest.spyOn(db, "getInsertFromStagingQuery").mockReturnValue(failing);
             try {
-                const r = await runDegradedLoad(db);
-                expect(r.success).toBe(true);
+                // id=1 exists (val 10); the update to 15 differs, so the before-image WOULD insert a row
+                // for id=1 if it ran in its own transaction.
+                const r = await db.autoSQL(TABLE, [{ id: 1, val: 15 }]);
+                expect(r.success).toBe(true); // degraded: the row diverted
 
-                // Same divert outcome...
-                expect(await valOf(1)).toBe(15);
-                expect(await valOf(2)).toBe(20);
+                // The merge never applied, so id=1 is unchanged and diverted...
+                expect(await valOf(1)).toBe(10);
                 expect(await rowCount(rejRef)).toBe(1);
-                expect(delSpy).toHaveBeenCalled(); // the compensation path DID run (just neutralised)
 
-                // ...but now id=2's before-image is left behind — the bug the compensation prevents.
-                expect(await historyIds()).toEqual([1, 2]);
+                // ...and because the before-image shared the failing merge's transaction, it rolled back
+                // too: history is EMPTY. (Separate transactions would have left id=1's before-image here.)
+                expect(await historyIds()).toEqual([]);
             } finally {
-                delSpy.mockRestore();
+                mergeSpy.mockRestore();
                 await db.closeConnection();
             }
         });
