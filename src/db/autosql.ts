@@ -655,7 +655,7 @@ export class AutoSQLHandler {
             // re-infer different keys for the failed rows.
             const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col]?.primary);
             this.db.warn(`autoSQL: batch insert for '${input.table}' failed (${allInsertResults[i]?.error ?? 'unknown error'}); retrying per-row with schema widening, diverting unrecoverable rows to '${config.rejectedRowsTable}'.`);
-            const inserted = await this.perRowInsertWithRetry(
+            const { inserted } = await this.perRowInsertWithRetry(
                 input.table, input.data, input.metaData, insertType, maxRetries,
                 primaryKey.length ? primaryKey : undefined
             );
@@ -679,7 +679,7 @@ export class AutoSQLHandler {
         maxRetries: number,
         primaryKey?: string[],
         label: string = 'autoSQL'
-    ): Promise<number> {
+    ): Promise<{ inserted: number; rejected: Record<string, any>[] }> {
         const config = this.db.getConfig();
         let pendingRows = rows;
         let workingMeta = metaData;
@@ -742,7 +742,9 @@ export class AutoSQLHandler {
             }
         }
 
-        return totalInserted;
+        // `rejected` is the set of rows diverted to rejectedRowsTable (empty when all rows landed).
+        // The staging path uses it to compensate row-level history for rows that never merged.
+        return { inserted: totalInserted, rejected: pendingRows };
     }
 
     private async prepareStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
@@ -992,7 +994,7 @@ export class AutoSQLHandler {
         return { uniques, primary };
     }
 
-    private async insertFromStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
+    private async insertFromStagingTables(insertInput: InsertInput[], options?: { perRowFallback?: boolean; historyAsAt?: string }): Promise<QueryResult[]> {
         const stagingInputs: InsertInput[] = insertInput.map(input => ({
             ...input,
             insertType: "UPDATE"
@@ -1001,8 +1003,60 @@ export class AutoSQLHandler {
             return [this.db.getInsertFromStagingQuery(stagingInput)]
         })
         const allInsertResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingInsertQueries);
-        throwIfFailedResults(allInsertResults, 'insert from staging table queries') 
+
+        // Opt-in graceful degradation on the (default, atomic) staging path: when the caller passed
+        // perRowFallback AND rejectedRowsTable is configured AND the atomic merge failed for a
+        // table, retry that table's rows one at a time, diverting unrecoverable rows to
+        // rejectedRowsTable and compensating row-level history for the rows that never merged.
+        // Without the opt-in this stays all-or-nothing (throwIfFailedResults) — the current default.
+        const config = this.db.getConfig();
+        if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r?.success)) {
+            return await this.applyStagingPerRowFallback(insertInput, allInsertResults, options.historyAsAt);
+        }
+
+        throwIfFailedResults(allInsertResults, 'insert from staging table queries')
         return allInsertResults
+    }
+
+    /**
+     * Graceful-degradation fallback for the STAGING path (opt-in, see insertFromStagingTables): the
+     * atomic `INSERT…SELECT … ON CONFLICT` merge rolled back, so nothing from a failed table landed.
+     * Re-run that table's rows one at a time as an upsert into the real table (matching the merge's
+     * UPDATE semantics), diverting unrecoverable rows to `rejectedRowsTable`. Then compensate
+     * row-level history: `insertHistory` already wrote before-images for the FULL staged set keyed
+     * on this run's `historyAsAt`, so delete exactly this run's before-images for the rejected rows'
+     * primary keys — those rows never changed the real table, so no before-image should remain.
+     */
+    private async applyStagingPerRowFallback(insertInput: InsertInput[], allInsertResults: QueryResult[], historyAsAt?: string): Promise<QueryResult[]> {
+        const config = this.db.getConfig();
+        const maxRetries = config.streamMaxRetries ?? defaults.streamMaxRetries;
+        for (let i = 0; i < allInsertResults.length; i++) {
+            if (allInsertResults[i]?.success) continue;
+            const input = insertInput[i];
+            if (!input?.data?.length || !input.metaData) {
+                // Nothing to retry per-row — surface the original failure.
+                throwIfFailedResults([allInsertResults[i]], 'insert from staging table queries');
+                continue;
+            }
+            const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col]?.primary);
+            this.db.warn(`autoSQL: staged merge for '${input.table}' failed (${allInsertResults[i]?.error ?? 'unknown error'}); retrying per-row, diverting unrecoverable rows to '${config.rejectedRowsTable}'.`);
+            const { inserted, rejected } = await this.perRowInsertWithRetry(
+                input.table, input.data, input.metaData, 'UPDATE', maxRetries,
+                primaryKey.length ? primaryKey : undefined
+            );
+
+            // Compensate row-level history for the rows that were diverted (never merged).
+            if (rejected.length && historyAsAt && config.addHistory && config.historyTables?.includes(input.table) && primaryKey.length) {
+                const historyTable = getHistoryTableName(input.table, input.historyTableSuffix);
+                const delResult = await this.db.runTransaction([
+                    this.db.getDeleteHistoryRowsQuery(historyTable, primaryKey, rejected, historyAsAt)
+                ]);
+                throwIfFailedResults([delResult], 'history compensation delete');
+            }
+
+            allInsertResults[i] = { ...allInsertResults[i], success: true, affectedRows: inserted, error: undefined };
+        }
+        return allInsertResults;
     }
 
     private async insertToHistoryTables(insertInputs: InsertInput[]): Promise<QueryResult[]> {
@@ -1014,10 +1068,16 @@ export class AutoSQLHandler {
         return allInsertResults
     }
 
-    private async insertHistory(insertInput: InsertInput[]): Promise<QueryResult[]> {
+    private async insertHistory(insertInput: InsertInput[], historyAsAt?: string): Promise<QueryResult[]> {
         const config = this.db.getConfig();
         if (!config.addHistory || !config.historyTables?.length) return [];
         if(!this.db.getConfig().useStagingInsert) { throw new Error('Cannot add history tables without using staging insert') }
+        // `historyAsAt` is supplied only on the opt-in staging-degradation path (rejectedRowsTable
+        // set). The compensating history delete is implemented for mysql/pgsql only, so fail early
+        // and clearly rather than after partially degrading a load.
+        if (historyAsAt && config.sqlDialect === 'sqlserver') {
+            throw new Error('Staging-path per-row degradation (rejectedRowsTable) with addHistory is not supported for SQL Server.');
+        }
 
         const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
         const eligibleInputs = uniqueTables.filter(table =>
@@ -1078,6 +1138,9 @@ export class AutoSQLHandler {
                 data: [],
                 metaData: cleanedMeta,
                 previousMetaData: currentHistoryMetaData,
+                // Engine-supplied as_at (opt-in degradation path only) so the before-images this run
+                // writes can be compensated exactly if a later per-row divert rejects some rows.
+                historyAsAt,
               };
             })
         );
@@ -1214,12 +1277,16 @@ export class AutoSQLHandler {
 
             const tLoad = perf();
             if (config.useStagingInsert) {
+                // Engine-supplied as_at for the opt-in degradation path only (rejectedRowsTable set):
+                // lets a per-row divert compensate exactly this run's history before-images. Absent
+                // otherwise, so existing history loads keep DB-clock (NOW()/CURRENT_TIMESTAMP) semantics.
+                const historyAsAt = config.rejectedRowsTable ? new Date().toISOString().slice(0, 19).replace('T', ' ') : undefined;
                 try {
                     await this.prepareStagingTables(insertInput);
                     await this.insertStagingTables(insertInput);
                     await this.resolveConflicts(insertInput);
-                    await this.insertHistory(insertInput);
-                    insertResults = await this.insertFromStagingTables(insertInput);
+                    await this.insertHistory(insertInput, historyAsAt);
+                    insertResults = await this.insertFromStagingTables(insertInput, { perRowFallback: true, historyAsAt });
                 } finally {
                     // Always drop the staging table, even if a step above threw, so a failed load
                     // doesn't leave an orphaned temp table behind (mirrors the streaming end() path).
@@ -1368,12 +1435,14 @@ export class AutoSQLHandler {
                 let insertResults: QueryResult[];
                 const tLoad = perf();
                 if (this.db.getConfig().useStagingInsert) {
+                    // See the non-chunked path: engine-supplied as_at on the opt-in degradation path only.
+                    const historyAsAt = config.rejectedRowsTable ? new Date().toISOString().slice(0, 19).replace('T', ' ') : undefined;
                     try {
                         await this.prepareStagingTables(chunkInsertInput);
                         await this.insertStagingTables(chunkInsertInput);
                         await this.resolveConflicts(chunkInsertInput);
-                        await this.insertHistory(chunkInsertInput);
-                        insertResults = await this.insertFromStagingTables(chunkInsertInput);
+                        await this.insertHistory(chunkInsertInput, historyAsAt);
+                        insertResults = await this.insertFromStagingTables(chunkInsertInput, { perRowFallback: true, historyAsAt });
                     } finally {
                         // Drop staging even if a step above threw, so a failed chunk can't orphan a temp table.
                         await this.removeStagingTables(chunkInsertInput).catch(e => this.db.error(`autoSQLChunked: failed to drop staging table(s) for '${table}': ${e instanceof Error ? e.message : String(e)}`));
@@ -1690,9 +1759,10 @@ export class AutoSQLStreamHandle {
         maxRetries: number
     ): Promise<number> {
         // Shared with the non-streaming direct-insert path — see AutoSQLHandler.perRowInsertWithRetry.
-        return this.handler.perRowInsertWithRetry(
+        const { inserted } = await this.handler.perRowInsertWithRetry(
             this.table, rows, metaData, insertType, maxRetries, this.primaryKey, 'autoSQLStream'
         );
+        return inserted;
     }
 
     /**

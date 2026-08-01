@@ -389,6 +389,10 @@ export class MySQLDatabase extends Database {
         return MySQLInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig())
     }
 
+    getDeleteHistoryRowsQuery(historyTable: string, primaryKeys: string[], rejectedRows: Record<string, any>[], asAt: string): QueryInput {
+        return MySQLInsertQueryBuilder.getDeleteHistoryRowsQuery(historyTable, primaryKeys, rejectedRows, asAt, this.getConfig().schema)
+    }
+
     getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput {
         return MySQLTableQueryBuilder.getCreateTempTableQuery(table, this.getConfig().schema, stagingPrefix)
     }

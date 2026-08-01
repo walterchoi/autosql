@@ -27,9 +27,10 @@ describe("perRowInsertWithRetry — non-streaming graceful degradation", () => {
         const { db, handler } = makeHandler({ rejectedRowsTable: "rej" });
         const rows = [{ id: 1 }, { id: 2, bad: true }, { id: 3 }];
 
-        const inserted = await handler.perRowInsertWithRetry("t", rows, {} as any, "INSERT", 1);
+        const { inserted, rejected } = await handler.perRowInsertWithRetry("t", rows, {} as any, "INSERT", 1);
 
         expect(inserted).toBe(2);                          // the two good rows landed
+        expect(rejected).toEqual([{ id: 2, bad: true }]);  // the unrecoverable row is surfaced
         expect(db.runQuery).toHaveBeenCalledTimes(3);      // one attempt per row
         // rejected diversion = bootstrap table + insert-rejected = two runTransaction calls
         expect(db.runTransaction).toHaveBeenCalledTimes(2);
@@ -48,9 +49,10 @@ describe("perRowInsertWithRetry — non-streaming graceful degradation", () => {
         const { db, handler } = makeHandler({ rejectedRowsTable: "rej" });
         const rows = [{ id: 1 }, { id: 2 }];
 
-        const inserted = await handler.perRowInsertWithRetry("t", rows, {} as any, "INSERT", 1);
+        const { inserted, rejected } = await handler.perRowInsertWithRetry("t", rows, {} as any, "INSERT", 1);
 
         expect(inserted).toBe(2);
+        expect(rejected).toEqual([]);
         expect(db.runTransaction).not.toHaveBeenCalled();
     });
 });

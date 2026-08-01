@@ -180,9 +180,16 @@ export class MySQLInsertQueryBuilder {
             .map(col => `${t1}.${q(col)} <=> ${t2}.${q(col)} = FALSE`)
             .join(" OR ");
 
+          // On the opt-in staging-degradation path a run-scoped as_at is supplied so a later per-row
+          // divert can compensate exactly this run's before-images; otherwise use the DB clock (the
+          // unchanged default for every existing history user).
+          const asAt = (typeof tableOrInput === "object" && "table" in tableOrInput) ? tableOrInput.historyAsAt : undefined;
+          const asAtExpr = asAt ? "?" : "NOW()";
+          const params = asAt ? [asAt] : [];
+
           const query = `
             INSERT INTO ${schemaPrefix}${q(historyTable)} (${valuesCols}, \`dwh_as_at\`)
-            SELECT ${selectCols}, NOW()
+            SELECT ${selectCols}, ${asAtExpr}
             FROM ${schemaPrefix}${q(table)} ${t1}
             LEFT JOIN ${schemaPrefix}${q(tempTable)} ${t2}
               ON ${joinCondition}
@@ -190,7 +197,29 @@ export class MySQLInsertQueryBuilder {
             `.trim();
           return {
             query,
-            params: []
+            params
           };
         }
+
+    /**
+     * Delete the row-level history before-images written by THIS run (identified by the exact
+     * engine-supplied `dwh_as_at`) for the given rejected rows' primary keys. Used to compensate
+     * history after a staging merge degraded to per-row and diverted some rows — those rows never
+     * changed the real table, so their before-image must not remain. Keyed on `dwh_as_at` = this
+     * run's value AND the PK tuple, so it can never touch a prior load's history for the same PK.
+     */
+    static getDeleteHistoryRowsQuery(historyTable: string, primaryKeys: string[], rejectedRows: Record<string, any>[], asAt: string, schema?: string): QueryInput {
+        const schemaPrefix = schema ? `${q(schema)}.` : "";
+        const ref = `${schemaPrefix}${q(historyTable)}`;
+        const params: any[] = [asAt];
+        const pkTuple = `(${primaryKeys.map(pk => q(pk)).join(", ")})`;
+        const rowPlaceholders = rejectedRows.map(row => {
+            primaryKeys.forEach(pk => params.push(row[pk]));
+            return `(${primaryKeys.map(() => "?").join(", ")})`;
+        }).join(", ");
+        return {
+            query: `DELETE FROM ${ref} WHERE \`dwh_as_at\` = ? AND ${pkTuple} IN (${rowPlaceholders});`,
+            params
+        };
+    }
 }

@@ -391,6 +391,10 @@ export class PostgresDatabase extends Database {
         return PostgresInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig())
     }
 
+    getDeleteHistoryRowsQuery(historyTable: string, primaryKeys: string[], rejectedRows: Record<string, any>[], asAt: string): QueryInput {
+        return PostgresInsertQueryBuilder.getDeleteHistoryRowsQuery(historyTable, primaryKeys, rejectedRows, asAt, this.getConfig().schema)
+    }
+
     getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput {
         return PostgresTableQueryBuilder.getCreateTempTableQuery(table, this.getConfig().schema, stagingPrefix)
     }
