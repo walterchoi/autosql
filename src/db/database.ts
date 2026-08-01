@@ -495,7 +495,17 @@ export abstract class Database {
     public abstract getSplitTablesQuery(table: string): QueryInput;
     public abstract getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT"): QueryInput; 
     public abstract getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT"): QueryInput; 
-    public abstract getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader): QueryInput; 
+    public abstract getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader): QueryInput;
+    /**
+     * Compensating delete for the staging-path per-row degradation: remove this run's row-level
+     * history before-images (keyed on the engine-supplied `dwh_as_at`) for rows that were diverted
+     * to `rejectedRowsTable` and therefore never merged. Only mysql/pgsql implement it; the base
+     * throws so an unsupported dialect (SQL Server row-level history is unverified — see D-F) fails
+     * loudly rather than leaving history over-recorded.
+     */
+    public getDeleteHistoryRowsQuery(_historyTable: string, _primaryKeys: string[], _rejectedRows: Record<string, any>[], _asAt: string): QueryInput {
+        throw new Error(`Staging-path per-row degradation with addHistory is not supported for dialect "${this.getConfig().sqlDialect}".`);
+    }
     public abstract getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput;
     public abstract getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, stagingPrefix?: string): QueryInput;
 
