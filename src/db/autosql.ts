@@ -324,7 +324,14 @@ export class AutoSQLHandler {
         let comparedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader } | undefined;
         let runQuery: boolean;
         let insertType: "UPDATE" | "INSERT"
-      
+
+        // Fall back to the configured insertType (then "UPDATE") when none is set on the input, so
+        // the direct-insert path honours `config.insertType` — the staging-population callers pass an
+        // explicit insertType, so they are unaffected. (Previously this defaulted straight to
+        // "UPDATE", so `config.insertType: "INSERT"` was silently ignored for the bulk batch while
+        // the per-row fallback honoured it — an inconsistency.)
+        const configInsertType = this.db.getConfig().insertType;
+
         // ✅ Support InsertInput object
         if (typeof inputOrTable === "object" && "table" in inputOrTable && "data" in inputOrTable) {
           table = inputOrTable.table;
@@ -333,7 +340,7 @@ export class AutoSQLHandler {
           previousMetaData = inputOrTable.previousMetaData;
           comparedMetaData = inputOrTable.comparedMetaData;
           runQuery = inputOrTable.runQuery ?? true;
-          insertType = inputOrTable?.insertType || "UPDATE"
+          insertType = inputOrTable?.insertType ?? configInsertType ?? "UPDATE"
         } else {
           // ✅ Support individual parameters
           table = inputOrTable;
@@ -343,7 +350,7 @@ export class AutoSQLHandler {
           previousMetaData = inputPreviousMetaData ?? null;
           comparedMetaData = inputComparedMetaData;
           runQuery = inputRunQuery ?? true
-          insertType = inputInsertType || "UPDATE"
+          insertType = inputInsertType ?? configInsertType ?? "UPDATE"
         }
         if (data.length === 0) {
             throw new Error(`insertData: no data rows provided for table "${table}"`);
