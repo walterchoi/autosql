@@ -5,6 +5,16 @@ export interface ColumnDefinition {
   length?: number;
   allowNull?: boolean;
   unique?: boolean;
+  /**
+   * The real database name of a NON-PRIMARY unique index this column participates in, captured
+   * during introspection (`getTableMetaDataQuery`). Composite unique members share one name;
+   * `undefined` for inferred (not-yet-created) uniques and for columns in no unique index. Lets
+   * `resolveConflicts` derive the drop-target constraint structure from already-known metadata
+   * instead of re-querying the catalog — but ONLY when every unique carries a real name (see the
+   * derive-with-fallback gate in autosql.ts). Never reconstructed/guessed: MySQL auto-names a
+   * unique after its column, so a synthesised name would not match `DROP INDEX`.
+   */
+  uniqueName?: string;
   index?: boolean;
   pseudounique?: boolean;
   categorical?: boolean;

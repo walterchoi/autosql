@@ -309,7 +309,17 @@ export class SqlServerTableQueryBuilder {
                               AND sc.name = c.COLUMN_NAME
                         ) THEN 'INDEX'
                         ELSE NULL
-                    END AS COLUMN_KEY
+                    END AS COLUMN_KEY,
+                    (
+                        SELECT STRING_AGG(i.name, ',') WITHIN GROUP (ORDER BY i.name)
+                        FROM sys.indexes i
+                        JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+                        JOIN sys.columns sc ON sc.object_id = ic.object_id AND sc.column_id = ic.column_id
+                        WHERE i.object_id = OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME))
+                          AND i.is_unique = 1
+                          AND i.is_primary_key = 0
+                          AND sc.name = c.COLUMN_NAME
+                    ) AS UNIQUE_INDEX_NAME
                 FROM INFORMATION_SCHEMA.COLUMNS AS c
                 WHERE c.TABLE_SCHEMA = @p0 AND c.TABLE_NAME = @p1
                 GROUP BY c.COLUMN_NAME, c.DATA_TYPE, c.COLUMN_DEFAULT, c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, c.TABLE_SCHEMA, c.TABLE_NAME;

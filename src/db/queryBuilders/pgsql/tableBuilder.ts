@@ -272,10 +272,20 @@ export class PostgresTableQueryBuilder {
                             AND pi.indisprimary = FALSE
                         ) THEN 'INDEX'
                         ELSE NULL
-                    END AS COLUMN_KEY
+                    END AS COLUMN_KEY,
+                    (
+                        SELECT string_agg(DISTINCT i.relname, ',' ORDER BY i.relname)
+                        FROM pg_index ix
+                        JOIN pg_class i ON i.oid = ix.indexrelid
+                        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
+                        WHERE ix.indrelid = t.oid
+                          AND ix.indisunique = TRUE
+                          AND ix.indisprimary = FALSE
+                          AND a.attname = c.COLUMN_NAME
+                    ) AS UNIQUE_INDEX_NAME
                 FROM INFORMATION_SCHEMA.COLUMNS AS c
-                LEFT JOIN pg_class AS t 
-                    ON t.relname = c.TABLE_NAME 
+                LEFT JOIN pg_class AS t
+                    ON t.relname = c.TABLE_NAME
                     AND t.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = c.TABLE_SCHEMA)
                 WHERE c.TABLE_SCHEMA = $1 AND c.TABLE_NAME = $2;
                 `,
