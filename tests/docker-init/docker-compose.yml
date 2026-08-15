@@ -9,6 +9,12 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
 
   pgsql:
     image: postgres:latest
@@ -37,6 +43,12 @@ services:
           -c ssl=on \
           -c ssl_cert_file=/var/lib/postgresql/server.crt \
           -c ssl_key_file=/var/lib/postgresql/server.key
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
 
   # SQL Server / Azure SQL (Class A row-store — the first warehouse-adjacent destination).
   # azure-sql-edge is the lightweight, cross-arch (amd64/arm64) Azure-branded image; it speaks
@@ -51,6 +63,14 @@ services:
       - "1433:1433"
     volumes:
       - sqlserver_data:/var/opt/mssql
+    # azure-sql-edge ships no sqlcmd, so probe the TDS port instead (bash is available on the image).
+    # Combined with start_period this reports healthy once the engine is accepting connections.
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/1433' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
 
 volumes:
   mysql_data:

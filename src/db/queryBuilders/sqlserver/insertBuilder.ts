@@ -199,11 +199,15 @@ export class SqlServerInsertQueryBuilder {
             .map(col => `((${t1}.${q(col)} <> ${t2}.${q(col)}) OR (${t1}.${q(col)} IS NULL AND ${t2}.${q(col)} IS NOT NULL) OR (${t1}.${q(col)} IS NOT NULL AND ${t2}.${q(col)} IS NULL))`)
             .join(" OR ");
 
+        // INNER JOIN (not LEFT): a before-image only for rows the merge will update — present in
+        // BOTH the real table and this batch. A LEFT JOIN kept every real-table row; for a row absent
+        // from the batch t2 is all NULL, the NULL-safe diff test evaluates TRUE, and it was wrongly
+        // historised — recording the whole unchanged table on every incremental load (A2).
         const query = `
         INSERT INTO ${schemaPrefix}${q(historyTable)} (${valuesCols}, ${q("dwh_as_at")})
         SELECT ${selectCols}, CURRENT_TIMESTAMP
         FROM ${schemaPrefix}${q(table)} ${t1}
-        LEFT JOIN ${schemaPrefix}${q(tempTable)} ${t2}
+        INNER JOIN ${schemaPrefix}${q(tempTable)} ${t2}
           ON ${joinCondition}
         WHERE ${diffCondition};
         `.trim();

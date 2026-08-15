@@ -18,7 +18,8 @@
     "prepublishOnly": "npm run test && npm run build",
     "testPublish": "tsc && npm pack",
     "prepare": "npm run build",
-    "db:up": "docker compose -f tests/docker-init/docker-compose.yml up -d",
+    "db:up": "docker compose -f tests/docker-init/docker-compose.yml up -d --wait",
+    "db:wait": "docker compose -f tests/docker-init/docker-compose.yml up -d --wait",
     "db:down": "docker compose -f tests/docker-init/docker-compose.yml down"
   },
   "keywords": [

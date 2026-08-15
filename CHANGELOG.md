@@ -1,5 +1,86 @@
 ## [Unreleased]
 
+> Audit remediation (batch 1) from two independent code audits of 2.1.0, plus a requested timezone
+> override for going global. Focus: silent-data-corruption fixes on the insert/history paths. All are
+> correctness fixes; no consumer should depend on the previous (corrupt) output.
+
+### ✨ New
+- **`DatabaseConfig.sourceTimeZone` — opt-in timezone override for zoneless datetimes.** Set an IANA
+  zone (e.g. `"America/New_York"`, `"Australia/Sydney"`, `"UTC"`) and a datetime **without** an offset
+  (e.g. `"2024-01-15 12:00:00"`) is interpreted as local time in that zone and stored as the
+  corresponding **UTC instant** (DST-correct, both hemispheres). Inputs that already carry a zone
+  (`…Z` / `+05:00`) are unaffected (already absolute), and `date`/`time` columns are never shifted.
+  Omit it (the default) to store zoneless values exactly as given. No new dependency (uses `Intl`);
+  an invalid zone is rejected up front by `validateConfig`. Note: this normalises the stored *instant*
+  for plain `datetime`/`timestamp`; full `timestamptz` offset round-tripping remains a separate item.
+
+### ⚠️ Behavior change (all correctness fixes)
+- **Timezone-naive datetimes are no longer shifted by the host's UTC offset (A1).** `sqlize` parsed a
+  zoneless datetime string through `new Date()`, which reads it in the **Node process's local zone**,
+  then re-emitted UTC — so the same input was stored differently depending on where the process ran
+  (invisible on a UTC host/CI). Zoneless values are now normalised **textually** (wall-clock preserved,
+  no `Date` involved); only zone-qualified inputs are converted to UTC (they carry an absolute
+  instant); `date`/`time` columns keep the wall-clock regardless of any zone. Result is host-timezone
+  independent. Offset-bearing (`+02:00`) and fractional-second inputs, previously mangled by the
+  cleaning step, now normalise correctly.
+- **Decimal values now round half-up instead of truncating downward (A4).** With a `decimalMaxLength`
+  cap, a value with more fractional digits than the cap was **always truncated** (`2.675` → `2.67`) —
+  a systematic downward bias (notably on currency) — because the rounding step operated on
+  already-truncated digits. Rounding is now exact half-up (away from zero, matching MySQL/Postgres),
+  computed with string/digit arithmetic so it is correct at any magnitude. (This supersedes the
+  `precision > 15` truncation fallback from 2.0.0's D-G, which existed only to avoid float error.)
+
+### 🐛 Bug Fixes
+- **Row-level history no longer records unchanged rows on incremental loads (A2).** The before-image
+  capture `LEFT JOIN`ed the full target table against the staged batch, so on an incremental load
+  every row **not** in the batch was written to the history table on every run (history growth
+  proportional to table size, not batch size). It now `INNER JOIN`s, capturing a before-image only for
+  the rows the merge actually changes. Fixed on MySQL, Postgres, and SQL Server.
+- **Introspected column defaults are no longer stored as literal values (A3).** When loading into a
+  pre-existing table (Postgres/SQL Server) whose column has a DDL `DEFAULT`, a row with a NULL/omitted
+  value for that column could store the introspected **default expression string** (e.g.
+  `'active'::character varying`, `CURRENT_TIMESTAMP`) as the value. Introspected defaults are now kept
+  separate from the value-substitution path; a missing value becomes `NULL` (or the DB's own default),
+  never the expression. (MySQL was unaffected — it does not introspect the default.)
+- **Failed graceful-degradation diverts now fail loud instead of silently dropping rows (A5).** When a
+  row failed the load and was diverted to `rejectedRowsTable`, the divert writes were unchecked — so a
+  broken/incompatible rejects table (missing privilege, wrong shape) swallowed the rows while the load
+  still reported `success: true`. Both divert paths now check the result and **throw** if the divert
+  itself fails, so no row is ever lost silently. `rejectedRowsTable` is also now rejected up front on
+  SQL Server (its builder emits Postgres-only DDL — previously a guaranteed silent loss; parity deferred).
+- **Schema-drift detection no longer false-positives on every run (A6).** With `schemaHistory`, the
+  recorded baseline checksum was taken over the *inferred* schema while the drift check compared the
+  *introspected* schema — different shapes for the same table — so under `strictDriftDetection` it threw
+  and **blocked every load after the first** (and warned falsely otherwise). The baseline is now recorded
+  from a post-migration re-introspection, so both sides are introspection-derived and match for an
+  unchanged table; genuine out-of-band changes are still detected.
+- **The schema-history subsystem no longer fails silently (A19).** A failed history-table bootstrap now
+  throws (opt-in feature that can't work fails loud); an unrecordable migration-start now warns;
+  `detectSchemaDrift` distinguishes "no baseline / first run" from "couldn't read the live table" (the
+  latter now warns instead of silently reporting no drift); a dead table-existence check is fixed; and
+  `schemaHistory` is rejected up front on SQL Server (Postgres-only bootstrap; parity deferred).
+- **Ambiguous single-row insert failures are no longer retried into duplicates (A15).** On the per-row
+  degradation path, `runQuery`'s internal retry could re-execute a non-idempotent `INSERT` whose failure
+  was ambiguous (connection dropped after the server applied it), duplicating the row. That path (which
+  already owns an outer retry loop) now runs each insert once. `runQuery` gained an optional per-call
+  attempts override; the default retry behavior is unchanged.
+
+### 🛡️ Robustness
+- **`runTransaction` never rejects, even on connection-pool failure (A16).** The pool acquire was
+  awaited outside the retry guard, so pool exhaustion / an acquire timeout could escape as an unhandled
+  rejection and crash a caller relying on the "always resolves to a result" contract. It now returns
+  `{ success: false }` like every other failure.
+
+### 🔧 Maintenance
+- **Tests run in a non-UTC timezone by default** (`TZ=Australia/Sydney`, overridable) so
+  timezone-sensitive bugs like A1 can't hide behind a UTC-only CI host; the date tests assert a
+  non-UTC offset so a misconfigured harness fails loud rather than passing vacuously.
+- **DB preflight health check for the live suite.** If a test database is unreachable, the full run
+  now fails fast with one clear, actionable message (`npm run db:up`) instead of dozens of tests
+  failing with a cryptic, empty-message `ECONNREFUSED`. Docker Compose gained per-service healthchecks
+  and `db:up` waits for healthy; the unit run excludes all `*-live` tests by convention so it stays
+  database-free.
+
 ## [2.1.0] - 2026-08-15
 
 > Adds encrypted-connection support (`ssl`, all three dialects) and BYOD/least-privilege hardening:

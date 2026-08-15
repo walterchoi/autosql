@@ -199,11 +199,16 @@ export class MySQLInsertQueryBuilder {
             whereClause = `(${diffCondition}) AND ${pkFilterClause}`;
           }
 
+          // INNER JOIN (not LEFT): capture a before-image ONLY for rows the merge will actually
+          // update — i.e. rows present in BOTH the real table and this batch. A LEFT JOIN kept every
+          // real-table row, and for a row absent from the batch every t2 column is NULL, so
+          // `t1.col <=> NULL = FALSE` is TRUE and the row was wrongly historised — on an incremental
+          // load that records the entire unchanged table on every run (A2).
           const query = `
             INSERT INTO ${schemaPrefix}${q(historyTable)} (${valuesCols}, \`dwh_as_at\`)
             SELECT ${selectCols}, NOW()
             FROM ${schemaPrefix}${q(table)} ${t1}
-            LEFT JOIN ${schemaPrefix}${q(tempTable)} ${t2}
+            INNER JOIN ${schemaPrefix}${q(tempTable)} ${t2}
               ON ${joinCondition}
             WHERE ${whereClause};
             `.trim();

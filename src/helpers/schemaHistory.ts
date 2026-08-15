@@ -70,7 +70,12 @@ export async function bootstrapSchemaHistoryTable(db: Database): Promise<void> {
 );`;
     }
     // runQuery validates single-statement — use executeQuery via runTransaction
-    await db.runTransaction([{ query: ddl, params: [] }]);
+    const res = await db.runTransaction([{ query: ddl, params: [] }]);
+    if (!res.success) {
+        // schemaHistory is opt-in; if its table cannot be created the feature cannot work. Fail loud
+        // rather than silently record nothing and later report "no drift" when actually blind (A19).
+        throw new Error(`schemaHistory: failed to create the history table ${ref}: ${res.error ?? "unknown error"}. Grant the load user CREATE on the schema/database, or disable schemaHistory.`);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -171,10 +176,13 @@ RETURNING id`;
         const id = Number(result.results?.[0]?.id ?? 0);
         if (id > 0) return id;
         if (attempt < maxAttempts && UNIQUE_VIOLATION.test(result.error ?? '')) continue;
-        // Failed to record the start — return undefined so callers' `id !== undefined`
-        // guard actually skips the follow-up UPDATE (a 0 would run UPDATE ... WHERE id = 0).
+        // Failed to record the start — warn (the change proceeds, just untracked) and return undefined
+        // so callers' `id !== undefined` guard skips the follow-up UPDATE (a 0 would run
+        // UPDATE ... WHERE id = 0). Previously this returned silently (A19).
+        db.warn(`schemaHistory: could not record migration start for '${table}' (${result.error ?? 'unknown error'}); the schema change will proceed but won't be recorded in history.`);
         return undefined;
     }
+    db.warn(`schemaHistory: could not record migration start for '${table}' after ${maxAttempts} attempts; the schema change will proceed but won't be recorded in history.`);
     return undefined;
 }
 
@@ -185,11 +193,20 @@ async function updateHistoryStatus(
     db: Database,
     id: number,
     status: 'applied' | 'failed' | 'rolled_back',
-    newSchema?: MetadataHeader
+    newSchema?: MetadataHeader,
+    checksumSchema?: MetadataHeader | null
 ): Promise<void> {
     const ref = historyTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
-    const checksum = newSchema ? computeChecksum(newSchema) : null;
+    // The drift baseline must be comparable to the drift-time check, which reads the LIVE (introspected)
+    // schema. So checksum the introspected `checksumSchema` when the caller re-introspects post-migration
+    // (A6): both sides then come from introspection and match for an unchanged table — inferred-vs-
+    // introspected would false-positive on legitimate type round-trips. `checksumSchema === undefined`
+    // (caller didn't re-introspect) falls back to `newSchema`; an explicit `null` (introspection read
+    // nothing) stores a null checksum → treated as "no baseline" at drift time, not a false positive.
+    // `new_schema` itself stays the inferred schema (used for point-in-time reconstruction).
+    const checksumSource = checksumSchema !== undefined ? checksumSchema : newSchema;
+    const checksum = checksumSource ? computeChecksum(checksumSource) : null;
 
     if (dialect === 'mysql') {
         const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
@@ -208,8 +225,8 @@ async function updateHistoryStatus(
     }
 }
 
-export async function recordMigrationSuccess(db: Database, id: number, newSchema: MetadataHeader): Promise<void> {
-    await updateHistoryStatus(db, id, 'applied', newSchema);
+export async function recordMigrationSuccess(db: Database, id: number, newSchema: MetadataHeader, checksumSchema?: MetadataHeader | null): Promise<void> {
+    await updateHistoryStatus(db, id, 'applied', newSchema, checksumSchema);
 }
 
 export async function recordMigrationRolledBack(db: Database, id: number): Promise<void> {
@@ -236,12 +253,10 @@ export async function detectSchemaDrift(
     const ref = historyTableRef(config);
     const dialect = config.sqlDialect;
 
-    const liveSchema = await db.getTableMetaData(config.schema || config.database || '', table);
-    if (!liveSchema) {
-        return { drifted: false, expected: null, actual: '' };
-    }
-    const actual = computeChecksum(liveSchema);
-
+    // Read the recorded baseline FIRST. No applied record (or a null checksum) → no reliable baseline
+    // for this table: a first run (the table legitimately doesn't exist yet) or a migration whose
+    // post-migration introspection couldn't read the table. Nothing to compare — return quietly, and
+    // crucially DON'T warn about a "missing" table that isn't supposed to exist yet (A6/A19).
     let query: string;
     if (dialect === 'mysql') {
         const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
@@ -254,11 +269,22 @@ export async function detectSchemaDrift(
     }
 
     const result = await db.runQuery({ query, params: [table] });
-    if (!result.success || !result.results?.length) {
-        return { drifted: false, expected: null, actual };
+    const expected: string | null = (result.success && result.results?.length) ? (result.results[0].checksum ?? null) : null;
+    if (expected === null) {
+        return { drifted: false, expected: null, actual: '' };
     }
 
-    const expected: string = result.results[0].checksum;
+    // We HAVE a baseline — read the live (introspected) schema and compare. Both the stored baseline
+    // (recorded from a post-migration re-introspection) and this are introspection-derived, so an
+    // unchanged table matches exactly.
+    const liveSchema = await db.getTableMetaData(config.schema || config.database || '', table);
+    if (!liveSchema) {
+        // Had a baseline but can't read the live table now — NOT a clean bill. Warn instead of
+        // silently reporting "no drift" (A19).
+        db.warn(`Schema drift check for '${table}' could not read the live table schema (introspection returned nothing); skipping the check. This is not a clean bill — verify the table if it persists.`);
+        return { drifted: false, expected, actual: '' };
+    }
+    const actual = computeChecksum(liveSchema);
     const drifted = expected !== actual;
 
     if (drifted) {

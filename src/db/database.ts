@@ -276,9 +276,13 @@ export abstract class Database {
         }
     }
     
-    public async runQuery(queryOrParams: QueryInput): Promise<QueryResult> {
+    public async runQuery(queryOrParams: QueryInput, maxAttemptsOverride?: number): Promise<QueryResult> {
         const results: any[] = [];
-        const maxAttempts = maxQueryAttempts || 3;
+        // `maxAttemptsOverride` lets a caller that owns its OWN retry loop opt out of the internal
+        // retry. This matters for NON-idempotent statements (e.g. a single-row INSERT): on an
+        // ambiguous failure (connection dropped AFTER the server applied the row) the internal retry
+        // would re-execute and duplicate it. `perRowInsertWithRetry` passes 1 for exactly this (A15).
+        const maxAttempts = maxAttemptsOverride ?? maxQueryAttempts ?? 3;
         let attempts = 0;
         let _error: any;
         const start = new Date();
@@ -355,10 +359,15 @@ export abstract class Database {
         const maxAttempts = containsDDL ? 1 : (maxQueryAttempts || 3);
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            const client = await this.acquireConnection();
+            let client: any;
             let results: any[] = [];
             let totalAffectedRows = 0;
             try {
+                // Acquire INSIDE the try: pool exhaustion, an acquire timeout, or a connection dropped
+                // between establish and acquire must become a {success:false} QueryResult, not an
+                // unhandled rejection that escapes this method — callers (autosql.ts) invoke it bare and
+                // rely on the documented "always resolves, never rejects" contract (A16).
+                client = await this.acquireConnection();
                 await this.startTransaction(client);
 
                 for (const QueryInput of queries) {
@@ -380,10 +389,12 @@ export abstract class Database {
                 };
             } catch (error: any) {
                 this.error(`Transaction error (attempt ${attempt}/${maxAttempts}): ${error}`);
-                try {
-                    await this.rollback(client);
-                } catch (rollbackError) {
-                    this.error(`Rollback failed: ${rollbackError}`);
+                if (client) {
+                    try {
+                        await this.rollback(client);
+                    } catch (rollbackError) {
+                        this.error(`Rollback failed: ${rollbackError}`);
+                    }
                 }
 
                 const permanentErrors = await this.getPermanentErrors();
@@ -393,7 +404,7 @@ export abstract class Database {
                 }
                 await new Promise(res => setTimeout(res, 1000)); // Wait before retrying the whole transaction
             } finally {
-                this.releaseConnection(client);
+                if (client) this.releaseConnection(client);
             }
         }
 
@@ -466,8 +477,16 @@ export abstract class Database {
     
             const existsQueryInput = this.getTableExistsQuery(schema, table);
             const exists = await this.runQuery(existsQueryInput);
-            if (!exists) return null;
-    
+            // `exists` is always a (truthy) QueryResult, so the old `if (!exists)` never fired (A19).
+            // Surface a failed existence probe, and read the COUNT(*) it returns to short-circuit for a
+            // genuinely absent table (key casing varies by dialect, so read the first column value).
+            if (!exists.success) {
+                throw new Error(`Failed to check whether ${schema}.${table} exists: ${exists.error ?? "unknown error"}`);
+            }
+            const countRow = exists.results?.[0];
+            const tableExists = countRow ? Number(Object.values(countRow)[0] ?? 0) > 0 : false;
+            if (!tableExists) return null;
+
             const MetaQueryInput = this.getTableMetaDataQuery(schema, table);
             const result = await this.runQuery(MetaQueryInput);
             if (!result.success || !result.results) {

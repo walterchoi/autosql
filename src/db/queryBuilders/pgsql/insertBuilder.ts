@@ -212,11 +212,15 @@ export class PostgresInsertQueryBuilder {
         whereClause = `(${diffCondition}) AND ${pkFilterClause}`;
       }
 
+      // INNER JOIN (not LEFT): a before-image only for rows the merge will update — present in BOTH
+      // the real table and this batch. A LEFT JOIN kept every real-table row; for a row absent from
+      // the batch t2 is all NULL, `t1.col IS DISTINCT FROM NULL` is TRUE, and it was wrongly
+      // historised — recording the whole unchanged table on every incremental load (A2).
       const query = `
         INSERT INTO ${schemaPrefix}${q(historyTable)} (${valuesCols}, "dwh_as_at")
         SELECT ${selectCols}, CURRENT_TIMESTAMP
         FROM ${schemaPrefix}${q(table)} ${t1}
-        LEFT JOIN ${schemaPrefix}${q(tempTable)} ${t2}
+        INNER JOIN ${schemaPrefix}${q(tempTable)} ${t2}
           ON ${joinCondition}
         WHERE ${whereClause};
         `.trim();

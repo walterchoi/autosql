@@ -22,6 +22,14 @@ export interface ColumnDefinition {
   primary?: boolean;
   autoIncrement?: boolean;
   default?: any;
+  /**
+   * DDL default EXPRESSION introspected from the live catalog (e.g. Postgres `'active'::character
+   * varying`, `CURRENT_TIMESTAMP`, `nextval('…'::regclass)`). Kept SEPARATE from `default` because
+   * `default` doubles as the literal value `getInsertValues` substitutes for a missing cell — binding
+   * an introspected DDL expression as a row value would store the expression string verbatim (A3).
+   * This field is informational: DDL builders may read it, but the insert path never binds it.
+   */
+  ddlDefault?: any;
   decimal?: number;
   calculated?: boolean;
   updatedCalculated?: boolean;
@@ -238,6 +246,18 @@ export interface DatabaseConfig {
        */
       thousandsSeparator?: string;
       decimalSeparator?: string;
+
+      /**
+       * IANA time zone (e.g. "America/New_York", "Australia/Sydney", "UTC") that ZONELESS datetime
+       * inputs should be interpreted as. When set, a value with no offset (e.g. "2024-01-15 12:00:00")
+       * is treated as local time in this zone and converted to a UTC instant before storage. Inputs
+       * that ALREADY carry a zone ("…Z" / "+05:00") are unaffected — they are already absolute — and
+       * `date`/`time` columns are never shifted. Omit (the default) to store zoneless values exactly
+       * as given (wall-clock preserved, no zone assumed). autosql NEVER infers this from the host
+       * process timezone. Note: this normalises the stored INSTANT; it does not by itself make a
+       * `datetimetz`/`timestamptz` column round-trip a source offset (a separate concern).
+       */
+      sourceTimeZone?: string;
 
       /**
        * Acquire a per-table advisory lock before running schema inference and

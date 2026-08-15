@@ -190,6 +190,11 @@ export interface DatabaseConfig {
   thousandsSeparator?: string;
   decimalSeparator?: string;
 
+  // IANA zone (e.g. "America/New_York", "UTC") to interpret ZONELESS datetimes as, converting them
+  // to a UTC instant on store. Zone-qualified inputs (…Z / +05:00) and date/time columns are
+  // unaffected. Omit to store zoneless values as-is (wall-clock preserved, no zone assumed).
+  sourceTimeZone?: string;
+
   // Sampling controls
   sampling?: number; // If provided data exceeds samplingMinimum rows, we sample this % of values for identifying uniques and column types — defaults to 0, allows values between 0 and 1
   samplingMinimum?: number; // If provided data exceeds this row count, sampling kicks in — defaults to 100
@@ -500,6 +505,14 @@ Defaults to `false`.
   ```ts
   // European-formatted input
   thousandsSeparator: '.', decimalSeparator: ','
+  ```
+
+- `sourceTimeZone`: `string`
+  IANA time zone that **zoneless** datetime inputs should be interpreted as. When set, a value with no offset (e.g. `"2024-01-15 12:00:00"`) is treated as local time in that zone and stored as the corresponding **UTC instant** (DST-aware). Inputs that already carry a zone (`"…Z"` / `"+05:00"`) are unaffected — they are already absolute — and `date`/`time` columns are never shifted. Omit it (the default) to store zoneless values exactly as given (wall-clock preserved, no zone assumed). autosql never infers the zone from the host process. An invalid zone name is rejected up front. (This normalises the stored *instant* for `datetime`/`timestamp`; it does not by itself make a `timestamptz` column round-trip a source offset.)
+
+  ```ts
+  // Treat incoming naive timestamps as US Eastern; store UTC
+  sourceTimeZone: 'America/New_York'
   ```
 
 ---

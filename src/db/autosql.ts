@@ -705,7 +705,10 @@ export class AutoSQLHandler {
 
             for (const row of pendingRows) {
                 const insertQ = this.db.getInsertStatementQuery(table, [row], workingMeta, insertType);
-                const result = await this.db.runQuery(insertQ);
+                // Single attempt: this loop already retries failed rows across rounds, so the internal
+                // retry would be redundant — and for insertType "INSERT" (non-idempotent) it could
+                // duplicate a row whose ambiguous failure actually applied server-side (A15).
+                const result = await this.db.runQuery(insertQ, 1);
                 if (result.success) {
                     totalInserted += result.affectedRows ?? 1;
                 } else {
@@ -743,12 +746,19 @@ export class AutoSQLHandler {
 
         if (pendingRows.length > 0) {
             if (config.rejectedRowsTable) {
-                await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
+                const bootstrap = await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
                 const rejQ = buildInsertRejectedRowsQuery(
                     config, table,
                     pendingRows.map(row => ({ row, error: 'failed after max retries' }))
                 );
-                await this.db.runTransaction([rejQ]);
+                // Fail loud if the divert itself fails (bootstrap or insert). runTransaction never
+                // throws — it returns {success:false} — so an unchecked result would let the rows
+                // vanish while the load reported success, the exact loss rejectedRowsTable exists to
+                // prevent (A5).
+                const divert = bootstrap.success ? await this.db.runTransaction([rejQ]) : bootstrap;
+                if (!divert.success) {
+                    throw new Error(`${label}: ${pendingRows.length} row(s) failed to insert AND could not be written to rejectedRowsTable '${config.rejectedRowsTable}': ${divert.error ?? 'unknown error'}. No rows were silently dropped — resolve the rejects-table error (e.g. permissions or an incompatible existing table) and retry.`);
+                }
                 this.db.warn(`${label}: ${pendingRows.length} row(s) could not be inserted and were written to '${config.rejectedRowsTable}'.`);
             } else {
                 throw new Error(`${label}: ${pendingRows.length} row(s) failed to insert after ${maxRetries} retry round(s). Configure rejectedRowsTable to capture them instead of throwing.`);
@@ -1128,10 +1138,18 @@ export class AutoSQLHandler {
             if (!config.rejectedRowsTable) {
                 throw new Error(`autoSQL: ${rejected.length} row(s) failed to merge into '${input.table}' and rejectedRowsTable is not configured.`);
             }
-            await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
-            await this.db.runTransaction([
-                buildInsertRejectedRowsQuery(config, input.table, rejected.map(row => ({ row, error: 'failed to merge after per-row retry' })))
-            ]);
+            const bootstrap = await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
+            const divert = bootstrap.success
+                ? await this.db.runTransaction([
+                    buildInsertRejectedRowsQuery(config, input.table, rejected.map(row => ({ row, error: 'failed to merge after per-row retry' })))
+                  ])
+                : bootstrap;
+            // Fail loud if the divert itself fails — otherwise the rows vanish while the load reports
+            // success (A5). runTransaction returns {success:false} rather than throwing, so this must be
+            // checked explicitly.
+            if (!divert.success) {
+                throw new Error(`autoSQL: ${rejected.length} row(s) failed to merge into '${input.table}' AND could not be written to rejectedRowsTable '${config.rejectedRowsTable}': ${divert.error ?? 'unknown error'}. No rows were silently dropped — resolve the rejects-table error (e.g. permissions or an incompatible existing table) and retry.`);
+            }
             this.db.warn(`autoSQL: ${rejected.length} row(s) could not be merged into '${input.table}' and were written to '${config.rejectedRowsTable}'.`);
         }
         const now = new Date();
@@ -1347,7 +1365,16 @@ export class AutoSQLHandler {
                     phases.configure = perf() - tConfigure;
                     if (historyId !== undefined) {
                         const updatedMeta = insertInput[0]?.comparedMetaData?.updatedMetaData;
-                        if (updatedMeta) await recordMigrationSuccess(this.db, historyId, updatedMeta);
+                        if (updatedMeta) {
+                            // Store the drift baseline as the checksum of the RE-INTROSPECTED table, not
+                            // the inferred `updatedMeta` — drift detection next run reads the introspected
+                            // schema, and inferred-vs-introspected would false-positive on legitimate type
+                            // round-trips (A6). `new_schema` stays `updatedMeta` (inferred) for
+                            // point-in-time reconstruction; a null introspection stores a null checksum
+                            // (treated as "no baseline"), which also covers the A19 couldn't-read case.
+                            const liveMeta = await this.db.getTableMetaData(config.schema || config.database || "", table);
+                            await recordMigrationSuccess(this.db, historyId, updatedMeta, liveMeta);
+                        }
                         else await recordMigrationRolledBack(this.db, historyId);
                     }
                 } catch (ddlErr) {
