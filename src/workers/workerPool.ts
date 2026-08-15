@@ -2,6 +2,16 @@ import { Worker } from "worker_threads";
 import { resolve } from "path";
 import { existsSync } from "fs";
 
+// The config is handed to a worker via `workerData`, which goes through structured clone — that CANNOT
+// serialise functions or live handles. Strip them (A8): a configured `logger` (function) or a live
+// `sshClient`/`sshStream` would throw DataCloneError synchronously and crash the default-on worker
+// path. The worker re-derives what it needs from `sshConfig` and simply runs without the custom logger.
+export function stripNonCloneable(config: any): any {
+  if (!config || typeof config !== "object") return config;
+  const { logger, sshClient, sshStream, ...cloneable } = config;
+  return cloneable;
+}
+
 interface QueuedTask {
   method: string;
   params: any;
@@ -21,10 +31,13 @@ class WorkerPool {
   private workerFile: string;
   private taskTimeoutMs: number;
   private closed = false;
+  private dbConfig: any;
 
   // `workerFile` override is for tests only (point the pool at a crash fixture);
   // production always resolves the compiled worker next to this module.
-  constructor(size: number, private dbConfig: any, workerFile?: string) {
+  constructor(size: number, dbConfig: any, workerFile?: string) {
+    // Sanitise ONCE up front so every spawned worker gets a cloneable config (A8).
+    this.dbConfig = stripNonCloneable(dbConfig);
     this.workerFile = workerFile ?? resolve(__dirname, "worker.js");
 
     // Per-task timeout (config is in SECONDS -> ms). 0/undefined disables it.
@@ -53,6 +66,8 @@ class WorkerPool {
     });
 
     worker.on("message", (msg) => {
+      // Ignore the graceful-shutdown ack — it's handled by gracefulTerminate, not a task result (A14).
+      if (msg && msg.__closed__) return;
       // Task finished normally: settle it, then hand this worker its next task.
       this.settleWorker(worker, msg);
       this.assignNextTask(worker);
@@ -162,16 +177,42 @@ class WorkerPool {
     });
   }
 
-  close() {
+  async close(graceMs = 2000) {
     this.closed = true;
     // Clear any outstanding task timers so they can't fire during/after teardown.
     for (const entry of this.workerPending.values()) {
       if (entry.timer) clearTimeout(entry.timer);
     }
     this.workerPending.clear();
-    this.workers.forEach((worker) => worker.terminate().catch(() => {}));
+    const workers = this.workers;
     this.workers = [];
     this.idleWorkers = [];
+    // Ask each worker to close its DB connections first, then terminate — so pooled server-side
+    // connections are released gracefully instead of leaked on an abrupt kill (A14). Bounded, so a
+    // wedged worker can't hang teardown. (Crash/timeout paths in failWorker still terminate abruptly.)
+    await Promise.all(workers.map((w) => this.gracefulTerminate(w, graceMs)));
+  }
+
+  private gracefulTerminate(worker: Worker, graceMs: number): Promise<void> {
+    return new Promise<void>((resolveDone) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        worker.terminate().catch(() => {});
+        resolveDone();
+      };
+      const timer = setTimeout(finish, graceMs);
+      if (typeof timer.unref === "function") timer.unref();
+      worker.once("message", (msg: any) => {
+        if (msg && msg.__closed__) { clearTimeout(timer); finish(); }
+      });
+      try {
+        worker.postMessage({ method: "__closeConnection__", params: [] });
+      } catch {
+        finish();
+      }
+    });
   }
 }
 

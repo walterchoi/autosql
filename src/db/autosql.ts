@@ -486,8 +486,9 @@ export class AutoSQLHandler {
     
         let configuredTables: (QueryResult | QueryInput[])[];
     
-        // 🔹 Step 1: Auto-configure tables (with Workers or Directly)
-        if (this.db.getConfig().useWorkers) {
+        // 🔹 Step 1: Auto-configure tables (with Workers or Directly). Only fan out to workers when
+        // there's more than one table to configure — a single table isn't worth a worker pool (A8).
+        if (this.db.getConfig().useWorkers && insertInput.length > 1) {
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
             try {
                 const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error, errorCode?: string }[];
@@ -591,8 +592,8 @@ export class AutoSQLHandler {
         } else {
             // 🔹 Step 2: Defer execution & modify inputs
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
-    
-            if (this.db.getConfig().useWorkers) {
+
+            if (this.db.getConfig().useWorkers && insertInput.length > 1) {
                 try {
                     const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoInsertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error, errorCode?: string }[];
 

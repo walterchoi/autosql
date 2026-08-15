@@ -70,6 +70,13 @@
   awaited outside the retry guard, so pool exhaustion / an acquire timeout could escape as an unhandled
   rejection and crash a caller relying on the "always resolves to a result" contract. It now returns
   `{ success: false }` like every other failure.
+- **The worker path no longer crashes with a configured `logger`, and cleans up its connections (A8/A14).**
+  With `useWorkers` (the default), passing a `logger` (or using an SSH tunnel) threw `DataCloneError`
+  when the config was cloned to the worker, crashing the load; the non-cloneable fields are now stripped
+  before spawning. `maxWorkers` is now honoured, the pool is capped at the number of tasks, and a
+  single-table load skips workers entirely (no thread/connection-pool overhead). Workers are now shut
+  down gracefully — each closes its database connections before the thread is terminated — instead of
+  being killed abruptly and leaking server-side connections on every worker-backed load.
 
 ### 🔒 Security
 - **SSH tunnels now verify the host key (A7).** The `ssh2` tunnel performed **no** host-key
