@@ -50,6 +50,9 @@ export class SqlServerDatabase extends Database {
             pool: { max: this.config.connectionLimit || 5, min: 0, idleTimeoutMillis: 30000 },
             options: {
                 // Local containers use a self-signed cert; trust it and don't force TLS.
+                // TODO(ssl): the `DatabaseConfig.ssl` passthrough is a no-op here — tedious/mssql maps
+                // TLS via options.encrypt / options.trustServerCertificate / cryptoCredentialsDetails.ca,
+                // NOT the mysql2/pg `ssl` object. Map `config.ssl` to those options as a fast-follow.
                 trustServerCertificate: true,
                 encrypt: false,
                 enableArithAbort: true,

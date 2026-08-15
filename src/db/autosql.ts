@@ -490,14 +490,17 @@ export class AutoSQLHandler {
         if (this.db.getConfig().useWorkers) {
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
             try {
-                const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error }[];
+                const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error, errorCode?: string }[];
 
                 const failed = workerResults.filter(w => !w.success);
                 if (failed.length > 0) {
-                    throw new Error(
+                    const err = new Error(
                         `Worker execution failed for ${failed.length} task(s):\n` +
                         failed.map((f, i) => `- Task #${i + 1}: ${typeof f?.error === "string" ? f.error : (f?.error?.message || "Unknown Error")}`).join("\n")
-                    );
+                    ) as Error & { code?: string };
+                    const withCode = failed.find(f => f.errorCode);
+                    if (withCode?.errorCode) err.code = withCode.errorCode;
+                    throw err;
                 }
 
                 configuredTables = workerResults.map(w => w.result);
@@ -591,14 +594,17 @@ export class AutoSQLHandler {
     
             if (this.db.getConfig().useWorkers) {
                 try {
-                    const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoInsertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error }[];
+                    const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoInsertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error, errorCode?: string }[];
 
                     const failed = workerResults.filter(w => !w.success);
                     if (failed.length > 0) {
-                        throw new Error(
+                        const err = new Error(
                             `Worker execution failed for ${failed.length} task(s):\n` +
                             failed.map((f, i) => `- Task #${i + 1}: ${typeof f?.error === "string" ? f.error : (f?.error?.message || "Unknown Error")}`).join("\n")
-                        );
+                        ) as Error & { code?: string };
+                        const withCode = failed.find(f => f.errorCode);
+                        if (withCode?.errorCode) err.code = withCode.errorCode;
+                        throw err;
                     }
 
                     insertQueries = workerResults.map(w => w.result);
@@ -1410,7 +1416,7 @@ export class AutoSQLHandler {
             return { start, end, success: true, duration: durationMs, affectedRows, results: allResults, table, metaData: resolvedMetaData, stats };
         } catch (error: any) {
             const end = new Date();
-            return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error) };
+            return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
         }
       });
     }
@@ -1827,7 +1833,7 @@ export class AutoSQLStreamHandle {
             return { start, end, success: true, duration: durationMs, affectedRows, table: this.table, stats };
         } catch (error: any) {
             const end = new Date();
-            return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error) };
+            return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
         } finally {
             // Always drop staging table
             if (this.stagingCreated) {

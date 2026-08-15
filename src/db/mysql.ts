@@ -30,6 +30,15 @@ export class MySQLDatabase extends Database {
         } catch (err) {
             throw new Error("Missing required dependency 'mysql2'. Please install it to use MySQLDatabase.");
         }
+        // TLS passthrough. mysql2 does NOT accept `ssl: true` (it wants an object or a named profile),
+        // so normalise `true` → `{}` (enable TLS, default verification); an object is passed as-is.
+        const ssl = this.config.ssl;
+        if (ssl && typeof ssl === "object" && ssl.rejectUnauthorized === false) {
+            this.config.logger?.warn?.("autosql: ssl.rejectUnauthorized is false — TLS certificate verification is DISABLED (use only for dev/self-signed).");
+        }
+        if (ssl && (this.config.sshConfig || this.config.sshStream)) {
+            this.config.logger?.warn?.("autosql: both `ssl` and `sshConfig` are set — pick one encrypted path (direct TLS OR an SSH tunnel); TLS over an SSH stream is not a supported combination.");
+        }
         this.connection = mysql.createPool({
             host: this.config.host,
             user: this.config.user,
@@ -42,6 +51,7 @@ export class MySQLDatabase extends Database {
             // character (emoji, some CJK) throws `Incorrect string value: '\xF0\x9F...'` on
             // INSERT even when the target table is utf8mb4 — the bytes can't cross the wire.
             charset: this.config.charset || dialectConfig.charset,
+            ...(ssl !== undefined ? { ssl: ssl === true ? {} : ssl } : {}),
             ...(this.config.sshStream ? { stream: this.config.sshStream } : {})
         });
     }

@@ -299,7 +299,7 @@ export abstract class Database {
                 const permanentErrors = await this.getPermanentErrors();
                 if (permanentErrors.includes(error.code)) {
                     end = new Date();
-                    return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error.message };
+                    return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error.message, errorCode: error?.code != null ? String(error.code) : undefined };
                 }
     
                 attempts++;
@@ -312,7 +312,7 @@ export abstract class Database {
         }
     
         end = new Date();
-        return { start, end, duration: end.getTime() - start.getTime(), success: false, error: _error?.message };
+        return { start, end, duration: end.getTime() - start.getTime(), success: false, error: _error?.message, errorCode: _error?.code != null ? String(_error.code) : undefined };
     }
 
     public async runTransaction(queriesOrStrings: QueryInput[]): Promise<QueryResult> {
@@ -326,7 +326,7 @@ export abstract class Database {
             }
         } catch (error: any) {
             const end = new Date();
-            return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error instanceof Error ? error.message : String(error) };
+            return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined };
         }
         let end: Date;
         let _error: any;
@@ -393,7 +393,8 @@ export abstract class Database {
             end,
             duration: end.getTime() - start.getTime(),
             success: false,
-            error: _error?.message
+            error: _error?.message,
+            errorCode: _error?.code != null ? String(_error.code) : undefined
         };
     }
 

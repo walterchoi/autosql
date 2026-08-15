@@ -250,6 +250,16 @@ export interface DatabaseConfig {
   rejectedRowsSchema?: string;          // Schema to place the rejected rows table in — defaults to current schema
   keepOrphanedStagingTables?: boolean;  // Skip orphaned stream staging table cleanup on openStream — defaults to false
 
+  // TLS for the driver connection (MySQL / Postgres). Omit → plaintext/driver default (back-compat).
+  // `true` → enable TLS with default verification; object → passed to the driver's ssl options.
+  ssl?: boolean | {
+    ca?: string;                  // PEM CA bundle to verify the server cert against (e.g. an RDS bundle)
+    cert?: string;                // client cert for mutual TLS (optional)
+    key?: string;                 // client key for mutual TLS (optional)
+    rejectUnauthorized?: boolean; // verify the chain (default true when `ca` is set; false = dev/self-signed only)
+    servername?: string;          // SNI override when the host differs from the cert CN/SAN
+  };
+
   // SSH tunneling support
   sshConfig?: SSHKeys;
   sshStream?: ClientChannel | null;
@@ -314,6 +324,44 @@ const config: DatabaseConfig = {
   await db.establishConnection();
   // Tunnel is now active and DB connection is routed through it
 ```
+
+---
+
+## 🔐 TLS / Encrypted Connections
+
+Connect over direct TLS (MySQL / Postgres) with the `ssl` config — e.g. a managed Postgres/RDS that requires SSL, or a customer-hosted MySQL. It's passed through to the driver, so anything `mysql2` / `pg` accepts works:
+
+```ts
+// Verify the server against a CA bundle (recommended for production)
+const db = Database.create({
+  sqlDialect: 'pgsql', host, user, password, database,
+  ssl: { ca: fs.readFileSync('rds-ca-bundle.pem', 'utf8'), rejectUnauthorized: true },
+});
+
+// Enable TLS with the driver's default verification
+Database.create({ ...config, ssl: true });
+
+// Dev / self-signed only — verification OFF (autosql logs a warning)
+Database.create({ ...config, ssl: { rejectUnauthorized: false } });
+```
+
+- Omit `ssl` → unchanged plaintext/driver-default behaviour.
+- Pick **one** encrypted path — a direct TLS connection **or** an SSH tunnel (`sshConfig`), not both.
+- **SQL Server** maps TLS via its own driver options (`encrypt` / `trustServerCertificate`); `ssl` is currently a no-op there (a fast-follow).
+
+---
+
+## 🛟 Operating Safely (least-privilege / BYOD)
+
+AutoSQL is safe to run inside a database you don't own — e.g. a customer's server where it loads into a namespace you control. The guarantees:
+
+- **Everything stays inside `config.schema`.** Every object AutoSQL creates — target table, `temp_staging__*`, `*__history`, the schema-history audit table, the rejected-rows table, surrogate/`dwh_*` columns — is qualified with `config.schema` (or a schema option that defaults to it). AutoSQL **never** emits `DROP DATABASE` or `DROP SCHEMA`.
+- **Non-destructive by default.** With the defaults `deleteColumns: false` and `updatePrimaryKey: false`, AutoSQL issues no `DROP COLUMN`, no primary-key drop, and no `TRUNCATE` against your table — the only tables it drops are its own `temp_staging__*` staging tables. A blocked column-drop / PK-change is logged, not applied. (There is no `TRUNCATE` anywhere in AutoSQL.)
+- **No implicit schema creation.** `autoSQL()` assumes `config.schema` already exists — it does not run `CREATE SCHEMA`/`CREATE DATABASE`. A least-privilege user that can write inside a pre-created schema but has no `CREATE SCHEMA` privilege works fine. (Create the schema yourself first via the exported `createSchema()` only if you hold the privilege.)
+- **No `FILE` privilege needed by default.** The default load path is parameterised multi-row `INSERT`. `LOAD DATA LOCAL INFILE` (MySQL) / `COPY` (Postgres) run **only** when you opt into `bulkLoad: true`.
+- **Errors identify the missing grant.** A failed query returns the driver's message on `error` **and** its structured code on `errorCode` (mysql2 `code` / Postgres SQLSTATE), so you can tell exactly which `GRANT` is missing.
+- **Connection budget is respected.** `connectionLimit` caps the pool (set it low — 1–2 — for a small/shared DB), and `closeConnection()` fully drains it, leaving no lingering connections.
+- **Identifier limits are enforced up front.** A table/column name that would exceed the dialect's identifier limit (MySQL 64 chars, Postgres 63 bytes, SQL Server 128 chars) throws a clear error at generation time rather than failing mid-load or being silently truncated by Postgres.
 
 ---
 

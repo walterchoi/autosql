@@ -876,14 +876,19 @@ export function normalizeResultKeys<T extends Record<string, any>>(row: T): Reco
 
 export function throwIfFailedResults(results: QueryResult[], action = "operation") {
     const failed = results.filter(r => !r.success);
-  
+
     if (failed.length > 0) {
       const message = `One or more ${action} failed (${failed.length}):\n` +
         failed
           .map(r => `- ${r.table || "Unknown Table"}: ${r.error || "Unknown Error"}`)
           .join("\n");
-  
-      throw new Error(message);
+
+      // Carry the first failed query's driver error code on the thrown Error so a top-level
+      // catch (autoSQL / autoSQLChunked / stream end) can surface it as QueryResult.errorCode.
+      const err = new Error(message) as Error & { code?: string };
+      const withCode = failed.find(r => r.errorCode);
+      if (withCode?.errorCode) err.code = withCode.errorCode;
+      throw err;
     }
 }
 

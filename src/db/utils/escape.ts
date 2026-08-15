@@ -20,6 +20,16 @@ const IDENTIFIER_QUOTE: Record<supportedDialects, string> = {
     sqlserver: "]", // SQL Server wraps in [ ... ] with a doubled closing bracket ]] as the escape
 };
 
+// Maximum identifier length per dialect. MySQL counts characters (64) and errors past it; Postgres
+// counts BYTES (NAMEDATALEN-1 = 63) and SILENTLY TRUNCATES past it — which can collide two distinct
+// names on the same table; SQL Server allows 128. autosql validates here and fails loudly rather than
+// let Postgres truncate under us or emit a MySQL statement that dies mid-load.
+const IDENTIFIER_MAX_LENGTH: Record<supportedDialects, number> = {
+    mysql: 64,
+    pgsql: 63,
+    sqlserver: 128,
+};
+
 /**
  * Wrap a SQL identifier (table / column / schema / index / constraint name) in the
  * dialect's quote character, doubling any embedded quote character (the SQL-standard
@@ -35,6 +45,15 @@ export function escapeIdentifier(name: string, dialect: supportedDialects): stri
     }
     if (name.includes("\0")) {
         throw new Error(`Invalid SQL identifier: NUL byte is not permitted (${JSON.stringify(name)})`);
+    }
+    // Length: fail loudly on an over-long identifier (a source-derived name, or an autosql-derived
+    // staging/history name built from it) rather than emit a statement the DB rejects — or, on
+    // Postgres, silently truncates. Postgres is measured in bytes; the others in characters.
+    const maxLen = IDENTIFIER_MAX_LENGTH[dialect];
+    const length = dialect === "pgsql" ? Buffer.byteLength(name, "utf8") : name.length;
+    if (length > maxLen) {
+        const unit = dialect === "pgsql" ? "bytes" : "characters";
+        throw new Error(`Invalid SQL identifier: "${name}" (${length} ${unit}) exceeds the ${maxLen}-${unit === "bytes" ? "byte" : "character"} identifier limit for ${dialect}; shorten the underlying table/column name (autosql derives staging/history names from it, so it can exceed the limit even when the base name does not).`);
     }
     // SQL Server: bracket-quote, doubling only the closing bracket ("]" -> "]]"). The quote pair is
     // asymmetric ([ ]) so it can't use the symmetric doubling below.

@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+### ✨ New
+- **TLS/`ssl` passthrough for the connection (`DatabaseConfig.ssl`).** Previously only an SSH tunnel (`sshConfig`) could encrypt the connection; there was no way to connect over direct TLS (e.g. a managed Postgres / RDS that requires SSL, or a customer MySQL host). `ssl` accepts `true` (enable TLS with default verification) or an object (`ca`, `cert`, `key`, `rejectUnauthorized`, `servername`) passed to the driver — MySQL (`mysql2`) and Postgres (`pg`). Normalised per driver (`mysql2` rejects `ssl: true`, so it becomes `{}`); `rejectUnauthorized: false` logs a warning that verification is off. Omitted → byte-for-byte the previous behaviour. SQL Server maps TLS differently and is a documented no-op for now.
+- **`QueryResult.errorCode`** now carries the driver's structured error code on a failed query — mysql2's `code` (e.g. `ER_TABLEACCESS_DENIED_ERROR`), Postgres's SQLSTATE (e.g. `42501`), or SQL Server's error number — so a caller can branch on the exact failure (e.g. surface which `GRANT` is missing) without string-matching the message. It is populated on direct `runQuery`/`runTransaction` results **and** threaded through to a failing `autoSQL()`/`autoSQLChunked()` top-level result (worker and direct execution paths alike). The human-readable `error` message is unchanged.
+
+### ⚠️ Behavior change
+- **Over-long SQL identifiers now fail loudly instead of being emitted or silently truncated.** A table/column name (source-derived, or an autosql-derived staging/history name built from it) that exceeds the dialect's identifier limit — MySQL 64 characters, Postgres 63 **bytes**, SQL Server 128 characters — now throws a clear error at generation time. Previously MySQL/SQL Server let the database reject it mid-load, and **Postgres silently truncated** it, which could collide two distinct names on the same table. Well-formed identifiers within the limit are unaffected.
+
+### 🔧 Maintenance
+- **Documented the least-privilege / BYOD operating guarantees** (verified, no behaviour change): autosql only ever issues DDL/DML inside `config.schema`; it never emits `DROP DATABASE`/`DROP SCHEMA` and never drops the target table (with `deleteColumns:false` + `updatePrimaryKey:false`, the only drops are its own `temp_staging__*` tables); `autoSQL()` does not implicitly create the schema (it assumes it exists, so a least-privilege user without `CREATE SCHEMA` works); the default load path is parameterised `INSERT` (no `LOAD DATA LOCAL INFILE`/`FILE` privilege unless `bulkLoad` is opt-in); and `closeConnection()` fully drains the pool.
+
 ## [2.0.0] - 2026-08-01
 
 > **Major bump:** this release contains breaking changes — `startTransaction`/`commit`/`rollback` now
