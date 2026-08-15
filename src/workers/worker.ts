@@ -36,6 +36,7 @@ import { AutoSQLHandler } from "../db/autosql";
             parentPort?.postMessage({
                 success: false,
                 error: error instanceof Error ? error.message : String(error),
+                errorCode: (error as any)?.code != null ? String((error as any).code) : undefined,
             });
         }
         });
@@ -44,6 +45,7 @@ import { AutoSQLHandler } from "../db/autosql";
         parentPort?.postMessage({
         success: false,
         error: error instanceof Error ? error.message : String(error),
+        errorCode: (error as any)?.code != null ? String((error as any).code) : undefined,
         });
     }
 })();

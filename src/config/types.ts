@@ -311,6 +311,28 @@ export interface DatabaseConfig {
           stats?: (stats: QueryStats) => void;
       };
 
+      /**
+       * TLS for the driver connection. Omit (default) → no change: plaintext / driver default, so
+       * existing configs are byte-for-byte unaffected. `true` → enable TLS with default verification.
+       * An object is passed through to the driver's `ssl` options:
+       *   - `ca`: PEM CA bundle to verify the server certificate against (e.g. the AWS RDS bundle, or
+       *     a BYOD host's CA).
+       *   - `rejectUnauthorized`: verify the certificate chain. Defaults to the driver's default (true)
+       *     when a `ca` is supplied; set `false` ONLY for dev/self-signed (verification is then off).
+       *   - `cert` / `key`: client certificate + key for mutual TLS (optional).
+       *   - `servername`: SNI override when the host differs from the certificate CN/SAN.
+       * MySQL and Postgres only. Not composed with `sshConfig` — pick one path (SSH tunnel OR direct
+       * TLS). On SQL Server this is currently a no-op (its driver maps TLS via `options.encrypt` /
+       * `options.trustServerCertificate` — a fast-follow).
+       */
+      ssl?: boolean | {
+        ca?: string;
+        cert?: string;
+        key?: string;
+        rejectUnauthorized?: boolean;
+        servername?: string;
+      };
+
       sshConfig?: SSHKeys;
       sshStream?: ClientChannel | null;
       sshClient?: SSHClient;
@@ -386,6 +408,13 @@ export interface QueryResult {
     success: boolean;
     results?: any[];
     error?: string;
+    /**
+     * The driver's structured error code, when the failure came from the database driver — mysql2's
+     * `code` (e.g. `"ER_TABLEACCESS_DENIED_ERROR"`), Postgres's SQLSTATE (e.g. `"42501"`), or SQL
+     * Server's error number. Lets a caller branch on the exact failure (e.g. tell a user which GRANT
+     * is missing) without string-matching `error`. Omitted for non-driver errors.
+     */
+    errorCode?: string;
     table?: string;
     /**
      * The resolved schema AutoSQL used for the load — the final `MetadataHeader` including any
