@@ -6,6 +6,16 @@ import { maxQueryAttempts } from "../config/defaults";
 import { AutoSQLHandler } from "./autosql";
 import { setSSH } from '../helpers/ssh';
 
+/**
+ * Normalise a driver error's structured code for QueryResult.errorCode. A real driver code is a
+ * non-empty string (mysql2 `code` / pg SQLSTATE) or a number (SQL Server, stringified) — so an
+ * empty-string `code` is treated as absent (→ undefined), while a numeric `0` is preserved as "0".
+ */
+function driverErrorCode(err: any): string | undefined {
+    const code = err?.code;
+    return code != null && code !== "" ? String(code) : undefined;
+}
+
 // Abstract database class to define common methods.
 export abstract class Database {
     protected connection: any | null = null;
@@ -299,7 +309,7 @@ export abstract class Database {
                 const permanentErrors = await this.getPermanentErrors();
                 if (permanentErrors.includes(error.code)) {
                     end = new Date();
-                    return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error.message, errorCode: error?.code != null ? String(error.code) : undefined };
+                    return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error.message, errorCode: driverErrorCode(error) };
                 }
     
                 attempts++;
@@ -312,7 +322,7 @@ export abstract class Database {
         }
     
         end = new Date();
-        return { start, end, duration: end.getTime() - start.getTime(), success: false, error: _error?.message, errorCode: _error?.code != null ? String(_error.code) : undefined };
+        return { start, end, duration: end.getTime() - start.getTime(), success: false, error: _error?.message, errorCode: driverErrorCode(_error) };
     }
 
     public async runTransaction(queriesOrStrings: QueryInput[]): Promise<QueryResult> {
@@ -326,7 +336,7 @@ export abstract class Database {
             }
         } catch (error: any) {
             const end = new Date();
-            return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined };
+            return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error instanceof Error ? error.message : String(error), errorCode: driverErrorCode(error) };
         }
         let end: Date;
         let _error: any;
@@ -394,7 +404,7 @@ export abstract class Database {
             duration: end.getTime() - start.getTime(),
             success: false,
             error: _error?.message,
-            errorCode: _error?.code != null ? String(_error.code) : undefined
+            errorCode: driverErrorCode(_error)
         };
     }
 

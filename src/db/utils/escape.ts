@@ -48,11 +48,18 @@ export function escapeIdentifier(name: string, dialect: supportedDialects): stri
     }
     // Length: fail loudly on an over-long identifier (a source-derived name, or an autosql-derived
     // staging/history name built from it) rather than emit a statement the DB rejects — or, on
-    // Postgres, silently truncates. Postgres is measured in bytes; the others in characters.
+    // Postgres, silently truncates. Measure the way each dialect counts its limit, so a legal
+    // international name isn't false-rejected:
+    //   • Postgres — UTF-8 BYTES (NAMEDATALEN-1 = 63);
+    //   • MySQL — Unicode CODE POINTS (utf8mb4 counts characters, so an astral char is 1);
+    //   • SQL Server — UTF-16 code units (`sysname` = `nvarchar(128)`).
     const maxLen = IDENTIFIER_MAX_LENGTH[dialect];
-    const length = dialect === "pgsql" ? Buffer.byteLength(name, "utf8") : name.length;
+    let length: number;
+    let unit: string;
+    if (dialect === "pgsql") { length = Buffer.byteLength(name, "utf8"); unit = "bytes"; }
+    else if (dialect === "mysql") { length = [...name].length; unit = "characters"; }
+    else { length = name.length; unit = "characters"; }
     if (length > maxLen) {
-        const unit = dialect === "pgsql" ? "bytes" : "characters";
         throw new Error(`Invalid SQL identifier: "${name}" (${length} ${unit}) exceeds the ${maxLen}-${unit === "bytes" ? "byte" : "character"} identifier limit for ${dialect}; shorten the underlying table/column name (autosql derives staging/history names from it, so it can exceed the limit even when the base name does not).`);
     }
     // SQL Server: bracket-quote, doubling only the closing bracket ("]" -> "]]"). The quote pair is

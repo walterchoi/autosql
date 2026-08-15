@@ -8,6 +8,31 @@ import { DB_CONFIG, Database } from "./utils/testConfig";
 //   • TLS actually negotiates (the session reports it is encrypted);
 //   • verification is REAL — a self-signed/untrusted cert with rejectUnauthorized:true is REJECTED.
 
+// SQL Server maps `ssl` onto tedious's encrypt/trustServerCertificate options and verifies at CONNECT
+// time (its pool is eager), unlike the lazy mysql/pg pools — so the reject case throws from
+// establishConnection. azure-sql-edge presents a self-signed cert.
+describe("TLS handshake (live) for SQLSERVER", () => {
+    const CFG = { sqlDialect: "sqlserver" as const, host: "localhost", user: "sa", password: "Str0ng!Passw0rd", database: "master", port: 1433, useWorkers: false };
+
+    test("rejectUnauthorized:false connects with encryption on", async () => {
+        const db = Database.create({ ...CFG, ssl: { rejectUnauthorized: false } });
+        await db.establishConnection();
+        try {
+            const r = await db.runQuery({ query: "SELECT encrypt_option FROM sys.dm_exec_connections WHERE session_id = @@SPID", params: [] });
+            expect(r.success).toBe(true);
+            expect(String((r.results![0] as any).encrypt_option)).toBe("TRUE");
+        } finally {
+            await db.closeConnection();
+        }
+    }, 20000);
+
+    test("rejectUnauthorized:true REJECTS the untrusted self-signed cert at connect time", async () => {
+        const db = Database.create({ ...CFG, ssl: { rejectUnauthorized: true } });
+        await expect(db.establishConnection()).rejects.toThrow(/connection failed/i);
+        await db.closeConnection().catch(() => {});
+    }, 20000);
+});
+
 Object.values(DB_CONFIG)
     .filter(c => c.sqlDialect === "mysql" || c.sqlDialect === "pgsql")
     .forEach((config) => {

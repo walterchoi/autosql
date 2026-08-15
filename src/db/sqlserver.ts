@@ -41,6 +41,12 @@ export class SqlServerDatabase extends Database {
         } catch (err) {
             throw new Error("Missing required dependency 'mssql'. Please install it to use SqlServerDatabase.");
         }
+        // Map the driver-agnostic `ssl` option onto tedious/mssql's TLS options. mssql doesn't take the
+        // mysql2/pg `ssl` object — it uses options.encrypt (do TLS), options.trustServerCertificate
+        // (skip verification), and options.cryptoCredentialsDetails (a Node tls context: ca/cert/key/
+        // servername). When `ssl` is omitted/false we keep the local-container default (no forced TLS,
+        // trust the self-signed cert) so existing behaviour and the test harness are unchanged.
+        const sslOptions = this.sqlServerTlsOptions();
         const pool = new this.sql.ConnectionPool({
             server: this.config.host || "localhost",
             port: this.config.port || 1433,
@@ -49,17 +55,44 @@ export class SqlServerDatabase extends Database {
             database: this.config.database,
             pool: { max: this.config.connectionLimit || 5, min: 0, idleTimeoutMillis: 30000 },
             options: {
-                // Local containers use a self-signed cert; trust it and don't force TLS.
-                // TODO(ssl): the `DatabaseConfig.ssl` passthrough is a no-op here — tedious/mssql maps
-                // TLS via options.encrypt / options.trustServerCertificate / cryptoCredentialsDetails.ca,
-                // NOT the mysql2/pg `ssl` object. Map `config.ssl` to those options as a fast-follow.
-                trustServerCertificate: true,
-                encrypt: false,
+                ...sslOptions,
                 enableArithAbort: true,
             },
         });
         await pool.connect();
         this.connection = pool as any;
+    }
+
+    /**
+     * Translate `DatabaseConfig.ssl` into tedious/mssql TLS options.
+     *  - omitted / false → local-dev default: no forced TLS, trust the (self-signed) server cert.
+     *  - `true`          → encrypt on, VERIFY against the system CA store.
+     *  - object          → encrypt on; `rejectUnauthorized:false` → `trustServerCertificate` (skip
+     *                      verification, with a warning); `ca`/`cert`/`key`/`servername` →
+     *                      `cryptoCredentialsDetails` (custom CA / mutual TLS / SNI).
+     * @internal Exposed for unit testing the mapping; not part of the stable public API.
+     */
+    public sqlServerTlsOptions(): Record<string, any> {
+        const ssl = this.config.ssl;
+        if (!ssl) {
+            return { encrypt: false, trustServerCertificate: true };
+        }
+        const options: Record<string, any> = { encrypt: true };
+        if (ssl === true) {
+            options.trustServerCertificate = false; // verify against system CAs
+            return options;
+        }
+        options.trustServerCertificate = ssl.rejectUnauthorized === false;
+        if (options.trustServerCertificate) {
+            this.config.logger?.warn?.("autosql: ssl.rejectUnauthorized is false — TLS certificate verification is DISABLED (use only for dev/self-signed).");
+        }
+        const cc: Record<string, any> = {};
+        if (ssl.ca) cc.ca = ssl.ca;
+        if (ssl.cert) cc.cert = ssl.cert;
+        if (ssl.key) cc.key = ssl.key;
+        if (ssl.servername) cc.servername = ssl.servername;
+        if (Object.keys(cc).length) options.cryptoCredentialsDetails = cc;
+        return options;
     }
 
     public getMaxConnections(): number {

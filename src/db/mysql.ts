@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
@@ -51,9 +52,31 @@ export class MySQLDatabase extends Database {
             // character (emoji, some CJK) throws `Incorrect string value: '\xF0\x9F...'` on
             // INSERT even when the target table is utf8mb4 — the bytes can't cross the wire.
             charset: this.config.charset || dialectConfig.charset,
-            ...(ssl !== undefined ? { ssl: ssl === true ? {} : ssl } : {}),
+            // `ssl: false` is treated the same as omitting it (plaintext / driver default) — only a
+            // truthy `ssl` is threaded. mysql2 rejects `ssl: true`, so normalise it to `{}`.
+            ...(ssl ? { ssl: ssl === true ? {} : ssl } : {}),
             ...(this.config.sshStream ? { stream: this.config.sshStream } : {})
         });
+    }
+
+    /**
+     * Stable, ≤64-character key for MySQL's `GET_LOCK`/`RELEASE_LOCK` (a per-table advisory lock).
+     * The `autosql_schema__` prefix (16 chars) plus a long BYOD table name can exceed MySQL's 64-char
+     * lock-name limit, which makes `GET_LOCK` fail obscurely — so a too-long key is deterministically
+     * hash-truncated (same table → same key, so lock and release still match). NOTE: a table long
+     * enough to trigger truncation gets a DIFFERENT key than the raw form, so two processes on
+     * different autosql versions would not mutually exclude on it (see decisions.md).
+     */
+    private static schemaLockKey(table: string): string {
+        const prefix = "autosql_schema__"; // 16 chars
+        const key = `${prefix}${table}`;
+        // Measure and truncate by Unicode CODE POINTS (MySQL counts characters, not UTF-16 units), and
+        // slice on character boundaries so a truncation can't split a surrogate pair.
+        if ([...key].length <= 64) return key;
+        const hash = crypto.createHash("md5").update(key).digest("hex").slice(0, 8);
+        const budget = 64 - prefix.length - 1 - hash.length; // 39 code points
+        const truncated = [...table].slice(0, budget).join("");
+        return `${prefix}${truncated}_${hash}`;
     }
 
     public getMaxConnections(): number {
@@ -90,7 +113,7 @@ export class MySQLDatabase extends Database {
     }
 
     public async acquireSchemaLock(table: string, timeoutSeconds: number): Promise<void> {
-        const lockKey = `autosql_schema__${table}`;
+        const lockKey = MySQLDatabase.schemaLockKey(table);
         if (!this.connection) await this.establishConnection();
         let client: PoolConnection | undefined;
         try {
@@ -118,7 +141,7 @@ export class MySQLDatabase extends Database {
     }
 
     public async releaseSchemaLock(table: string): Promise<void> {
-        const lockKey = `autosql_schema__${table}`;
+        const lockKey = MySQLDatabase.schemaLockKey(table);
         const client = this.schemaLockConnections.get(table);
         if (!client) return;
         // Drop the registration before awaiting so a concurrent acquire/release can't observe a

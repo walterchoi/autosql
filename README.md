@@ -345,9 +345,9 @@ Database.create({ ...config, ssl: true });
 Database.create({ ...config, ssl: { rejectUnauthorized: false } });
 ```
 
-- Omit `ssl` → unchanged plaintext/driver-default behaviour.
+- Omit `ssl` (or `ssl: false`) → unchanged plaintext/driver-default behaviour.
 - Pick **one** encrypted path — a direct TLS connection **or** an SSH tunnel (`sshConfig`), not both.
-- **SQL Server** maps TLS via its own driver options (`encrypt` / `trustServerCertificate`); `ssl` is currently a no-op there (a fast-follow).
+- Works on **all three dialects**. MySQL/Postgres receive `ssl` as the driver's `ssl` object; **SQL Server** maps it automatically onto the `mssql` driver's `encrypt` / `trustServerCertificate` / `cryptoCredentialsDetails` (custom CA, mutual TLS, SNI) options — so the same `{ ca, rejectUnauthorized }` config works everywhere.
 
 ---
 

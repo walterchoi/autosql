@@ -312,18 +312,19 @@ export interface DatabaseConfig {
       };
 
       /**
-       * TLS for the driver connection. Omit (default) → no change: plaintext / driver default, so
-       * existing configs are byte-for-byte unaffected. `true` → enable TLS with default verification.
-       * An object is passed through to the driver's `ssl` options:
+       * TLS for the driver connection. Omit **or `false`** (default) → no change: plaintext / driver
+       * default, so existing configs are byte-for-byte unaffected. `true` → enable TLS with default
+       * verification. An object configures TLS:
        *   - `ca`: PEM CA bundle to verify the server certificate against (e.g. the AWS RDS bundle, or
        *     a BYOD host's CA).
        *   - `rejectUnauthorized`: verify the certificate chain. Defaults to the driver's default (true)
        *     when a `ca` is supplied; set `false` ONLY for dev/self-signed (verification is then off).
        *   - `cert` / `key`: client certificate + key for mutual TLS (optional).
        *   - `servername`: SNI override when the host differs from the certificate CN/SAN.
-       * MySQL and Postgres only. Not composed with `sshConfig` — pick one path (SSH tunnel OR direct
-       * TLS). On SQL Server this is currently a no-op (its driver maps TLS via `options.encrypt` /
-       * `options.trustServerCertificate` — a fast-follow).
+       * Works on **all three dialects**: MySQL/Postgres receive it as the driver `ssl` object; SQL
+       * Server maps it onto the mssql driver's `encrypt` / `trustServerCertificate` /
+       * `cryptoCredentialsDetails` options automatically. Not composed with `sshConfig` — pick one path
+       * (SSH tunnel OR direct TLS).
        */
       ssl?: boolean | {
         ca?: string;

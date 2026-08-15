@@ -858,12 +858,24 @@ function roundStringDecimal(valueStr: string, precision: number): string {
 
 export function generateSafeConstraintName(table: string, column: string, type: 'unique' | 'index' = 'unique'): string {
     const base = `${table}_${column}_${type}`;
-    
-    if (base.length <= 63) return base;
 
-    // Truncate and append a hash for uniqueness
+    // Keep the generated name within the TIGHTEST dialect identifier limit (Postgres, 63 BYTES) so its
+    // output always passes escapeIdentifier for every dialect. Measure AND truncate by UTF-8 bytes: a
+    // character count can return a name ≤63 chars but >63 bytes for a multibyte (é / CJK) source
+    // column, which escapeIdentifier then rejects (the very name this helper produced to stay legal).
+    if (Buffer.byteLength(base, "utf8") <= 63) return base;
+
+    // Truncate on whole-character boundaries until the byte budget, then append a hash for uniqueness.
     const hash = crypto.createHash('md5').update(base).digest('hex').slice(0, 6);
-    const truncated = base.slice(0, 63 - hash.length - 1); // -1 for underscore
+    const budget = 63 - hash.length - 1; // room for the "_" separator + hash
+    let truncated = "";
+    let bytes = 0;
+    for (const ch of base) {
+        const chBytes = Buffer.byteLength(ch, "utf8");
+        if (bytes + chBytes > budget) break;
+        truncated += ch;
+        bytes += chBytes;
+    }
 
     return `${truncated}_${hash}`;
 }

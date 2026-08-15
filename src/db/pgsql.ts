@@ -53,7 +53,8 @@ export class PostgresDatabase extends Database {
             // Defense-in-depth only: a UTF8 database already stores valid emoji fine — this
             // does NOT rescue malformed source bytes (see sanitizeInvalidChars for those).
             client_encoding: this.config.encoding || dialectConfig.encoding || "UTF8",
-            ...(ssl !== undefined ? { ssl } : {}),
+            // `ssl: false` is treated the same as omitting it (plaintext) — only a truthy `ssl` is threaded.
+            ...(ssl ? { ssl } : {}),
             stream: this.config.sshStream ? () => this.config.sshStream! : undefined
         });
     }
