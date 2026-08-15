@@ -301,10 +301,12 @@ export class PostgresDatabase extends Database {
         // R9: surface schema changes that are computed but blocked by the safe-default flags.
         if (!isStagingTable) this.warnBlockedSchemaChanges(table, alterTableChanges);
 
+        // A9: no embedded COMMIT;/BEGIN; around the PK change. Postgres DDL is fully transactional, so
+        // drop-PK + column alters + add-PK all run in the ONE transaction runTransaction provides —
+        // committing mid-way split the migration into three transactions, so a failure after the first
+        // COMMIT left the table with NO primary key (durably) while the caller got success:false.
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getDropPrimaryKeyQuery(table));
-            queries.push({ query: "COMMIT;", params: [] });
-            queries.push({ query: "BEGIN;", params: [] });
         }
 
         // ✅ Only fetch unique indexes if there are columns to remove uniqueness from
@@ -338,10 +340,8 @@ export class PostgresDatabase extends Database {
         const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.getConfig().schema, this.getConfig());
         queries.push(...alterQueries);
 
-        // Add New Primary Key (if changed and allowed)
+        // Add New Primary Key (if changed and allowed) — same transaction (A9).
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
-            queries.push({ query: "COMMIT;", params: [] });
-            queries.push({ query: "BEGIN;", params: [] });
             queries.push(this.getAddPrimaryKeyQuery(table, alterTableChanges.primaryKeyChanges));
         }
 

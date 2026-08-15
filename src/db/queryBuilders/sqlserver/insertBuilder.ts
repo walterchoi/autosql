@@ -81,7 +81,9 @@ export class SqlServerInsertQueryBuilder {
         const insertVals = columns.map(col => `source.${q(col)}`).join(", ");
 
         let query =
-            `MERGE INTO ${target} AS target ` +
+            // WITH (HOLDLOCK): serialise the match+insert so two concurrent upserts of the same key
+            // can't both fall to WHEN NOT MATCHED and double-insert (the classic MERGE race) (A11).
+            `MERGE INTO ${target} WITH (HOLDLOCK) AS target ` +
             `USING (VALUES ${valueTuples}) AS source (${sourceColList}) ` +
             `ON ${onMatch} `;
 
@@ -144,7 +146,9 @@ export class SqlServerInsertQueryBuilder {
         const insertVals = columns.map(col => `source.${q(col)}`).join(", ");
 
         let query =
-            `MERGE INTO ${target} AS target ` +
+            // WITH (HOLDLOCK): serialise the match+insert so two concurrent upserts of the same key
+            // can't both fall to WHEN NOT MATCHED and double-insert (the classic MERGE race) (A11).
+            `MERGE INTO ${target} WITH (HOLDLOCK) AS target ` +
             `USING ${source} AS source ` +
             `ON ${onMatch} `;
 

@@ -64,6 +64,21 @@
   was ambiguous (connection dropped after the server applied it), duplicating the row. That path (which
   already owns an outer retry loop) now runs each insert once. `runQuery` gained an optional per-call
   attempts override; the default retry behavior is unchanged.
+- **Postgres primary-key changes are now atomic (A9).** The adapter injected literal `COMMIT;`/`BEGIN;`
+  around a PK change, splitting the migration into three transactions — a failure partway through could
+  leave the table with no primary key while the call reported failure. The drop/alter/add now run in one
+  transaction (Postgres DDL is transactional).
+- **Postgres type-conversion `ALTER … USING` casts now name real Postgres types (A12).** Conversions like
+  `→ double` / `→ tinyint` / `→ datetime` emitted `::double` / `::tinyint` / `::datetime` (local inference
+  tokens that don't exist in Postgres), so the ALTER failed at execution while MySQL/SQL Server succeeded.
+  The cast target is now translated to the server type.
+- **Cross-dialect upsert consistency (A11).** With no updatable columns, a duplicate key now skips on all
+  three dialects (MySQL previously errored on a bare INSERT; it now emits a no-op self-update). The SQL
+  Server `MERGE` now takes `WITH (HOLDLOCK)` to prevent a concurrent-upsert double-insert race.
+- **`schemaHistory` table references are now escaped consistently (A13).** The history module built its
+  table references by splitting on `.` instead of routing through `escapeIdentifier`, which corrupted any
+  schema/table name containing a dot and bypassed the identifier guards; it now escapes schema and table
+  the same way the rest of the engine does.
 
 ### 🛡️ Robustness
 - **`runTransaction` never rejects, even on connection-pool failure (A16).** The pool acquire was

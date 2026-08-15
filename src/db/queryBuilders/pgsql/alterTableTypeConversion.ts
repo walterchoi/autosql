@@ -1,7 +1,14 @@
 import { isNumeric, isInteger, isFloating, isText, isBoolean, isDate, isTime } from "../../../config/groupings";
 import { escapeIdentifier, assertSafeTypeToken } from "../../utils/escape";
+import { pgsqlConfig } from "../../config/pgsqlConfig";
 
 const q = (name: string) => escapeIdentifier(name, "pgsql");
+
+// Translate a LOCAL inference type to its Postgres SERVER type for a `::cast` (A12): the branch logic
+// below keys off local types (isNumeric/isDate/…), but the emitted cast must name a real Postgres type
+// — `::double` / `::exponent` / `::datetime` / `::tinyint` don't exist and the ALTER fails at run time.
+// Mirrors what SET DATA TYPE already does. The map is a fixed set of trusted tokens.
+const toServer = (t: string): string => pgsqlConfig.translate.localToServer[t] ?? t;
 
 // Generates a `USING` clause for ALTER COLUMN to safely convert data types.
 export function getUsingClause(columnName: string, oldType: string, newType: string): string {
@@ -40,7 +47,7 @@ export function getUsingClause(columnName: string, oldType: string, newType: str
 
     // ✅ FLOATING POINT → INTEGER (ROUND to prevent precision loss)
     if (isFloating(oldType) && isInteger(newType)) {
-        return `ROUND(${q(columnName)})::${newType}`;
+        return `ROUND(${q(columnName)})::${toServer(newType)}`;
     }
 
     // ✅ NUMERIC → NUMERIC widening (e.g. smallint → int → bigint, int → decimal): a plain cast.
@@ -48,12 +55,12 @@ export function getUsingClause(columnName: string, oldType: string, newType: str
     //    NULL); on a numeric source Postgres errors (`invalid input syntax for type … : ""`). This is
     //    what a later chunk hits when autoSQLChunked widens a key column (e.g. tinyint → smallint).
     if (isNumeric(oldType) && isNumeric(newType)) {
-        return `${q(columnName)}::${newType}`;
+        return `${q(columnName)}::${toServer(newType)}`;
     }
 
     // ✅ TEXT → NUMERIC (Handle empty strings safely)
     if (isText(oldType) && isNumeric(newType)) {
-        return `NULLIF(${q(columnName)}, '')::${newType}`;
+        return `NULLIF(${q(columnName)}, '')::${toServer(newType)}`;
     }
 
     // ✅ JSON → TEXT (Convert JSON to String)
@@ -91,5 +98,5 @@ export function getUsingClause(columnName: string, oldType: string, newType: str
     }
 
     // ✅ Default: Simple Cast (with NULL handling)
-    return `NULLIF(${q(columnName)}, '')::${newType}`;
+    return `NULLIF(${q(columnName)}, '')::${toServer(newType)}`;
 }

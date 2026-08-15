@@ -3,6 +3,7 @@ import os from 'os';
 import { Database } from '../db/database';
 import { MetadataHeader, DatabaseConfig, QueryResult } from '../config/types';
 import { SchemaDriftError } from '../errors';
+import { escapeIdentifier } from '../db/utils/escape';
 
 // ---------------------------------------------------------------------------
 // Stable JSON stringify (key-sorted, recursive) for deterministic checksums
@@ -24,10 +25,16 @@ function getAppliedBy(): string {
     return `${os.hostname()}:${process.pid}`;
 }
 
+// Escaped, dialect-quoted reference to the history table (A13). Routes schema and table each through
+// escapeIdentifier — the old version returned a raw `schema.table` string that every caller then
+// re-split on '.', which dropped 3rd+ segments, corrupted any name containing a dot, and bypassed the
+// injection-safe escaping the rest of the codebase uses.
 function historyTableRef(config: DatabaseConfig): string {
     const table = config.schemaHistoryTable || 'autosql_schema_history';
     const schema = config.schemaHistorySchema || config.schema;
-    return schema ? `${schema}.${table}` : table;
+    const dialect = config.sqlDialect;
+    const t = escapeIdentifier(table, dialect);
+    return schema ? `${escapeIdentifier(schema, dialect)}.${t}` : t;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,7 +45,7 @@ export async function bootstrapSchemaHistoryTable(db: Database): Promise<void> {
     const dialect = db.getConfig().sqlDialect;
     let ddl: string;
     if (dialect === 'mysql') {
-        ddl = `CREATE TABLE IF NOT EXISTS \`${ref.replace('.', '\`.\`')}\` (
+        ddl = `CREATE TABLE IF NOT EXISTS ${ref} (
   id              BIGINT AUTO_INCREMENT PRIMARY KEY,
   table_name      VARCHAR(255) NOT NULL,
   version         INT UNSIGNED NOT NULL,
@@ -52,10 +59,7 @@ export async function bootstrapSchemaHistoryTable(db: Database): Promise<void> {
   UNIQUE KEY uq_table_version (table_name, version)
 );`;
     } else {
-        // PostgreSQL — split schema.table if present
-        const parts = ref.includes('.') ? ref.split('.') : [null, ref];
-        const schemaQ = parts[0] ? `"${parts[0]}"."${parts[1]}"` : `"${parts[1]}"`;
-        ddl = `CREATE TABLE IF NOT EXISTS ${schemaQ} (
+        ddl = `CREATE TABLE IF NOT EXISTS ${ref} (
   id              BIGSERIAL PRIMARY KEY,
   table_name      VARCHAR(255) NOT NULL,
   version         INTEGER      NOT NULL,
@@ -91,15 +95,13 @@ async function sweepStalePending(db: Database, table: string): Promise<void> {
     const ref = historyTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
     const cutoff = new Date(Date.now() - STALE_PENDING_MS);
-    const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
+    const tableRef = ref; // already dialect-escaped (A13)
     if (dialect === 'mysql') {
-        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
         await db.runQuery({
             query: `UPDATE ${tableRef} SET status = 'failed' WHERE table_name = ? AND status = 'pending' AND applied_at < ?`,
             params: [table, cutoff.toISOString().slice(0, 19).replace('T', ' ')]
         }).catch(() => {});
     } else {
-        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
         await db.runQuery({
             query: `UPDATE ${tableRef} SET status = 'failed' WHERE table_name = $1 AND status = 'pending' AND applied_at < $2`,
             params: [table, cutoff.toISOString()]
@@ -129,8 +131,7 @@ export async function recordMigrationStart(
         const now = new Date();
         let result: QueryResult;
         if (dialect === 'mysql') {
-            const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-            const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+            const tableRef = ref; // already dialect-escaped (A13)
             const query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
 SELECT ?, COALESCE(MAX(version), 0) + 1, 'pending', ?, ?, ?, ?
 FROM ${tableRef} WHERE table_name = ?`;
@@ -152,8 +153,7 @@ FROM ${tableRef} WHERE table_name = ?`;
                 { query: 'SELECT LAST_INSERT_ID() AS id', params: [] }
             ]);
         } else {
-            const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-            const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+            const tableRef = ref; // already dialect-escaped (A13)
             // $1 is used both in the SELECT list and the WHERE clause; without an explicit cast
             // Postgres infers it as text in one place and varchar in the other and rejects the
             // statement with "inconsistent types deduced for parameter $1".
@@ -209,15 +209,13 @@ async function updateHistoryStatus(
     const checksum = checksumSource ? computeChecksum(checksumSource) : null;
 
     if (dialect === 'mysql') {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+        const tableRef = ref; // already dialect-escaped (A13)
         await db.runQuery({
             query: `UPDATE ${tableRef} SET status = ?, new_schema = ?, checksum = ? WHERE id = ?`,
             params: [status, newSchema ? JSON.stringify(newSchema) : null, checksum, id]
         });
     } else {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+        const tableRef = ref; // already dialect-escaped (A13)
         await db.runQuery({
             query: `UPDATE ${tableRef} SET status = $1, new_schema = $2::jsonb, checksum = $3 WHERE id = $4`,
             params: [status, newSchema ? JSON.stringify(newSchema) : null, checksum, id]
@@ -259,12 +257,10 @@ export async function detectSchemaDrift(
     // crucially DON'T warn about a "missing" table that isn't supposed to exist yet (A6/A19).
     let query: string;
     if (dialect === 'mysql') {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+        const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT checksum FROM ${tableRef} WHERE table_name = ? AND status = 'applied' ORDER BY version DESC LIMIT 1`;
     } else {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+        const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT checksum FROM ${tableRef} WHERE table_name = $1 AND status = 'applied' ORDER BY version DESC LIMIT 1`;
     }
 
@@ -318,12 +314,10 @@ export async function getSchemaAt(
 
     let query: string;
     if (dialect === 'mysql') {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+        const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT new_schema FROM ${tableRef} WHERE table_name = ? AND status = 'applied' AND applied_at <= ? ORDER BY applied_at DESC LIMIT 1`;
     } else {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+        const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT new_schema FROM ${tableRef} WHERE table_name = $1 AND status = 'applied' AND applied_at <= $2 ORDER BY applied_at DESC LIMIT 1`;
     }
 

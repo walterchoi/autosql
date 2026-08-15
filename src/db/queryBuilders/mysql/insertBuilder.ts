@@ -76,8 +76,14 @@ export class MySQLInsertQueryBuilder {
                 .map(col => `${q(col)} = VALUES(${q(col)})`)
                 .join(", ");
               query += ` ON DUPLICATE KEY UPDATE ${updateSet}`;
+            } else if (primaryKeys.length > 0) {
+              // No updatable columns (all non-key columns are protected) but a key exists: emit a
+              // no-op self-update so a duplicate key is SKIPPED, not errored — matching Postgres
+              // (ON CONFLICT DO NOTHING) and SQL Server (MERGE with only WHEN NOT MATCHED). Without it
+              // MySQL fell through to a plain INSERT and errored on the duplicate (A11).
+              query += ` ON DUPLICATE KEY UPDATE ${q(primaryKeys[0])} = ${q(primaryKeys[0])}`;
             }
-        }          
+        }
 
         const result: QueryInput = {
             query,
@@ -139,6 +145,9 @@ export class MySQLInsertQueryBuilder {
               .map(col => `${q(col)} = VALUES(${q(col)})`)
               .join(", ");
             query += ` ON DUPLICATE KEY UPDATE ${updateSet}`;
+          } else if (primaryKeys.length > 0) {
+            // No-op self-update so a duplicate key is SKIPPED (not errored), matching PG/SQL Server (A11).
+            query += ` ON DUPLICATE KEY UPDATE ${q(primaryKeys[0])} = ${q(primaryKeys[0])}`;
           }
         }
 
