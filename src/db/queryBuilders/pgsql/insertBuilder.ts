@@ -1,233 +1,79 @@
-import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig, InsertInput } from "../../../config/types";
-import { pgsqlConfig } from "../../config/pgsqlConfig";
-import { getInsertValues, getTempTableName, getHistoryTableName, getTrueTableName } from "../../../helpers/utilities";
-import { compareMetaData } from '../../../helpers/metadata';
+import { MetadataHeader, QueryInput, DatabaseConfig, InsertInput } from "../../../config/types";
+import { getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier } from "../../utils/escape";
-const dialectConfig = pgsqlConfig
+import {
+    resolveStatementInput, resolveStagingInput, resolveHistoryInput,
+    insertColumns, primaryKeysOf, updatableColumns, flattenInsertParams,
+    buildHistoryQuery, HistoryHooks,
+} from "../shared/insertBuilderShared";
+
 const q = (name: string) => escapeIdentifier(name, "pgsql");
+
+const HISTORY_HOOKS: HistoryHooks = {
+    quote: q,
+    colDiff: (a, b) => `${a} IS DISTINCT FROM ${b}`,
+    now: "CURRENT_TIMESTAMP",
+    placeholder: (n) => `$${n}`,
+};
 
 export class PostgresInsertQueryBuilder {
     static getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
-        let table: string;
-        let rows: Record<string, any>[];
-        let header: MetadataHeader;
-        let insertType: "UPDATE" | "INSERT";
-
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
+        const { table, rows, header, insertType } = resolveStatementInput(tableOrInput, data, metaData, databaseConfig, inputInsertType);
+        if (!rows || rows.length === 0) throw new Error(`No data provided for insert into table "${table}"`);
 
-        if (typeof tableOrInput === "object" && "table" in tableOrInput) {
-            table = tableOrInput.table;
-            rows = tableOrInput.data;
-            header = tableOrInput.comparedMetaData?.updatedMetaData || tableOrInput.metaData;
-            insertType = tableOrInput?.insertType || databaseConfig?.insertType || "UPDATE";
-        } else {
-            table = tableOrInput;
-            rows = data!;
-            header = metaData!;
-            insertType = inputInsertType || databaseConfig?.insertType || "UPDATE";
-        }
-
-        if (!rows || rows.length === 0) {
-            throw new Error(`No data provided for insert into table "${table}"`);
-        }
-
-        // In surrogate-key mode, omit the database-generated auto-increment (surrogate) column
-        // from the INSERT column list, matching getInsertValues. Gated on `surrogateKey` so a
-        // genuine SERIAL primary key (introspected as autoIncrement:true) whose values a caller
-        // supplies for upsert is not dropped.
-        const columns = Object.keys(header).filter(col => !(databaseConfig?.surrogateKey && header[col].autoIncrement === true));
-
-        // Flatten values
-        let params: any[] = [];
-        if (typeof rows[0] === "object" && !Array.isArray(rows[0])) {
-            const normalisedChunk = (rows as Record<string, any>[]).map(row =>
-                getInsertValues(header, row, undefined, databaseConfig, false) // ⬅ false = flatten (databaseConfig enables opt-in sanitizeInvalidChars)
-            );
-            params = normalisedChunk.flat();
-        } else {
-            params = rows.flat() as any[];
-        }
+        const columns = insertColumns(header, databaseConfig);
+        const params = flattenInsertParams(rows, header, databaseConfig);
 
         const quotedCols = columns.map(col => q(col)).join(", ");
-        const valuePlaceholders = rows
-            .map((_, rowIndex) => {
+        const valuePlaceholders = rows.map((_, rowIndex) => {
             const baseIndex = rowIndex * columns.length;
-            const placeholders = columns.map((_, colIndex) => `$${baseIndex + colIndex + 1}`);
-            return `(${placeholders.join(", ")})`;
-            })
-            .join(", ");
+            return `(${columns.map((_, colIndex) => `$${baseIndex + colIndex + 1}`).join(", ")})`;
+        }).join(", ");
 
         let query = `INSERT INTO ${schemaPrefix}${q(table)} (${quotedCols}) VALUES ${valuePlaceholders}`;
         if (insertType === "UPDATE") {
-            const primaryKeys = Object.keys(header).filter(
-            (col) => header[col].primary === true
-            );
-
-            if (primaryKeys.length === 0) {
-            throw new Error(`Postgres requires primary key(s) to use ON CONFLICT for table "${table}"`);
-            }
-
-            const updateCols = columns.filter((col) => {
-            const colMeta = header[col];
-            const isPrimary = primaryKeys.includes(col);
-            const isProtectedCalc =
-                colMeta.calculated === true && colMeta.updatedCalculated === false;
-                return !isPrimary && !isProtectedCalc;
-            });
-
+            const primaryKeys = primaryKeysOf(header);
+            if (primaryKeys.length === 0) throw new Error(`Postgres requires primary key(s) to use ON CONFLICT for table "${table}"`);
+            const updateCols = updatableColumns(columns, header, primaryKeys);
             const conflictClause = `ON CONFLICT (${primaryKeys.map(col => q(col)).join(", ")})`;
-
-            if (updateCols.length > 0) {
-            const updateSet = updateCols
-                .map(col => `${q(col)} = EXCLUDED.${q(col)}`)
-                .join(", ");
-            query += ` ${conflictClause} DO UPDATE SET ${updateSet}`;
-            } else {
-            query += ` ${conflictClause} DO NOTHING`;
-            }
+            query += updateCols.length > 0
+                ? ` ${conflictClause} DO UPDATE SET ${updateCols.map(col => `${q(col)} = EXCLUDED.${q(col)}`).join(", ")}`
+                : ` ${conflictClause} DO NOTHING`;
         }
-
-        const result: QueryInput = {
-            query,
-            params
-        };
-
-        return result;
+        return { query, params };
     }
 
     static getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT", pkFilter?: Record<string, any>): QueryInput {
-        let table: string;
-        let header: MetadataHeader;
-        let insertType: "UPDATE" | "INSERT";
-      
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
-      
-        if (typeof tableOrInput === "object" && "table" in tableOrInput) {
-          table = tableOrInput.table;
-          header = tableOrInput.comparedMetaData?.updatedMetaData || tableOrInput.metaData;
-          insertType = tableOrInput?.insertType || databaseConfig?.insertType || "UPDATE";
-        } else {
-          table = tableOrInput;
-          header = metaData!;
-          insertType = inputInsertType || databaseConfig?.insertType || "UPDATE";
-        }
-      
-        const stagingPrefix = typeof tableOrInput === "object" ? tableOrInput.stagingPrefix : undefined;
+        const { table, header, insertType, stagingPrefix } = resolveStagingInput(tableOrInput, metaData, databaseConfig, inputInsertType);
         const tempTable = getTempTableName(table, stagingPrefix);
 
-        // In surrogate-key mode, omit the database-generated auto-increment (surrogate) column
-        // from the INSERT column list, matching getInsertValues. Gated on `surrogateKey` so a
-        // genuine SERIAL primary key (introspected as autoIncrement:true) whose values a caller
-        // supplies for upsert is not dropped.
-        const columns = Object.keys(header).filter(col => !(databaseConfig?.surrogateKey && header[col].autoIncrement === true));
+        const columns = insertColumns(header, databaseConfig);
         const escapedCols = columns.map(col => q(col)).join(", ");
         const selectCols = columns.map(col => q(col)).join(", ");
 
         let query = `INSERT INTO ${schemaPrefix}${q(table)} (${escapedCols}) SELECT ${selectCols} FROM ${schemaPrefix}${q(tempTable)}`;
 
-        // Optional single-PK filter: merge exactly one staged row (the atomic degradation path runs
-        // this per rejected-candidate PK, in the same transaction as that PK's before-image capture).
         const params: any[] = [];
         if (pkFilter) {
-          const pkCols = Object.keys(header).filter(col => header[col].primary === true);
-          query += " WHERE " + pkCols.map(pk => { params.push(pkFilter[pk]); return `${q(pk)} = $${params.length}`; }).join(" AND ");
+            const pkCols = primaryKeysOf(header);
+            query += " WHERE " + pkCols.map(pk => { params.push(pkFilter[pk]); return `${q(pk)} = $${params.length}`; }).join(" AND ");
         }
-
         if (insertType === "UPDATE") {
-          const primaryKeys = Object.keys(header).filter(col => header[col].primary === true);
-      
-          const updateCols = columns.filter((col) => {
-            const colMeta = header[col];
-            const isPrimary = primaryKeys.includes(col);
-            const isProtectedCalc = colMeta.calculated === true && colMeta.updatedCalculated === false;
-            return !isPrimary && !isProtectedCalc;
-          });
-      
-          if (primaryKeys.length > 0 && updateCols.length > 0) {
-            const updateSet = updateCols
-              .map(col => `${q(col)} = EXCLUDED.${q(col)}`)
-              .join(", ");
-            query += ` ON CONFLICT (${primaryKeys.map(pk => q(pk)).join(", ")}) DO UPDATE SET ${updateSet}`;
-          } else {
-            // Optional: skip conflict update if nothing valid to update
-            query += ` ON CONFLICT DO NOTHING`;
-          }
+            const primaryKeys = primaryKeysOf(header);
+            const updateCols = updatableColumns(columns, header, primaryKeys);
+            if (primaryKeys.length > 0 && updateCols.length > 0) {
+                query += ` ON CONFLICT (${primaryKeys.map(pk => q(pk)).join(", ")}) DO UPDATE SET ${updateCols.map(col => `${q(col)} = EXCLUDED.${q(col)}`).join(", ")}`;
+            } else {
+                query += ` ON CONFLICT DO NOTHING`;
+            }
         }
-
-        return {
-          query,
-          params
-        };
+        return { query, params };
     }
 
     static getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, pkFilter?: Record<string, any>): QueryInput {
-      let table: string;
-      let header: MetadataHeader;
-    
-      const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
-    
-      let stagingPrefix: string | undefined;
-      let historyTableSuffix: string | undefined;
-      if (typeof tableOrInput === "object" && "table" in tableOrInput) {
-        stagingPrefix = tableOrInput.stagingPrefix;
-        historyTableSuffix = tableOrInput.historyTableSuffix;
-        table = getTrueTableName(tableOrInput.table, stagingPrefix, historyTableSuffix);
-        header = tableOrInput.comparedMetaData?.updatedMetaData || tableOrInput.metaData;
-      } else {
-        table = getTrueTableName(tableOrInput);
-        header = metaData!;
-      }
-
-      const historyTable = getHistoryTableName(table, historyTableSuffix);
-      const tempTable = getTempTableName(table, stagingPrefix);
-    
-      const filteredCols = Object.keys(header).filter(col => col !== "dwh_as_at");
-      const primaryKeys = filteredCols.filter(col => header[col].primary);
-      const nonPrimaryCols = filteredCols.filter(
-        col => !header[col].primary && header[col].calculated !== true
-      );
-    
-      const t1 = "t1";
-      const t2 = "t2";
-    
-      const valuesCols = filteredCols.map(col => q(col)).join(", ");
-      const selectCols = filteredCols.map(col => `${t1}.${q(col)}`).join(", ");
-
-      const joinCondition = primaryKeys
-        .map(pk => `${t1}.${q(pk)} = ${t2}.${q(pk)}`)
-        .join(" AND ");
-
-      const diffCondition = nonPrimaryCols
-        .map(col => `${t1}.${q(col)} IS DISTINCT FROM ${t2}.${q(col)}`)
-        .join(" OR ");
-
-      // Optional single-PK filter: on the atomic degradation path this before-image runs in the
-      // SAME transaction as a single-PK merge, so it is scoped to that one row's primary key.
-      const params: any[] = [];
-      // Non-filtered query is byte-identical to the pre-existing history INSERT (`WHERE <diff>`);
-      // only when a single-PK filter is supplied is the diff parenthesised and ANDed.
-      let whereClause = diffCondition;
-      if (pkFilter) {
-        const pkFilterClause = primaryKeys.map(pk => { params.push(pkFilter[pk]); return `${t1}.${q(pk)} = $${params.length}`; }).join(" AND ");
-        whereClause = `(${diffCondition}) AND ${pkFilterClause}`;
-      }
-
-      // INNER JOIN (not LEFT): a before-image only for rows the merge will update — present in BOTH
-      // the real table and this batch. A LEFT JOIN kept every real-table row; for a row absent from
-      // the batch t2 is all NULL, `t1.col IS DISTINCT FROM NULL` is TRUE, and it was wrongly
-      // historised — recording the whole unchanged table on every incremental load (A2).
-      const query = `
-        INSERT INTO ${schemaPrefix}${q(historyTable)} (${valuesCols}, "dwh_as_at")
-        SELECT ${selectCols}, CURRENT_TIMESTAMP
-        FROM ${schemaPrefix}${q(table)} ${t1}
-        INNER JOIN ${schemaPrefix}${q(tempTable)} ${t2}
-          ON ${joinCondition}
-        WHERE ${whereClause};
-        `.trim();
-      return {
-        query,
-        params
-      };
+        const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
+        return buildHistoryQuery(resolveHistoryInput(tableOrInput, metaData), schemaPrefix, HISTORY_HOOKS, pkFilter);
     }
-
 }
