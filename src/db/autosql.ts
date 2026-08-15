@@ -952,17 +952,25 @@ export class AutoSQLHandler {
 
           const row = result?.results?.[0] || {};
           const violatingIndexes: string[] = [];
+          const dropUniques = this.db.getConfig().dropUniqueConstraints === true;
 
           for (const [indexName, count] of Object.entries(row)) {
             const numericCount = typeof count === "string" ? parseInt(count) : Number(count);
             if (numericCount > 0) {
                 violatingIndexes.push(indexName);
-                tableConstraintsQueries.push(this.db.getDropUniqueConstraintQuery(table, indexName))
+                // Only queue the DROP when opted in (A10). Off (default) → keep the constraint; the
+                // merge then fails loud / diverts on the collision.
+                if (dropUniques) tableConstraintsQueries.push(this.db.getDropUniqueConstraintQuery(table, indexName))
             }
           }
 
           if (violatingIndexes.length) {
-            removeConstraintsQuery.push(tableConstraintsQueries)
+            if (dropUniques) {
+              this.db.warn(`resolveConflicts: dropping UNIQUE constraint(s) [${violatingIndexes.join(", ")}] on '${table}' — staged data violates them and dropUniqueConstraints is on.`);
+              removeConstraintsQuery.push(tableConstraintsQueries)
+            } else {
+              this.db.warn(`resolveConflicts: staged data for '${table}' violates UNIQUE constraint(s) [${violatingIndexes.join(", ")}], but dropUniqueConstraints is off — the constraint(s) are KEPT and the merge will fail (or divert to rejectedRowsTable if configured) on the colliding rows. Set dropUniqueConstraints: true to auto-drop them instead.`);
+            }
           }
         }
 

@@ -302,7 +302,9 @@ export class MySQLDatabase extends Database {
         }
 
         let indexesToDrop: string[] = [];
-        if (alterTableChanges.noLongerUnique.length > 0) {
+        // Only drop the unique when the caller opted in (A10). Off (default) → keep it; the load fails
+        // loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
+        if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {
             const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
         
             if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {

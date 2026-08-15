@@ -175,6 +175,17 @@ export interface DatabaseConfig {
       safeMode?: boolean;
       deleteColumns?: boolean;
 
+      /**
+       * Allow autosql to DROP a UNIQUE constraint when incoming data would violate it — either staged
+       * data colliding with an existing unique (resolveConflicts) or a batch containing duplicates in
+       * a previously-unique column. Default false (safe): the constraint is KEPT and the load fails
+       * loud (or diverts to `rejectedRowsTable`) on the colliding rows, rather than silently and
+       * permanently removing a uniqueness guarantee — including a user-defined one — based on one
+       * batch's data. Set true to auto-drop (a warning naming the constraint is logged either way).
+       * Mirrors `deleteColumns` / `updatePrimaryKey`.
+       */
+      dropUniqueConstraints?: boolean;
+
       autoSplit?: boolean;
 
       addTimestamps?: boolean;
@@ -366,6 +377,14 @@ export interface SSHKeys {
   password?: string;
   private_key_path?: string;
   private_key?: string;
+  /**
+   * Expected OpenSSH host-key fingerprint of the SSH server, e.g. "SHA256:abc123…" (obtain via
+   * `ssh-keyscan -t ed25519 <host> | ssh-keygen -lf -`). When set, the tunnel VERIFIES the bastion's
+   * host key against it and refuses a mismatch — closing the MITM window (ssh2 does NO verification by
+   * default). When omitted, the tunnel still connects but logs a loud warning that its identity is
+   * unverified. The "SHA256:" prefix and trailing base64 padding are optional.
+   */
+  hostFingerprint?: string;
   timeout?: number;
   debug?: boolean;
   source_address?: string;

@@ -17,6 +17,7 @@ const CONFIG: DatabaseConfig = {
     port: 1433,
     useWorkers: false,
     addTimestamps: false,
+    dropUniqueConstraints: true, // this suite exercises the auto-drop, now opt-in (A10)
 };
 
 const qi = (n: string) => escapeIdentifier(n, "sqlserver");

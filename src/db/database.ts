@@ -83,6 +83,9 @@ export abstract class Database {
         if (changes.primaryKeyChanges?.length && !this.config.updatePrimaryKey) {
             this.warn(`Schema change not applied to '${table}': a primary-key change is pending (${changes.primaryKeyChanges.join(", ")}) but 'updatePrimaryKey' is off. Set updatePrimaryKey: true to apply it.`);
         }
+        if (changes.noLongerUnique?.length && !this.config.dropUniqueConstraints) {
+            this.warn(`Schema change not applied to '${table}': ${changes.noLongerUnique.length} column(s) (${changes.noLongerUnique.join(", ")}) now contain duplicate values that would require DROPPING their UNIQUE constraint, but 'dropUniqueConstraints' is off. The constraint is KEPT (the load may then fail on the duplicate rows); set dropUniqueConstraints: true to relax it.`);
+        }
     }
 
     /**
@@ -134,7 +137,7 @@ export abstract class Database {
         while (attempts < maxAttempts) {
             try {
                 if (this.config.sshConfig) {
-                    const { stream, sshClient } = await setSSH(this.config.sshConfig);
+                    const { stream, sshClient } = await setSSH(this.config.sshConfig, this.config.logger);
                     this.config.sshStream = stream;
                     this.config.sshClient = sshClient;
                 }

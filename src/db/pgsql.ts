@@ -309,7 +309,9 @@ export class PostgresDatabase extends Database {
 
         // ✅ Only fetch unique indexes if there are columns to remove uniqueness from
         let indexesToDrop: string[] = [];
-        if (alterTableChanges.noLongerUnique.length > 0) {
+        // Only drop the unique when the caller opted in (A10). Off (default) → keep it; the load fails
+        // loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
+        if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {
             // Extract the results from the QueryResult response
             const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
         

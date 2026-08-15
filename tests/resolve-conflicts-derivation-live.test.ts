@@ -21,7 +21,8 @@ Object.values(DB_CONFIG).forEach((config) => {
         const ref = `${qi("test_schema")}.${qi(TABLE)}`;
         const tempRef = `${qi("test_schema")}.${qi("temp_staging__" + TABLE)}`;
 
-        const baseConfig = { ...config, schema: "test_schema", useWorkers: false, addTimestamps: false };
+        // This suite exercises the auto-drop of a colliding unique, which is now opt-in (A10).
+        const baseConfig = { ...config, schema: "test_schema", useWorkers: false, addTimestamps: false, dropUniqueConstraints: true };
         let admin: Database;
 
         beforeAll(async () => {

@@ -71,6 +71,24 @@
   rejection and crash a caller relying on the "always resolves to a result" contract. It now returns
   `{ success: false }` like every other failure.
 
+### 🔒 Security
+- **SSH tunnels now verify the host key (A7).** The `ssh2` tunnel performed **no** host-key
+  verification — it accepted whatever key the server presented, so the tunnel that protects the DB
+  credentials in transit was silently MITM-able. New `SSHKeys.hostFingerprint` (OpenSSH `SHA256:…`
+  form, from `ssh-keyscan <host> | ssh-keygen -lf -`) pins the bastion's key and refuses a mismatch;
+  when it's omitted the tunnel still connects but logs a loud warning that its identity is unverified
+  (parity with the TLS `rejectUnauthorized: false` warning). Also: `setSSH` no longer mutates the
+  caller's `sshKeys` object, and SSH debug output routes through the configured logger, not `console`.
+
+### ⚠️ Behavior change
+- **Unique constraints are no longer auto-dropped without opt-in (A10).** When incoming data collided
+  with a `UNIQUE` constraint (staged data hitting an existing unique, or a batch with duplicates in a
+  previously-unique column), autosql **silently and permanently dropped the constraint** — including a
+  user-defined one — to force the load through. This is now gated behind **`dropUniqueConstraints`
+  (default `false`)**, mirroring `deleteColumns`/`updatePrimaryKey`: by default the constraint is kept
+  and a warning is logged naming it (the load then fails loud on Postgres, or upserts on the secondary
+  unique on MySQL); set `dropUniqueConstraints: true` to restore the auto-drop (still warned).
+
 ### 🔧 Maintenance
 - **Tests run in a non-UTC timezone by default** (`TZ=Australia/Sydney`, overridable) so
   timezone-sensitive bugs like A1 can't hide behind a UTC-only CI host; the date tests assert a
