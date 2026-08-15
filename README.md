@@ -195,6 +195,10 @@ export interface DatabaseConfig {
   // unaffected. Omit to store zoneless values as-is (wall-clock preserved, no zone assumed).
   sourceTimeZone?: string;
 
+  // Allow autosql to DROP a UNIQUE constraint when incoming data would violate it (default false =
+  // keep the constraint + warn; the load fails loud / diverts on the collision). Opt in to auto-drop.
+  dropUniqueConstraints?: boolean;
+
   // Sampling controls
   sampling?: number; // If provided data exceeds samplingMinimum rows, we sample this % of values for identifying uniques and column types — defaults to 0, allows values between 0 and 1
   samplingMinimum?: number; // If provided data exceeds this row count, sampling kicks in — defaults to 100

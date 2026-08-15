@@ -1,8 +1,18 @@
 ## [Unreleased]
 
-> Audit remediation (batch 1) from two independent code audits of 2.1.0, plus a requested timezone
-> override for going global. Focus: silent-data-corruption fixes on the insert/history paths. All are
-> correctness fixes; no consumer should depend on the previous (corrupt) output.
+## [2.2.0] - 2026-08-16
+
+> **Audit-remediation release.** Two independent code audits of 2.1.0 (Opus + Fable) produced 25
+> prioritised findings; this release fixes all of them (or defers a few with documented rationale),
+> plus a requested `sourceTimeZone` override for going global. The headline is **silent
+> data-corruption fixes** (timezone shifting, decimal truncation, history over-capture, introspected
+> defaults bound as values) and **fail-loud hardening** (no more silently-dropped rejected rows,
+> false-positive drift, or worker crashes). Also: SSH host-key verification, an opt-in unique-drop
+> gate, cross-dialect upsert/DDL consistency, and internal test/refactor guardrails (a non-UTC test
+> zone, a DB preflight health check, a cross-dialect conformance matrix, and unified insert builders).
+> Backwards-compatible with 2.1.0 except for the documented behaviour changes below — each is a
+> correctness fix or a new default-safe gate; the pre-existing corrupt/silent behaviour is the only
+> thing that changes.
 
 ### ✨ New
 - **`DatabaseConfig.sourceTimeZone` — opt-in timezone override for zoneless datetimes.** Set an IANA
