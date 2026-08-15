@@ -95,6 +95,27 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         if ((merged.thousandsSeparator === undefined) !== (merged.decimalSeparator === undefined)) {
             throw new Error("thousandsSeparator and decimalSeparator must be provided together.");
         }
+        if (merged.numberFormat !== undefined) {
+            // numberFormat is pure sugar: resolve it to thousandsSeparator/decimalSeparator here so it
+            // flows through the SAME fields the load path (sqlize) already reads — no new plumbing. IN
+            // shares US separators; Indian lakh/crore grouping is accepted by normalizeNumber's
+            // Western/Indian validation automatically.
+            const NUMBER_FORMATS: Record<string, { thousands: string; decimal: string }> = {
+                US: { thousands: ",", decimal: "." },
+                IN: { thousands: ",", decimal: "." },
+                EU: { thousands: ".", decimal: "," },
+            };
+            const preset = NUMBER_FORMATS[merged.numberFormat];
+            if (!preset) {
+                throw new Error(`Invalid numberFormat "${merged.numberFormat}": expected one of ${Object.keys(NUMBER_FORMATS).join(", ")}.`);
+            }
+            // Explicit separators win. They must be supplied together (enforced above), so checking
+            // one is enough; only fill from the preset when the caller gave neither.
+            if (merged.thousandsSeparator === undefined) {
+                merged.thousandsSeparator = preset.thousands;
+                merged.decimalSeparator = preset.decimal;
+            }
+        }
         if (merged.sourceTimeZone !== undefined) {
             // Validate the zone up front (fail loud). A bad zone would otherwise surface per-row inside
             // sqlize's try/catch, which swallows and returns the raw value — a silent skip of the
@@ -154,7 +175,7 @@ export function calculateColumnLength(column: any, dataPoint: string, sqlLookupT
     }
 }
 
-export function normalizeNumber(input: any, thousandsIndicatorOverride?: string, decimalIndicatorOverride?: string): string | null {
+export function normalizeNumber(input: any, thousandsIndicatorOverride?: string, decimalIndicatorOverride?: string, onAmbiguousSeparator?: () => void): string | null {
     if ((thousandsIndicatorOverride && !decimalIndicatorOverride) || (!thousandsIndicatorOverride && decimalIndicatorOverride)) {
         throw new Error("Both 'thousandsIndicatorOverride' and 'decimalIndicatorOverride' must be provided together.");
     }
@@ -249,6 +270,18 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         // Only one separator exists, assume it is the decimal separator
         thousandsIndicator = "";
         decimalIndicator = dotCount === 1 ? "." : ",";
+        // A24c: a lone separator followed by exactly three digits (with 1–3 leading digits) is the
+        // one shape that could equally be a Western/Indian thousands group (e.g. "1,234" -> 1234) —
+        // in BOTH formats the trailing group is 3 digits (Indian's 2-digit groups are only ever
+        // middle groups, never trailing). We still assume decimal, but signal the ambiguity so the
+        // caller can warn. Anything else (2 trailing digits, 4+, or >3 leading) is an unambiguous
+        // decimal in every locale and stays silent.
+        if (onAmbiguousSeparator) {
+            const [before, after] = inputStr.split(decimalIndicator);
+            if (after !== undefined && after.length === 3 && before.length >= 1 && before.length <= 3) {
+                onAmbiguousSeparator();
+            }
+        }
     }
 
     const decimalSplit = inputStr.split(decimalIndicator);

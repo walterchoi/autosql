@@ -259,6 +259,22 @@ export interface DatabaseConfig {
       decimalSeparator?: string;
 
       /**
+       * Regional number-format preset — sugar over `thousandsSeparator`/`decimalSeparator`
+       * that resolves to those fields in `validateConfig`, so it flows to BOTH type inference
+       * and value storage. Use it when you know the source locale and want lone-separator
+       * values disambiguated (e.g. `"US"` reads "1,234" as 1234; `"EU"` reads "1.234" as 1234).
+       *
+       *  - `"US"` / `"IN"` — thousands `","`, decimal `"."` (Indian lakh/crore grouping is
+       *    accepted automatically; it shares US separators).
+       *  - `"EU"` — thousands `"."`, decimal `","`.
+       *
+       * Explicit `thousandsSeparator`/`decimalSeparator` take precedence when both are supplied.
+       * Omit to use the auto-detection heuristic (a lone separator is treated as decimal, with a
+       * one-per-run warning for the genuinely ambiguous "1,234"-style case).
+       */
+      numberFormat?: "US" | "EU" | "IN";
+
+      /**
        * IANA time zone (e.g. "America/New_York", "Australia/Sydney", "UTC") that ZONELESS datetime
        * inputs should be interpreted as. When set, a value with no offset (e.g. "2024-01-15 12:00:00")
        * is treated as local time in this zone and converted to a UTC instant before storage. Inputs
