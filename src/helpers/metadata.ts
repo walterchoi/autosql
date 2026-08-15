@@ -244,6 +244,18 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         }
     }
 
+    // A17: a column that first APPEARS partway through the sample never had the EARLIER rows counted as
+    // nulls for it (it wasn't in `allColumns` yet). Without this, a sparse column (present in a few rows,
+    // absent in many) looks NOT-NULL and fully-unique — a spurious PRIMARY-KEY candidate that the very
+    // same batch then fails to insert. Reconcile: every row scanned before a column's first value counts
+    // as a null, so the column is correctly inferred nullable (and thus not a PK).
+    const totalSampledRows = sampleData.length;
+    for (const column in metaDataInterim) {
+        const interim = metaDataInterim[column];
+        const seen = interim.valueCount + interim.nullCount;
+        if (seen < totalSampledRows) interim.nullCount += totalSampledRows - seen;
+    }
+
     for (const column in metaDataInterim) {
         // forceStringColumns always resolve to varchar, booleanColumns always to boolean,
         // regardless of observed types (0/1 would otherwise infer as int).

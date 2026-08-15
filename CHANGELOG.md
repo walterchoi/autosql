@@ -79,6 +79,15 @@
   table references by splitting on `.` instead of routing through `escapeIdentifier`, which corrupted any
   schema/table name containing a dot and bypassed the identifier guards; it now escapes schema and table
   the same way the rest of the engine does.
+- **Sparse columns are inferred as nullable, not spuriously NOT-NULL/unique (A17).** A column that first
+  appeared partway through the data had its earlier absences uncounted, so it looked NOT-NULL and unique
+  — a spurious primary-key candidate the same batch then failed to insert. Rows before a column's first
+  value now count as nulls, so it infers nullable.
+- **Streaming (`openStream`) no longer silently drops columns or mangles objects (A18).** A key that first
+  appeared in a later row/chunk was silently dropped (its column didn't exist in the staging table); the
+  first chunk's columns are now the union of its rows, and a genuinely new later column fails loud instead
+  of vanishing. Object/array values are JSON-serialised (were becoming `"[object Object]"`), matching the
+  `autoSQL` batch path.
 
 ### 🛡️ Robustness
 - **`runTransaction` never rejects, even on connection-pool failure (A16).** The pool acquire was

@@ -1697,6 +1697,7 @@ export class AutoSQLStreamHandle {
     private schema: string | undefined;
     private primaryKey: string[] | undefined;
     private columns: string[] | null = null;
+    private columnSet: Set<string> | null = null;
     private stagingCreated = false;
     private ended = false;
 
@@ -1736,14 +1737,29 @@ export class AutoSQLStreamHandle {
             const config = this.db.getConfig();
 
             if (!this.stagingCreated) {
-                // Derive columns from first row
-                this.columns = Object.keys(chunk[0]);
+                // Derive columns from the UNION of the first chunk's rows — not just chunk[0], which
+                // would silently drop any key that first appears in a later row of the same chunk (A18).
+                const cols = new Set<string>();
+                for (const row of chunk) for (const k of Object.keys(row)) cols.add(k);
+                this.columns = [...cols];
+                this.columnSet = cols;
                 const createQ = buildCreateStreamStagingTableQuery(this.stagingTable, this.columns, config);
                 const createResult = await this.db.runTransaction([createQ]);
                 if (!createResult.success) {
                     throw new Error(`autoSQLStream: failed to create stream staging table '${this.stagingTable}': ${createResult.error}`);
                 }
                 this.stagingCreated = true;
+            }
+
+            // The staging table's columns are fixed at creation. A key that first appears in a LATER
+            // row/chunk has no column to land in and would be silently dropped (data loss) — fail loud
+            // instead so the caller keeps a stable column set or starts a separate load (A18).
+            for (const row of chunk) {
+                for (const k of Object.keys(row)) {
+                    if (!this.columnSet!.has(k)) {
+                        throw new Error(`autoSQLStream: row has column '${k}' that was not present when the stream started (columns: ${this.columns!.join(', ')}). A stream requires a stable column set — include '${k}' in the first written rows, or use a separate stream/load for it.`);
+                    }
+                }
             }
 
             const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, chunk, config);
