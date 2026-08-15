@@ -412,7 +412,9 @@ export function isCombinationUnique(data: Record<string, any>[], columns: string
     const seenValues = new Set<string>();
 
     for (const row of data) {
-        const key = columns.map(col => row[col]).join("|");
+        // JSON-encode the tuple (A24) so the composite key is unambiguous: a plain "|" join collides on
+        // an embedded "|", coerces null to "" (conflating null vs empty), and reads 1 the same as "1".
+        const key = JSON.stringify(columns.map(col => row[col] ?? null));
         if (seenValues.has(key)) return false;
         seenValues.add(key);
     }
@@ -473,7 +475,12 @@ export function isMetadataHeader(input: any): input is MetadataHeader {
 
 export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supportedDialects): { rowSize: number; exceedsLimit: boolean, nearlyExceedsLimit: boolean } {
     let totalSize = 0;
-  
+    // Row-size limits are counted in BYTES, but a varchar char can be multi-byte: utf8mb4 (MySQL) up to
+    // 4, SQL Server NVARCHAR is UTF-16 = 2. Scale the declared CHAR length by the dialect's max bytes per
+    // char so a wide table is measured against the byte limit correctly — otherwise autoSplit
+    // under-triggers on multibyte-capable columns (A25).
+    const varcharBytesPerChar = dbType === "mysql" ? 4 : dbType === "sqlserver" ? 2 : 1;
+
     for (const columnName in mergedMetaData) {
       const column = mergedMetaData[columnName];
       const type = column.type?.toLowerCase() || "varchar";
@@ -491,7 +498,7 @@ export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supporte
       } else if (["decimal", "double", "exponent"].includes(type)) {
         columnSize = column.decimal ? Math.ceil(column.decimal / 2) + 1 : DEFAULT_LENGTHS.decimal;
       } else if (["varchar"].includes(type)) {
-        columnSize = column.length ?? DEFAULT_LENGTHS.varchar;
+        columnSize = (column.length ?? DEFAULT_LENGTHS.varchar) * varcharBytesPerChar;
       } else if (["text", "mediumtext", "longtext", "json"].includes(type)) {
         columnSize = DEFAULT_LENGTHS[type as keyof typeof DEFAULT_LENGTHS] ?? 4; // Only store pointer size
       } else if (["date"].includes(type)) {

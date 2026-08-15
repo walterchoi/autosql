@@ -129,6 +129,9 @@ export abstract class Database {
     // statements (START/…/COMMIT/ROLLBACK) on the same connection.
     protected abstract acquireConnection(): Promise<any>;
     protected abstract releaseConnection(client: any): void;
+    // Discard a connection instead of returning it to the pool — used when a ROLLBACK failed, so the
+    // next borrower isn't handed a connection stuck in an aborted-transaction state (A24).
+    protected abstract destroyConnection(client: any): void;
 
     public async establishConnection(): Promise<void> {
         let attempts = 0;
@@ -363,6 +366,7 @@ export abstract class Database {
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             let client: any;
+            let rollbackFailed = false;
             let results: any[] = [];
             let totalAffectedRows = 0;
             try {
@@ -396,6 +400,7 @@ export abstract class Database {
                     try {
                         await this.rollback(client);
                     } catch (rollbackError) {
+                        rollbackFailed = true;
                         this.error(`Rollback failed: ${rollbackError}`);
                     }
                 }
@@ -407,7 +412,12 @@ export abstract class Database {
                 }
                 await new Promise(res => setTimeout(res, 1000)); // Wait before retrying the whole transaction
             } finally {
-                if (client) this.releaseConnection(client);
+                if (client) {
+                    // A failed rollback leaves the connection dirty (esp. Postgres: aborted transaction);
+                    // destroy it rather than return a poisoned connection to the pool (A24).
+                    if (rollbackFailed) this.destroyConnection(client);
+                    else this.releaseConnection(client);
+                }
             }
         }
 

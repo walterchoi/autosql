@@ -89,6 +89,17 @@
   of vanishing. Object/array values are JSON-serialised (were becoming `"[object Object]"`), matching the
   `autoSQL` batch path.
 
+### 🔧 Maintenance / robustness (low-severity audit items)
+- **`openStream` fails fast on SQL Server (A20)** instead of emitting Postgres-shaped SQL that failed
+  mid-stream (streaming parity is deferred). **SQL Server unrecoverable connect errors (login failed /
+  cannot open database) are now classified and no longer retried (A21).** **The single-statement guard
+  (`isValidSingleQuery`) is now a proper tokenizer (A23)** — it no longer mis-parses comments straddling
+  string literals, doubled quotes, or dollar-quoting (defense-in-depth on caller-supplied SQL only).
+  **A connection whose `ROLLBACK` failed is now discarded rather than returned to the pool (A24)**, so a
+  later query can't inherit an aborted-transaction connection. **Composite-key uniqueness checks are now
+  unambiguous (A24)**, and **`estimateRowSize` counts varchar bytes per dialect (A25)** so table
+  auto-splitting doesn't under-trigger on multibyte columns.
+
 ### 🛡️ Robustness
 - **`runTransaction` never rejects, even on connection-pool failure (A16).** The pool acquire was
   awaited outside the retry guard, so pool exhaustion / an acquire timeout could escape as an unhandled

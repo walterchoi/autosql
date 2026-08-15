@@ -223,6 +223,12 @@ export class PostgresDatabase extends Database {
         if (client) client.release();
     }
 
+    protected destroyConnection(client: PoolClient): void {
+        // release(true) removes the client from the pool (A24) — a client whose rollback failed is in an
+        // aborted-transaction state and must not be handed to the next borrower.
+        if (client) { try { client.release(true); } catch { /* already broken */ } }
+    }
+
     protected async executeQuery(query: string, client?: PoolClient): Promise<any>;
     protected async executeQuery(QueryInput: QueryInput, client?: PoolClient): Promise<any>;
     protected async executeQuery(queryOrParams: QueryInput, client?: PoolClient): Promise<{ rows: any[]; affectedRows: number }> {

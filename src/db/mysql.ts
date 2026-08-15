@@ -210,6 +210,11 @@ export class MySQLDatabase extends Database {
         if (client) client.release();
     }
 
+    protected destroyConnection(client: PoolConnection): void {
+        // Discard rather than return to the pool (A24) — after a failed rollback the connection may be dirty.
+        if (client) { try { client.destroy(); } catch { /* already broken */ } }
+    }
+
     protected async executeQuery(query: string, client?: PoolConnection): Promise<any>;
     protected async executeQuery(QueryInput: QueryInput, client?: PoolConnection): Promise<any>;
     protected async executeQuery(queryOrParams: QueryInput, client?: PoolConnection): Promise<{ rows: any[]; affectedRows: number }> {

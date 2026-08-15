@@ -1640,6 +1640,12 @@ export class AutoSQLHandler {
         primaryKey?: string[]
     ): Promise<AutoSQLStreamHandle> {
       return this.db.runWithSchema(schema, async () => {
+        // Streaming is deferred on SQL Server (D-F): the stream staging/merge/cleanup builders emit
+        // Postgres placeholders/DDL, so limping in would fail with a confusing mid-stream error (and
+        // never clean up its staging table). Fail loud up front instead (A20).
+        if (this.db.getConfig().sqlDialect === 'sqlserver') {
+            throw new Error("openStream is not yet supported on SQL Server (streaming parity is deferred — see roadmap D-F). Use autoSQL/autoSQLChunked instead.");
+        }
         // Connectivity check — surfaces auth/connection errors before first write
         const ping = await this.db.runQuery({ query: 'SELECT 1', params: [] });
         if (!ping.success) {
