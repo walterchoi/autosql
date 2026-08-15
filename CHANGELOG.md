@@ -24,7 +24,7 @@
   an invalid zone is rejected up front by `validateConfig`. Note: this normalises the stored *instant*
   for plain `datetime`/`timestamp`; full `timestamptz` offset round-tripping remains a separate item.
 
-### ⚠️ Behavior change (all correctness fixes)
+### ⚠️ Behavior change
 - **Timezone-naive datetimes are no longer shifted by the host's UTC offset (A1).** `sqlize` parsed a
   zoneless datetime string through `new Date()`, which reads it in the **Node process's local zone**,
   then re-emitted UTC — so the same input was stored differently depending on where the process ran
@@ -39,6 +39,13 @@
   already-truncated digits. Rounding is now exact half-up (away from zero, matching MySQL/Postgres),
   computed with string/digit arithmetic so it is correct at any magnitude. (This supersedes the
   `precision > 15` truncation fallback from 2.0.0's D-G, which existed only to avoid float error.)
+- **Unique constraints are no longer auto-dropped without opt-in (A10).** When incoming data collided
+  with a `UNIQUE` constraint (staged data hitting an existing unique, or a batch with duplicates in a
+  previously-unique column), autosql **silently and permanently dropped the constraint** — including a
+  user-defined one — to force the load through. This is now gated behind **`dropUniqueConstraints`
+  (default `false`)**, mirroring `deleteColumns`/`updatePrimaryKey`: by default the constraint is kept
+  and a warning is logged naming it (the load then fails loud on Postgres, or upserts on the secondary
+  unique on MySQL); set `dropUniqueConstraints: true` to restore the auto-drop (still warned).
 
 ### 🐛 Bug Fixes
 - **Row-level history no longer records unchanged rows on incremental loads (A2).** The before-image
@@ -99,17 +106,6 @@
   of vanishing. Object/array values are JSON-serialised (were becoming `"[object Object]"`), matching the
   `autoSQL` batch path.
 
-### 🔧 Maintenance / robustness (low-severity audit items)
-- **`openStream` fails fast on SQL Server (A20)** instead of emitting Postgres-shaped SQL that failed
-  mid-stream (streaming parity is deferred). **SQL Server unrecoverable connect errors (login failed /
-  cannot open database) are now classified and no longer retried (A21).** **The single-statement guard
-  (`isValidSingleQuery`) is now a proper tokenizer (A23)** — it no longer mis-parses comments straddling
-  string literals, doubled quotes, or dollar-quoting (defense-in-depth on caller-supplied SQL only).
-  **A connection whose `ROLLBACK` failed is now discarded rather than returned to the pool (A24)**, so a
-  later query can't inherit an aborted-transaction connection. **Composite-key uniqueness checks are now
-  unambiguous (A24)**, and **`estimateRowSize` counts varchar bytes per dialect (A25)** so table
-  auto-splitting doesn't under-trigger on multibyte columns.
-
 ### 🛡️ Robustness
 - **`runTransaction` never rejects, even on connection-pool failure (A16).** The pool acquire was
   awaited outside the retry guard, so pool exhaustion / an acquire timeout could escape as an unhandled
@@ -122,6 +118,14 @@
   single-table load skips workers entirely (no thread/connection-pool overhead). Workers are now shut
   down gracefully — each closes its database connections before the thread is terminated — instead of
   being killed abruptly and leaking server-side connections on every worker-backed load.
+- **Assorted low-severity hardening.** `openStream` fails fast on SQL Server (A20) instead of emitting
+  Postgres-shaped SQL that failed mid-stream; SQL Server unrecoverable connect errors (login failed /
+  cannot open database) are classified and no longer retried (A21); the single-statement guard
+  (`isValidSingleQuery`) is now a proper tokenizer (A23) that no longer mis-parses comments straddling
+  string literals, doubled quotes, or dollar-quoting; a connection whose `ROLLBACK` failed is discarded
+  rather than returned to the pool (A24); composite-key uniqueness checks are unambiguous (A24); and
+  `estimateRowSize` counts varchar bytes per dialect (A25) so table auto-splitting doesn't under-trigger
+  on multibyte columns.
 
 ### 🔒 Security
 - **SSH tunnels now verify the host key (A7).** The `ssh2` tunnel performed **no** host-key
@@ -131,15 +135,6 @@
   when it's omitted the tunnel still connects but logs a loud warning that its identity is unverified
   (parity with the TLS `rejectUnauthorized: false` warning). Also: `setSSH` no longer mutates the
   caller's `sshKeys` object, and SSH debug output routes through the configured logger, not `console`.
-
-### ⚠️ Behavior change
-- **Unique constraints are no longer auto-dropped without opt-in (A10).** When incoming data collided
-  with a `UNIQUE` constraint (staged data hitting an existing unique, or a batch with duplicates in a
-  previously-unique column), autosql **silently and permanently dropped the constraint** — including a
-  user-defined one — to force the load through. This is now gated behind **`dropUniqueConstraints`
-  (default `false`)**, mirroring `deleteColumns`/`updatePrimaryKey`: by default the constraint is kept
-  and a warning is logged naming it (the load then fails loud on Postgres, or upserts on the secondary
-  unique on MySQL); set `dropUniqueConstraints: true` to restore the auto-drop (still warned).
 
 ### 🔧 Maintenance
 - **Tests run in a non-UTC timezone by default** (`TZ=Australia/Sydney`, overridable) so
