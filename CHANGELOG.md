@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+## [2.1.0] - 2026-08-15
+
+> Adds encrypted-connection support (`ssl`, all three dialects) and BYOD/least-privilege hardening:
+> structured `errorCode`, up-front identifier-length validation, and documented non-destructive
+> operating guarantees. Backwards-compatible with 2.0.0 (the identifier check only affects names that
+> previously failed mid-load or were silently truncated by Postgres).
+
 ### ✨ New
 - **TLS/`ssl` passthrough for the connection (`DatabaseConfig.ssl`).** Previously only an SSH tunnel (`sshConfig`) could encrypt the connection; there was no way to connect over direct TLS (e.g. a managed Postgres / RDS that requires SSL, or a customer MySQL host). `ssl` accepts `true` (enable TLS with default verification) or an object (`ca`, `cert`, `key`, `rejectUnauthorized`, `servername`). **Works on all three dialects:** MySQL (`mysql2`) and Postgres (`pg`) receive it as the driver `ssl` object (mysql2 rejects `ssl: true`, so it's normalised to `{}`); **SQL Server maps it automatically** onto the `mssql` driver's `encrypt` / `trustServerCertificate` / `cryptoCredentialsDetails` (custom CA, mutual TLS, SNI) options — so the same `{ ca, rejectUnauthorized }` config works everywhere. `rejectUnauthorized: false` logs a warning that verification is off. Omitted **or `false`** → byte-for-byte the previous plaintext behaviour. Verified live against all three databases (a real encrypted session + rejection of an untrusted self-signed cert).
 - **SQL Server now honors `DatabaseConfig.ssl`** — it is mapped automatically onto the `mssql` driver's TLS options (`encrypt` / `trustServerCertificate` / `cryptoCredentialsDetails`), so the same `{ ca, rejectUnauthorized }` config works on SQL Server as on MySQL/Postgres (see the `ssl` entry above).
