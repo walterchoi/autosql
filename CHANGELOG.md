@@ -17,12 +17,9 @@
   config. It's **self-contained** (reads only the batch — no extra DB queries), resolved once per load
   and **locked** (across chunks only column lengths grow, never the format), logs the detected format
   via `logger.log`, and falls back to assume-decimal + the A24c warning when evidence is absent or
-  genuinely contradictory. `numberFormatMinEvidence` (default 1) raises the vote floor. Applies to the
-  **bulk load paths** of `autoSQL` / `autoSQLChunked` (staging populate and direct insert, which
-  sqlize). It does **not** apply to `openStream`, nor to the **per-row degradation fallback**
-  (`perRowInsertWithRetry`) — both store values via DB `CAST` / raw parameter binding without
-  `normalizeNumber`, so separators (consensus *or* `numberFormat`) have no effect there. Those paths
-  need already-normalized numeric values; making them sqlize is a separate follow-up.
+  genuinely contradictory. `numberFormatMinEvidence` (default 1) raises the vote floor. Applies to
+  `autoSQL`, `autoSQLChunked` **and `openStream`** — separators now flow through every load path,
+  including the per-row degradation fallback (see the Bug Fixes entry below).
 
 ### 🛡️ Robustness
 - **Ambiguous single-separator numbers now warn once per column (A24c).** A lone `,` or `.` followed by
@@ -32,6 +29,16 @@
   one-per-run warning (via `logger.warn`) naming the affected **numeric** column(s), so you can set
   `numberFormat` / separators when the guess is wrong. Suppressed when separators are supplied; silent
   for text columns that merely contain such a value.
+
+### 🐛 Bug Fixes
+- **The per-row degradation fallback now normalizes values like the bulk path (`sqlize`).**
+  `perRowInsertWithRetry` built its INSERT from raw row objects (no `sqlize`), while the bulk direct
+  path normalizes them — so when a load *degraded to per-row*, values were stored differently (or
+  rejected): a locale number like `"1,234"`/`"1.234"`, a decimal needing half-up rounding, a
+  timezone-normalized datetime, a canonicalized boolean. It now pre-sqlizes each row exactly as the
+  bulk path does, so degradation stores identical values. This also makes **`openStream` honour
+  `numberFormat` and consensus** — a stream's bulk merge is a DB `CAST` that rejects grouped numbers
+  and always degrades to per-row, which previously bound them raw.
 
 ## [2.2.0] - 2026-08-16
 
