@@ -734,7 +734,14 @@ export class AutoSQLHandler {
             const failures: { row: Record<string, any>; error: string }[] = [];
 
             for (const row of pendingRows) {
-                const insertQ = this.db.getInsertStatementQuery(table, [row], workingMeta, insertType);
+                // Pre-sqlize the row the same way the bulk direct path does (getInsertValues with
+                // sqlizeValues=true), so this degradation fallback normalizes values — number
+                // separators, decimal rounding, datetime/timezone, boolean canonicalization — exactly
+                // like the bulk path instead of binding them raw. Without this the fallback would store
+                // different values than a bulk insert would (e.g. a resolved "1,234" -> 1234 is rejected
+                // here as raw), and locale-formatted numbers could never land via degradation/streaming.
+                const normalisedRow = getInsertValues(workingMeta, row, this.db.getDialectConfig(), this.db.getConfig(), true);
+                const insertQ = this.db.getInsertStatementQuery(table, [normalisedRow], workingMeta, insertType);
                 // Single attempt: this loop already retries failed rows across rounds, so the internal
                 // retry would be redundant — and for insertType "INSERT" (non-idempotent) it could
                 // duplicate a row whose ambiguous failure actually applied server-side (A15).
