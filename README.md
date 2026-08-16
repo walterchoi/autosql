@@ -184,11 +184,14 @@ export interface DatabaseConfig {
   // characters. Convergent + best-effort (a failed CONVERT is logged, not fatal). Defaults to false.
   upgradeCharset?: boolean;
 
-  // Locale number parsing. Provide BOTH together to disambiguate single-separator values
-  // (e.g. thousandsSeparator: "." + decimalSeparator: "," parses "1.000" as 1000, not 1).
-  // Omit both to use the default heuristic.
+  // Locale number parsing (see "Number formats" below). Precedence: explicit separators (set BOTH
+  // together, e.g. thousandsSeparator: "." + decimalSeparator: "," parses "1.000" as 1000) >
+  // numberFormat preset > automatic dataset-level detection. Omit all three and autosql infers the
+  // format from the data, warning once per column only when a value is genuinely ambiguous.
   thousandsSeparator?: string;
   decimalSeparator?: string;
+  numberFormat?: 'US' | 'EU' | 'IN'; // Regional preset for the separators above. US/IN: "," thousands / "." decimal (Indian lakh/crore grouping accepted); EU: "." / ",". Explicit separators win.
+  numberFormatMinEvidence?: number;  // How many structural values a format needs before auto-detection trusts it — defaults to 1.
 
   // IANA zone (e.g. "America/New_York", "UTC") to interpret ZONELESS datetimes as, converting them
   // to a UTC instant on store. Zone-qualified inputs (…Z / +05:00) and date/time columns are
@@ -233,12 +236,14 @@ export interface DatabaseConfig {
   stagingPrefix?: string;       // Prefix for auto-created staging tables — defaults to "temp_staging__"
   historyTableSuffix?: string;  // Suffix for auto-created history tables — defaults to "__history"
 
-  // Logging — omit to suppress all output, pass `console` to restore default behaviour,
-  // or supply a structured logger ({ log, warn, error }).
+  // Logging — omit to suppress all output, pass `console` to restore default behaviour, or supply a
+  // structured logger. `stats` receives per-run metrics (QueryStats: rows, affectedRows, durationMs,
+  // rowsPerSecond, per-phase timings) — the same object returned on QueryResult.stats.
   logger?: {
     log?: (msg: string) => void;
     warn?: (msg: string) => void;
     error?: (msg: string) => void;
+    stats?: (stats: QueryStats) => void;
   };
 
   // Multi-writer safety (v1.0.5+)
@@ -325,7 +330,10 @@ const config: DatabaseConfig = {
     source_address: 'localhost',
     source_port: 3306,
     destination_address: 'remote_sql_host',
-    destination_port: 3306
+    destination_port: 3306,
+    // Verify the bastion's SSH host key to close the MITM window on the tunnel (recommended).
+    // Obtain with: ssh-keyscan -t ed25519 remote_host | ssh-keygen -lf -
+    hostFingerprint: 'SHA256:abc123…'
   }
 }
 
@@ -333,6 +341,8 @@ const config: DatabaseConfig = {
   await db.establishConnection();
   // Tunnel is now active and DB connection is routed through it
 ```
+
+**Host-key verification.** Set `hostFingerprint` to the SSH server's expected OpenSSH fingerprint (`"SHA256:…"`, prefix/padding optional) and autosql verifies the bastion's host key on connect and **refuses a mismatch** — otherwise the tunnel would trust any server on that address (a MITM window, since ssh2 does no verification by default). Omit it and the tunnel still connects but logs a **loud warning** that its identity is unverified.
 
 ---
 
@@ -495,7 +505,7 @@ Defaults to `false`.
   forceStringColumns: ['phone', 'zip_code', 'account_number', 'product_code']
   ```
 
-  Without this, a column containing `"14155550100"` would be inferred as `bigint`. With it, the column stays `varchar` and leading zeros, formatting, and string semantics are preserved.
+  Without this, a column containing `"14155550100"` would be inferred as `bigint`. With it, the column stays `varchar` and formatting and string semantics are preserved. Note: a value with a **leading zero** (e.g. `"01234"`, `"007"`) is *already* kept as text automatically — a leading zero marks an identifier, not a number — so `forceStringColumns` is only needed for numeric-looking IDs that have no leading zero.
 
 - `booleanColumns`: `string[]`
   Column names that should be typed `boolean`. By default (v2.0.0) a bare `0`/`1` infers as an **integer** — boolean is only inferred from real `true`/`false` — so keys/counts/coded categories aren't mis-typed. Use this hint for flags genuinely stored as `0`/`1`. An out-of-domain value (`2`, `"yes"`) in a hinted column **throws** rather than being silently coerced (forcing a value to boolean is lossy).
@@ -503,12 +513,19 @@ Defaults to `false`.
 - `decimalToVarchar`: `boolean`
   By default a decimal keeps the full scale the data needs, up to the dialect's numeric limit — precision is never silently lost. If you set `decimalMaxLength` to cap scale, values beyond the cap are rounded with a warning; enable `decimalToVarchar` to instead store the whole column as `varchar` (exact text) so no value is rounded. Defaults to `false`.
 
-- `thousandsSeparator`: `string` / `decimalSeparator`: `string`
-  Disambiguate locale number formats. By default a value with a single separator like `"1,000"` is treated as a decimal (`1.0`). Provide **both** (they must be set together) to parse explicitly — e.g. with `thousandsSeparator: "."` and `decimalSeparator: ","`, `"1.000"` parses as `1000` and `"1,5"` as `1.5`. Omit both to use the default heuristic.
+- **Number formats** — `numberFormat`: `'US' | 'EU' | 'IN'`, `thousandsSeparator` / `decimalSeparator`: `string`
+  autosql reads locale-formatted numbers (`"1,234.56"`, `"1.234,56"`, Indian `"12,34,567"`, Swiss `"1'234.50"`). The format is resolved with this precedence:
+
+  1. **Explicit separators** — set `thousandsSeparator` **and** `decimalSeparator` together to force it (e.g. `thousandsSeparator: '.'`, `decimalSeparator: ','` parses `"1.000"` as `1000`, `"1,5"` as `1.5`).
+  2. **`numberFormat` preset** — a friendlier shortcut for the pair: `'US'`/`'IN'` = `,` thousands / `.` decimal (Indian lakh/crore grouping accepted); `'EU'` = `.` / `,`.
+  3. **Automatic detection (zero-config)** — with none of the above set, autosql infers **one** format for the whole dataset from structural evidence pooled across all columns: a value that can only be one layout (e.g. `"1,234,567"` → comma must be thousands) resolves the ambiguous ones, so a sibling `"1,234"` stores as `1234`, not `1.234`. The detected format is logged via `logger.log`. When a lone-separator value like `"1,234"` is genuinely ambiguous and nothing resolves it, autosql assumes a decimal and emits a **one-per-column** warning via `logger.warn` — set `numberFormat`/separators to silence it. `numberFormatMinEvidence` (default `1`) raises how many structural values a format needs before it's trusted.
+
+  Applies to `autoSQL`, `autoSQLChunked`, and `openStream`.
 
   ```ts
-  // European-formatted input
+  // European-formatted input — explicit, or via the preset
   thousandsSeparator: '.', decimalSeparator: ','
+  // numberFormat: 'EU'
   ```
 
 - `sourceTimeZone`: `string`
@@ -594,10 +611,11 @@ This is the core interface for managing connections, generating queries, and exe
 
 #### 🔹 AutoSQL Methods (Exposed on `db`)
 
-- **`autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: { assumeSchema?: MetadataHeader })`**  
+- **`autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: { assumeSchema?: MetadataHeader, existingSchema?: MetadataHeader })`**  
   The simplest way to handle everything — metadata inference, schema changes, batching, inserting, history, workers, and nested structures — in one call.  
   Designed for production-ready automation and one-liner ingestion.  
-  Pass `options.assumeSchema` when you already know the schema (e.g. a mapped column spec) to **skip type inference**: columns it declares are authoritative (which also avoids inference footguns like small integers being read as boolean), and any undeclared columns are inferred as a fallback. Skipping inference is the main compute saving on recurring pipelines.
+  Pass `options.assumeSchema` when you already know the schema (e.g. a mapped column spec) to **skip type inference**: columns it declares are authoritative (which also avoids inference footguns like small integers being read as boolean), and any undeclared columns are inferred as a fallback. Skipping inference is the main compute saving on recurring pipelines.  
+  Returns a `QueryResult` with `affectedRows`, the resolved `metaData` (cache it and pass back as `existingSchema` to skip introspection next time), and per-run **`stats`** (`QueryStats`: `rows`, `affectedRows`, `durationMs`, `rowsPerSecond`, and per-phase `prepare`/`configure`/`load` timings) — the same object handed to `logger.stats`. To preview without executing, the lower-level `autoConfigureTable(...)` / `autoCreateTable(...)` accept `runQuery: false` and return the generated DDL for inspection.
 
 - **`autoInsertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery = true, inputInsertType?: 'UPDATE' | 'INSERT')`**  
   Executes a full insert using the dialect-aware batching engine.  

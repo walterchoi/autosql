@@ -1530,8 +1530,16 @@ export class AutoSQLHandler {
         const separators = firstValue ? this.resolveSeparatorConsensus(firstValue) : undefined;
         const remaining: AsyncIterable<Record<string, any>[]> = {
             async *[Symbol.asyncIterator]() {
-                if (firstValue !== null) yield firstValue;
-                let r; while (!(r = await iterator.next()).done) yield r.value;
+                try {
+                    if (firstValue !== null) yield firstValue;
+                    let r; while (!(r = await iterator.next()).done) yield r.value;
+                } finally {
+                    // Forward early termination (an error mid-load, or a break/return in the consuming
+                    // loop) to the SOURCE iterator so a cursor/stream-backed `chunks` runs its own
+                    // cleanup. We took over manual iteration for the first-chunk peek, so the for-await's
+                    // automatic `.return()` reaches this wrapper, not the underlying source iterator.
+                    await iterator.return?.();
+                }
             }
         };
 
