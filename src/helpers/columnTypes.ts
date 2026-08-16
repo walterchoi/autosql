@@ -5,7 +5,7 @@ import { normalizeNumber, setToArray } from "./utilities";
 // Using regex, when provided a data point, predict what data type this will be.
 // thousandsSeparator/decimalSeparator disambiguate locale-specific number formats (e.g.
 // whether "1.000" is 1 or 1000) — see normalizeNumber. Omit both to use the auto-heuristic.
-export function predictType(data: any, thousandsSeparator?: string, decimalSeparator?: string): string | null {
+export function predictType(data: any, thousandsSeparator?: string, decimalSeparator?: string, onAmbiguousSeparator?: () => void): string | null {
     try {
         if(data === undefined || data === null) {
             return null
@@ -65,7 +65,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
 
         // ✅ Detect and normalize numbers
         if (regexPatterns.number.test(strData) || regexPatterns.decimal.test(strData)) {
-            strData = normalizeNumber(strData, thousandsSeparator, decimalSeparator);
+            strData = normalizeNumber(strData, thousandsSeparator, decimalSeparator, onAmbiguousSeparator);
 
             if (!strData) {
                 return "varchar"; // Invalid format

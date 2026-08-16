@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+### ✨ New
+- **`DatabaseConfig.numberFormat` — regional number-format preset (`"US"` / `"EU"` / `"IN"`).** Sugar
+  over `thousandsSeparator`/`decimalSeparator`: it resolves to those fields in `validateConfig`, so a
+  known source locale disambiguates lone-separator values through the **same** path that type inference
+  and value storage already use (no new plumbing). `"US"`/`"IN"` = thousands `,`, decimal `.` (Indian
+  lakh/crore grouping is accepted automatically — it shares US separators); `"EU"` = thousands `.`,
+  decimal `,`. Explicit `thousandsSeparator`/`decimalSeparator` still take precedence. Omit it to use
+  the auto-detection heuristic.
+
+### 🛡️ Robustness
+- **Ambiguous single-separator numbers now warn once per column (A24c).** A lone `,` or `.` followed by
+  exactly three digits (e.g. `"1,234"`) is genuinely ambiguous between thousands-grouping (`1234`) and a
+  decimal (`1.234`) — and only three trailing digits are ambiguous, since a trailing thousands group is
+  always three digits in both Western and Indian formats. autosql still assumes decimal, but now logs a
+  one-per-run warning (via `logger.warn`) naming the affected **numeric** column(s), so you can set
+  `numberFormat` / separators when the guess is wrong. Suppressed when separators are supplied; silent
+  for text columns that merely contain such a value.
+
 ## [2.2.0] - 2026-08-16
 
 > **Audit-remediation release.** Two independent code audits of 2.1.0 (Opus + Fable) produced 25
