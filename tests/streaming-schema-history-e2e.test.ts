@@ -88,6 +88,7 @@ function makeDb(configOverrides: Partial<DatabaseConfig> = {}) {
 
     return {
         runWithSchema: (_s: any, fn: any) => fn(),
+        runWithSeparators: (_sep: any, fn: any) => fn(),
         getConfig: () => ({
             sqlDialect: "mysql" as const,
             useSchemaLock: false,

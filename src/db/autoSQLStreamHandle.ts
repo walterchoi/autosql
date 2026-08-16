@@ -137,17 +137,20 @@ export class AutoSQLStreamHandle {
                 return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
             }
 
-            // NOTE: dataset-level number-format consensus is intentionally NOT applied on the streaming
-            // path. A stream stores values via the DB CAST in the bulk merge and via raw parameter
-            // binding in the per-row fallback — neither runs `sqlize`/`normalizeNumber`, so separators
-            // (consensus OR `numberFormat`) have no effect on stored values here. Streams therefore
-            // require already-normalized numeric values; wiring consensus in would only mis-type columns
-            // (e.g. as int) that the value path then can't store. See the roadmap follow-up to make the
-            // stream value path sqlize before separators can apply.
+            // Dataset-level number-format consensus from the staged rows (self-contained). Overlay the
+            // resolved separators on inference (flushConfig) AND the per-row fallback below. The bulk
+            // merge casts via the DB (so a grouped value like "1,234" is rejected there and lands via
+            // the per-row path); now that the per-row fallback sqlizes, that path normalizes the value
+            // under these separators. numberFormat needs no overlay — it is already on this.config, so
+            // resolveSeparatorConsensus returns undefined and inference/per-row read it directly.
+            const separators = this.handler['resolveSeparatorConsensus'](stagingRows);
+            const flushConfig = separators
+                ? { ...config, thousandsSeparator: separators.thousands, decimalSeparator: separators.decimal }
+                : config;
 
             // Infer schema from staging data
             const tPrepare = perf();
-            const inferredMeta = await getMetaData(config, stagingRows, this.primaryKey);
+            const inferredMeta = await getMetaData(flushConfig, stagingRows, this.primaryKey);
             const { currentMetaData } = await this.handler.fetchTableMetadata(this.table);
             const { changes, updatedMetaData } = compareMetaData(currentMetaData, inferredMeta, this.db.getDialectConfig(), config.logger);
             phases.prepare = perf() - tPrepare;
@@ -197,8 +200,10 @@ export class AutoSQLStreamHandle {
             let affectedRows = mergeResult.affectedRows ?? 0;
 
             if (!mergeResult.success) {
-                // Fallback: per-row retry with schema widening.
-                affectedRows = await this._perRowMerge(stagingRows, updatedMetaData, insertType as 'UPDATE' | 'INSERT', maxRetries);
+                // Fallback: per-row retry with schema widening. Run under the resolved separators so
+                // the per-row sqlize (via getConfig()) normalizes values with the detected format.
+                affectedRows = await this.db.runWithSeparators(separators, () =>
+                    this._perRowMerge(stagingRows, updatedMetaData, insertType as 'UPDATE' | 'INSERT', maxRetries));
             }
             phases.load = perf() - tLoad;
 
