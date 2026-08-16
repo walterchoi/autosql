@@ -34,6 +34,7 @@ npm install autosql
   - [Metadata Format](#-metadata-format)
   - [SSH Support](#-ssh-support)
 - [Insert Options](#-insert-options)
+- [Preview / Dry Run](#-preview--dry-run)
 - [Core Interfaces](#-core-classes-database-and-autosqlhandler)
   - [`Database` Class](#%EF%B8%8F-database-class)
 - [Convenience Utilities](#-convenience-utilities)
@@ -615,7 +616,10 @@ This is the core interface for managing connections, generating queries, and exe
   The simplest way to handle everything — metadata inference, schema changes, batching, inserting, history, workers, and nested structures — in one call.  
   Designed for production-ready automation and one-liner ingestion.  
   Pass `options.assumeSchema` when you already know the schema (e.g. a mapped column spec) to **skip type inference**: columns it declares are authoritative (which also avoids inference footguns like small integers being read as boolean), and any undeclared columns are inferred as a fallback. Skipping inference is the main compute saving on recurring pipelines.  
-  Returns a `QueryResult` with `affectedRows`, the resolved `metaData` (cache it and pass back as `existingSchema` to skip introspection next time), and per-run **`stats`** (`QueryStats`: `rows`, `affectedRows`, `durationMs`, `rowsPerSecond`, and per-phase `prepare`/`configure`/`load` timings) — the same object handed to `logger.stats`. To preview without executing, the lower-level `autoConfigureTable(...)` / `autoCreateTable(...)` accept `runQuery: false` and return the generated DDL for inspection.
+  Returns a `QueryResult` with `affectedRows`, the resolved `metaData` (cache it and pass back as `existingSchema` to skip introspection next time), and per-run **`stats`** (`QueryStats`: `rows`, `affectedRows`, `durationMs`, `rowsPerSecond`, and per-phase `prepare`/`configure`/`load` timings) — the same object handed to `logger.stats`.
+
+- **`preview(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: { assumeSchema?, existingSchema? })`**  
+  Dry run — returns an `AutoSQLPreview` describing what `autoSQL` **would** do (inferred schema, create/alter decision, exact DDL, blocked changes) **without writing anything**. See [Preview / Dry Run](#-preview--dry-run).
 
 - **`autoInsertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery = true, inputInsertType?: 'UPDATE' | 'INSERT')`**  
   Executes a full insert using the dialect-aware batching engine.  
@@ -711,6 +715,29 @@ AutoSQL exposes utilities that power `autoSQL` and can be used independently. Th
 - **`isValidDataFormat(data)`** – Validates that the input is an array of row objects suitable for processing.
 
 ---
+
+## 🔎 Preview / Dry Run
+
+`db.preview(table, data, schema?, primaryKey?, options?)` computes exactly what an `autoSQL(table, data, …)` call **would** do — the inferred schema, whether the table is created or altered, the exact DDL, and any changes that would be blocked — **without writing anything**. It reads the current schema to compute the diff; nothing is created, altered, or inserted. Ideal for a *"here's how your table will change"* confirmation step in a UI, or a CI check.
+
+```ts
+const plan = await db.preview('orders', [
+  { order_id: 1, amount: '1.234,56', country: 'US' },
+]);
+
+plan.tables[0].action;          // 'create' | 'alter' | 'noop'
+plan.tables[0].ddl;             // ['ALTER TABLE `orders` ADD COLUMN …', …]  — NOT executed
+plan.tables[0].changes;         // the AlterTableChanges diff (null on 'create')
+plan.tables[0].inferredSchema;  // the MetadataHeader autosql inferred (incl. managed dwh_* columns)
+plan.tables[0].currentSchema;   // the live table's schema, or null if it doesn't exist yet
+plan.tables[0].blockedChanges;  // ["Would DROP column 'obsolete' — blocked; set deleteColumns: true", …]
+plan.numberFormat;              // { thousands: '.', decimal: ',' } when a format was detected/set
+plan.rowCount;                  // number of input rows
+```
+
+Returns an `AutoSQLPreview`: a `tables` array (one entry per target table — more than one when `autoSplit` or nested extraction apply), the effective `numberFormat`, and the input `rowCount`. Each `TablePreview` carries `action`, `inferredSchema`, `currentSchema`, `changes`, `ddl`, and `blockedChanges`. It runs the same inference/diff pipeline as `autoSQL` (surrogate keys, timestamps, number-format detection, splits), so the plan matches what a real load would do.
+
+**`preview` vs `safeMode`:** `safeMode` runs a load but **skips DDL** (it inserts into whatever the table already supports); `preview` runs **no** load and executes **no** DDL — it only tells you what would happen.
 
 ## 🌊 Streaming Inserts
 

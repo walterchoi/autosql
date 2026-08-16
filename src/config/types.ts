@@ -61,6 +61,37 @@ export interface AutoSQLOptions {
   existingSchema?: MetadataHeader;
 }
 
+/** One target table's slice of an `autoSQL` preview (see `Database.preview`). */
+export interface TablePreview {
+  table: string;
+  /** What a real load would do to this table. */
+  action: 'create' | 'alter' | 'noop';
+  /** Schema inferred from the data, with managed columns applied (dwh_* timestamps, surrogate key). */
+  inferredSchema: MetadataHeader;
+  /** The live table's current schema, or `null` if it does not exist yet. */
+  currentSchema: MetadataHeader | null;
+  /** The diff that would be applied (`null` on `create`). */
+  changes: AlterTableChanges | null;
+  /** The exact CREATE/ALTER statement(s) a real load would execute — preview runs none of them. */
+  ddl: string[];
+  /** Changes autosql would NOT apply without opting in (e.g. dropping a column needs `deleteColumns`). */
+  blockedChanges: string[];
+}
+
+/**
+ * Result of `Database.preview(...)` — what an `autoSQL(table, data, …)` load WOULD do, computed
+ * without writing anything (schema is read to compute the diff; nothing is created, altered, or
+ * inserted). Contrast with `safeMode`, which runs a load but skips DDL.
+ */
+export interface AutoSQLPreview {
+  /** One entry per target table (usually one; more when `autoSplit` / nested extraction apply). */
+  tables: TablePreview[];
+  /** Effective thousands/decimal separators (from `numberFormat`, explicit config, or auto-detection); omitted when the default heuristic applies. */
+  numberFormat?: { thousands: string; decimal: string };
+  /** Number of input rows. */
+  rowCount: number;
+}
+
 
 export type supportedDialects = "mysql" | "pgsql" | "sqlserver";
 

@@ -2,7 +2,7 @@ import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
 import { SqlServerDatabase } from "./sqlserver";
 import { Database } from "./database";
-import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, QueryStats } from "../config/types";
+import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { resolveDatasetSeparators } from "../helpers/numberFormat";
@@ -74,6 +74,73 @@ export class AutoSQLHandler {
         }
         this.db.log(`autosql: detected ${decision.thousands === "," ? "US/IN" : "EU"} number format from the data (thousands "${decision.thousands}", decimal "${decision.decimal}").`);
         return decision;
+    }
+
+    /**
+     * Dry run: compute what an `autoSQL(table, data, …)` load WOULD do — the inferred schema, the
+     * create/alter decision, the exact DDL, and any changes that would be blocked without opting in —
+     * **without writing anything**. Only reads the current schema (to diff against); nothing is
+     * created, altered, or inserted. Mirrors the `autoSQL` signature so you can preview a call before
+     * committing it (e.g. to show a UI confirmation). Contrast with `safeMode`, which runs a load but
+     * skips DDL; `preview` runs no load and executes no DDL.
+     */
+    async preview(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<AutoSQLPreview> {
+        const separators = this.resolveSeparatorConsensus(data);
+        return this.db.runWithSeparators(separators, () => this.db.runWithSchema(schema, async () => {
+            const insertInput = await this.prepareInsertData(table, data, schema, primaryKey, options);
+            const config = this.db.getConfig();
+            const numberFormat = (config.thousandsSeparator !== undefined && config.decimalSeparator !== undefined)
+                ? { thousands: config.thousandsSeparator, decimal: config.decimalSeparator }
+                : undefined;
+
+            // blockedChanges surfaces the destructive-change gates (derived cleanly from `changes` +
+            // config). TODO: also surface the per-column A24c ambiguity warning here — it is emitted to
+            // logger.warn during inference; capturing it would need a log-capture seam (an ALS channel,
+            // like schemaContext), deferred to keep v1 free of that infra.
+            const tables: TablePreview[] = [];
+            for (const input of insertInput) {
+                const { currentMetaData, tableExists } = await this.fetchTableMetadata(input.table);
+                const changes = input.comparedMetaData?.changes ?? null;
+                const hasChanges = changes ? tableChangesExist(changes) : false;
+                const action: TablePreview["action"] = !tableExists ? "create" : (hasChanges ? "alter" : "noop");
+
+                // Same call configureTables makes per table (autoConfigureTable), but runQuery:false so
+                // it BUILDS the CREATE/ALTER without executing — read-only.
+                let ddl: string[] = [];
+                try {
+                    const ddlResult = await this.autoConfigureTable({ ...input, runQuery: false }) as QueryInput[];
+                    if (Array.isArray(ddlResult)) ddl = ddlResult.map(q => typeof q === "string" ? q : q.query);
+                } catch { /* a noop table may produce no DDL; leave ddl empty */ }
+
+                tables.push({
+                    table: input.table,
+                    action,
+                    inferredSchema: input.metaData,
+                    currentSchema: currentMetaData,
+                    changes: action === "create" ? null : changes,
+                    ddl,
+                    blockedChanges: this.deriveBlockedChanges(changes, config),
+                });
+            }
+            return { tables, numberFormat, rowCount: Array.isArray(data) ? data.length : 0 };
+        }));
+    }
+
+    // Changes autosql would refuse to apply without an explicit opt-in — the same gates
+    // warnBlockedSchemaChanges enforces at load time, surfaced here so a preview can flag them.
+    private deriveBlockedChanges(changes: AlterTableChanges | null, config: DatabaseConfig): string[] {
+        if (!changes) return [];
+        const blocked: string[] = [];
+        if (changes.dropColumns?.length && !config.deleteColumns) {
+            blocked.push(`Would DROP column(s) ${changes.dropColumns.join(", ")} — blocked; set deleteColumns: true to allow.`);
+        }
+        if (changes.primaryKeyChanges?.length && !config.updatePrimaryKey) {
+            blocked.push(`Would change the primary key (${changes.primaryKeyChanges.join(", ")}) — blocked; set updatePrimaryKey: true to allow.`);
+        }
+        if (changes.noLongerUnique?.length && !config.dropUniqueConstraints) {
+            blocked.push(`Would DROP the unique constraint on ${changes.noLongerUnique.join(", ")} — blocked; set dropUniqueConstraints: true to allow.`);
+        }
+        return blocked;
     }
 
     async autoCreateTable(table: string, newMetaData: MetadataHeader, tableExists?: boolean, runQuery: boolean = true): Promise<QueryResult | QueryInput[]> {

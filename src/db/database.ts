@@ -598,6 +598,12 @@ export abstract class Database {
         return this.autoSQLHandler.autoSQL.bind(this.autoSQLHandler);
     }
 
+    // Dry run: what an autoSQL(table, data, …) call WOULD do (schema diff + DDL), computed without
+    // writing. See AutoSQLHandler.preview.
+    get preview() {
+        return this.autoSQLHandler.preview.bind(this.autoSQLHandler);
+    }
+
     get autoCreateTable() {
         return this.autoSQLHandler.autoCreateTable.bind(this.autoSQLHandler);
     }
