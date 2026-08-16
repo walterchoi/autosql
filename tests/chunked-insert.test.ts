@@ -186,6 +186,33 @@ describe("autoSQLChunked — basic flow (useStagingInsert: false)", () => {
         expect(result.success).toBe(false);
         expect(result.error).toContain("insert failed on chunk 2");
     });
+
+    test("forwards early termination to the source chunks iterator (cursor/stream cleanup)", async () => {
+        // The load fails on the 2nd chunk, abandoning the source iterator mid-stream. Since the
+        // first-chunk peek takes over manual iteration, the source's own `return()` (its cleanup hook)
+        // must still be invoked — otherwise a DB-cursor/stream-backed `chunks` would leak.
+        let calls = 0;
+        (handler as any).insertData = jest.fn().mockImplementation(async () => {
+            if (++calls === 2) throw new Error("boom on chunk 2");
+            return [OK];
+        });
+
+        const ret = jest.fn(async () => ({ value: undefined, done: true }));
+        const data = [[{ id: 1 }], [{ id: 2 }], [{ id: 3 }]];
+        const source: AsyncIterable<Record<string, any>[]> = {
+            [Symbol.asyncIterator]() {
+                let i = 0;
+                return {
+                    next: async () => (i < data.length ? { value: data[i++], done: false } : { value: undefined, done: true }),
+                    return: ret,
+                } as AsyncIterator<Record<string, any>[]>;
+            },
+        };
+
+        const result = await handler.autoSQLChunked("users", source);
+        expect(result.success).toBe(false);
+        expect(ret).toHaveBeenCalled(); // source cleanup ran despite the early abort
+    });
 });
 
 // ---------------------------------------------------------------------------

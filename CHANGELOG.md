@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+## [2.3.1] - 2026-08-16
+
+### 📝 Documentation
+- **README brought current with 2.1–2.3.** Corrected the number-separator docs (they described the
+  pre-2.3.0 "single separator = decimal" behaviour, which automatic detection now supersedes); added a
+  **Number formats** section covering `numberFormat` / `numberFormatMinEvidence`, zero-config
+  consensus, and the A24c ambiguity warning; documented `logger.stats` + `QueryResult.stats`
+  (`QueryStats` run metrics), SSH **`hostFingerprint`** host-key verification, automatic leading-zero
+  identifier preservation, and the `existingSchema` option / DDL-preview (`runQuery: false`).
+
+### 🐛 Bug Fixes
+- **`autoSQLChunked` forwards early termination to the source `chunks` iterator.** The first-chunk peek
+  (added in 2.3.0) took over manual iteration, so when a load errored mid-stream the for-await's
+  automatic `.return()` reached the internal wrapper, not the source — a DB-cursor/stream-backed
+  `chunks` would not run its cleanup. It now forwards `.return()` to the source in a `finally`.
+
 ## [2.3.0] - 2026-08-16
 
 > **Locale-aware number ingestion.** Zero-config detection of the dataset's number format, an explicit
