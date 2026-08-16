@@ -8,6 +8,19 @@
   lakh/crore grouping is accepted automatically — it shares US separators); `"EU"` = thousands `.`,
   decimal `,`. Explicit `thousandsSeparator`/`decimalSeparator` still take precedence. Omit it to use
   the auto-detection heuristic.
+- **Automatic dataset-level number-format detection (zero-config).** When neither explicit separators
+  nor `numberFormat` are given, autosql now infers the format from **structural evidence in the data
+  itself** — a value that can only be one layout (e.g. `"1,234,567"` → comma is thousands, or `"12,5"`
+  → comma is decimal) votes, and the ambiguous `"1,234"` shape abstains. Evidence is pooled across
+  **all columns** (one format per dataset, since a single source doesn't mix US and EU), so a decisive
+  column resolves an ambiguous sibling: `amt: "1,234"` next to `total: "1,234,567"` stores `1234`, no
+  config. It's **self-contained** (reads only the batch — no extra DB queries), resolved once per load
+  and **locked** (across chunks only column lengths grow, never the format), logs the detected format
+  via `logger.log`, and falls back to assume-decimal + the A24c warning when evidence is absent or
+  genuinely contradictory. `numberFormatMinEvidence` (default 1) raises the vote floor. Applies to
+  `autoSQL` and `autoSQLChunked`; **not** to `openStream` (streams store values via DB `CAST` / raw
+  parameter binding without `normalizeNumber`, so separators — consensus *or* `numberFormat` — don't
+  apply there; a stream needs already-normalized numeric values).
 
 ### 🛡️ Robustness
 - **Ambiguous single-separator numbers now warn once per column (A24c).** A lone `,` or `.` followed by

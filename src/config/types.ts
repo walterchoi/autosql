@@ -275,6 +275,20 @@ export interface DatabaseConfig {
       numberFormat?: "US" | "EU" | "IN";
 
       /**
+       * When neither explicit separators nor `numberFormat` are given, autosql infers the number
+       * format from **structural evidence in the data itself** (dataset-level: one layout for the
+       * whole load, since a single source doesn't mix US and EU). A value that can only be one layout
+       * — e.g. `"1,234,567"` (comma = thousands) or `"12.5"` (dot = decimal) — is a vote; the lone
+       * ambiguous `"1,234"` shape abstains. If both layouts appear (contradictory, ~never happens for
+       * real data) it falls back to assume-decimal + a warning.
+       *
+       * `numberFormatMinEvidence` is the number of votes a layout needs before it's trusted (and
+       * before an opposing minority counts as a genuine conflict). Default **1** — one structural
+       * value is certainty, not a guess. Raise it to tolerate a few stray/mis-parsed values.
+       */
+      numberFormatMinEvidence?: number;
+
+      /**
        * IANA time zone (e.g. "America/New_York", "Australia/Sydney", "UTC") that ZONELESS datetime
        * inputs should be interpreted as. When set, a value with no offset (e.g. "2024-01-15 12:00:00")
        * is treated as local time in this zone and converted to a UTC instant before storage. Inputs
