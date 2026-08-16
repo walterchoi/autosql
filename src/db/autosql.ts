@@ -5,6 +5,7 @@ import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, QueryStats } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
+import { resolveDatasetSeparators } from "../helpers/numberFormat";
 import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults, sqlize } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
@@ -22,15 +23,15 @@ import {
     generateRunId,
     buildStreamStagingTableName,
     isAutosqlStreamTable,
-    buildCreateStreamStagingTableQuery,
-    buildInsertIntoStreamStagingQuery,
-    buildSelectFromStreamStagingQuery,
     buildDropStreamStagingTableQuery,
     buildOrphanSearchQuery,
-    buildMergeFromStreamQuery,
     buildBootstrapRejectedRowsQuery,
     buildInsertRejectedRowsQuery,
 } from '../helpers/streamHelpers';
+// AutoSQLStreamHandle was extracted to its own module (R1 Slice 1). Imported here so `openStream`
+// can construct it, and re-exported below to keep the public `index.ts` export path stable.
+import { AutoSQLStreamHandle } from "./autoSQLStreamHandle";
+export { AutoSQLStreamHandle };
 
 export class AutoSQLHandler {
     private db: Database;
@@ -45,6 +46,34 @@ export class AutoSQLHandler {
 
     releaseStreamStaging(stagingTable: string): void {
         this.activeStreamStagingTables.delete(stagingTable);
+    }
+
+    /**
+     * Dataset-level number-format consensus (self-contained — reads only `data`, no DB queries).
+     * When the caller supplied neither explicit separators nor `numberFormat`, infer ONE
+     * {thousands, decimal} pair from structural evidence pooled across all columns of the batch, so
+     * a decisive column resolves ambiguous siblings. The returned pair is meant to be run under
+     * `db.runWithSeparators(...)`, which overlays it on `getConfig()` for BOTH inference and
+     * load-time sqlize (and worker dispatch) for the duration of the call.
+     *
+     * Returns undefined (no override — load uses the assume-decimal default + the A24c per-column
+     * warning) when separators are already configured, there is no data, there is no structural
+     * evidence, or the evidence is genuinely contradictory (warns loudly in that last case).
+     */
+    private resolveSeparatorConsensus(data: Record<string, any>[]): { thousands: string; decimal: string } | undefined {
+        const config = this.db.getConfig();
+        // Explicit separators / numberFormat (both resolve to thousandsSeparator in validateConfig) win.
+        if (config.thousandsSeparator !== undefined || config.decimalSeparator !== undefined) return undefined;
+        if (!Array.isArray(data) || data.length === 0) return undefined;
+
+        const decision = resolveDatasetSeparators(data, config.numberFormatMinEvidence ?? 1);
+        if (decision === null) return undefined; // no evidence → default; A24c warns per ambiguous column
+        if ("conflict" in decision) {
+            this.db.warn(`autosql: the data contains conflicting number formats (some values look US "1,234,567", others EU "1.234.567"). Not guessing — using the default (a lone separator is treated as a decimal). Set numberFormat or thousandsSeparator/decimalSeparator to disambiguate.`);
+            return undefined;
+        }
+        this.db.log(`autosql: detected ${decision.thousands === "," ? "US/IN" : "EU"} number format from the data (thousands "${decision.thousands}", decimal "${decision.decimal}").`);
+        return decision;
     }
 
     async autoCreateTable(table: string, newMetaData: MetadataHeader, tableExists?: boolean, runQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
@@ -486,8 +515,9 @@ export class AutoSQLHandler {
     
         let configuredTables: (QueryResult | QueryInput[])[];
     
-        // 🔹 Step 1: Auto-configure tables (with Workers or Directly)
-        if (this.db.getConfig().useWorkers) {
+        // 🔹 Step 1: Auto-configure tables (with Workers or Directly). Only fan out to workers when
+        // there's more than one table to configure — a single table isn't worth a worker pool (A8).
+        if (this.db.getConfig().useWorkers && insertInput.length > 1) {
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
             try {
                 const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoConfigureTable", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error, errorCode?: string }[];
@@ -591,8 +621,8 @@ export class AutoSQLHandler {
         } else {
             // 🔹 Step 2: Defer execution & modify inputs
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
-    
-            if (this.db.getConfig().useWorkers) {
+
+            if (this.db.getConfig().useWorkers && insertInput.length > 1) {
                 try {
                     const workerResults = await WorkerHelper.run(this.db.getConfig(), "autoInsertData", insertInput) as { success: boolean; result: QueryResult | QueryInput[], error?: string | Error, errorCode?: string }[];
 
@@ -704,8 +734,18 @@ export class AutoSQLHandler {
             const failures: { row: Record<string, any>; error: string }[] = [];
 
             for (const row of pendingRows) {
-                const insertQ = this.db.getInsertStatementQuery(table, [row], workingMeta, insertType);
-                const result = await this.db.runQuery(insertQ);
+                // Pre-sqlize the row the same way the bulk direct path does (getInsertValues with
+                // sqlizeValues=true), so this degradation fallback normalizes values — number
+                // separators, decimal rounding, datetime/timezone, boolean canonicalization — exactly
+                // like the bulk path instead of binding them raw. Without this the fallback would store
+                // different values than a bulk insert would (e.g. a resolved "1,234" -> 1234 is rejected
+                // here as raw), and locale-formatted numbers could never land via degradation/streaming.
+                const normalisedRow = getInsertValues(workingMeta, row, this.db.getDialectConfig(), this.db.getConfig(), true);
+                const insertQ = this.db.getInsertStatementQuery(table, [normalisedRow], workingMeta, insertType);
+                // Single attempt: this loop already retries failed rows across rounds, so the internal
+                // retry would be redundant — and for insertType "INSERT" (non-idempotent) it could
+                // duplicate a row whose ambiguous failure actually applied server-side (A15).
+                const result = await this.db.runQuery(insertQ, 1);
                 if (result.success) {
                     totalInserted += result.affectedRows ?? 1;
                 } else {
@@ -743,12 +783,19 @@ export class AutoSQLHandler {
 
         if (pendingRows.length > 0) {
             if (config.rejectedRowsTable) {
-                await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
+                const bootstrap = await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
                 const rejQ = buildInsertRejectedRowsQuery(
                     config, table,
                     pendingRows.map(row => ({ row, error: 'failed after max retries' }))
                 );
-                await this.db.runTransaction([rejQ]);
+                // Fail loud if the divert itself fails (bootstrap or insert). runTransaction never
+                // throws — it returns {success:false} — so an unchecked result would let the rows
+                // vanish while the load reported success, the exact loss rejectedRowsTable exists to
+                // prevent (A5).
+                const divert = bootstrap.success ? await this.db.runTransaction([rejQ]) : bootstrap;
+                if (!divert.success) {
+                    throw new Error(`${label}: ${pendingRows.length} row(s) failed to insert AND could not be written to rejectedRowsTable '${config.rejectedRowsTable}': ${divert.error ?? 'unknown error'}. No rows were silently dropped — resolve the rejects-table error (e.g. permissions or an incompatible existing table) and retry.`);
+                }
                 this.db.warn(`${label}: ${pendingRows.length} row(s) could not be inserted and were written to '${config.rejectedRowsTable}'.`);
             } else {
                 throw new Error(`${label}: ${pendingRows.length} row(s) failed to insert after ${maxRetries} retry round(s). Configure rejectedRowsTable to capture them instead of throwing.`);
@@ -942,17 +989,25 @@ export class AutoSQLHandler {
 
           const row = result?.results?.[0] || {};
           const violatingIndexes: string[] = [];
+          const dropUniques = this.db.getConfig().dropUniqueConstraints === true;
 
           for (const [indexName, count] of Object.entries(row)) {
             const numericCount = typeof count === "string" ? parseInt(count) : Number(count);
             if (numericCount > 0) {
                 violatingIndexes.push(indexName);
-                tableConstraintsQueries.push(this.db.getDropUniqueConstraintQuery(table, indexName))
+                // Only queue the DROP when opted in (A10). Off (default) → keep the constraint; the
+                // merge then fails loud / diverts on the collision.
+                if (dropUniques) tableConstraintsQueries.push(this.db.getDropUniqueConstraintQuery(table, indexName))
             }
           }
 
           if (violatingIndexes.length) {
-            removeConstraintsQuery.push(tableConstraintsQueries)
+            if (dropUniques) {
+              this.db.warn(`resolveConflicts: dropping UNIQUE constraint(s) [${violatingIndexes.join(", ")}] on '${table}' — staged data violates them and dropUniqueConstraints is on.`);
+              removeConstraintsQuery.push(tableConstraintsQueries)
+            } else {
+              this.db.warn(`resolveConflicts: staged data for '${table}' violates UNIQUE constraint(s) [${violatingIndexes.join(", ")}], but dropUniqueConstraints is off — the constraint(s) are KEPT and the merge will fail (or divert to rejectedRowsTable if configured) on the colliding rows. Set dropUniqueConstraints: true to auto-drop them instead.`);
+            }
           }
         }
 
@@ -1128,10 +1183,18 @@ export class AutoSQLHandler {
             if (!config.rejectedRowsTable) {
                 throw new Error(`autoSQL: ${rejected.length} row(s) failed to merge into '${input.table}' and rejectedRowsTable is not configured.`);
             }
-            await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
-            await this.db.runTransaction([
-                buildInsertRejectedRowsQuery(config, input.table, rejected.map(row => ({ row, error: 'failed to merge after per-row retry' })))
-            ]);
+            const bootstrap = await this.db.runTransaction(buildBootstrapRejectedRowsQuery(config));
+            const divert = bootstrap.success
+                ? await this.db.runTransaction([
+                    buildInsertRejectedRowsQuery(config, input.table, rejected.map(row => ({ row, error: 'failed to merge after per-row retry' })))
+                  ])
+                : bootstrap;
+            // Fail loud if the divert itself fails — otherwise the rows vanish while the load reports
+            // success (A5). runTransaction returns {success:false} rather than throwing, so this must be
+            // checked explicitly.
+            if (!divert.success) {
+                throw new Error(`autoSQL: ${rejected.length} row(s) failed to merge into '${input.table}' AND could not be written to rejectedRowsTable '${config.rejectedRowsTable}': ${divert.error ?? 'unknown error'}. No rows were silently dropped — resolve the rejects-table error (e.g. permissions or an incompatible existing table) and retry.`);
+            }
             this.db.warn(`autoSQL: ${rejected.length} row(s) could not be merged into '${input.table}' and were written to '${config.rejectedRowsTable}'.`);
         }
         const now = new Date();
@@ -1299,7 +1362,10 @@ export class AutoSQLHandler {
     } 
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<QueryResult> {
-      return this.db.runWithSchema(schema, async () => {
+      // Resolve dataset-level number format ONCE, before inference, and run the whole load under it
+      // so inference, staging, direct insert, and workers all sqlize with the same separators.
+      const separators = this.resolveSeparatorConsensus(data);
+      return this.db.runWithSeparators(separators, () => this.db.runWithSchema(schema, async () => {
         const start = new Date();
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
@@ -1347,7 +1413,16 @@ export class AutoSQLHandler {
                     phases.configure = perf() - tConfigure;
                     if (historyId !== undefined) {
                         const updatedMeta = insertInput[0]?.comparedMetaData?.updatedMetaData;
-                        if (updatedMeta) await recordMigrationSuccess(this.db, historyId, updatedMeta);
+                        if (updatedMeta) {
+                            // Store the drift baseline as the checksum of the RE-INTROSPECTED table, not
+                            // the inferred `updatedMeta` — drift detection next run reads the introspected
+                            // schema, and inferred-vs-introspected would false-positive on legitimate type
+                            // round-trips (A6). `new_schema` stays `updatedMeta` (inferred) for
+                            // point-in-time reconstruction; a null introspection stores a null checksum
+                            // (treated as "no baseline"), which also covers the A19 couldn't-read case.
+                            const liveMeta = await this.db.getTableMetaData(config.schema || config.database || "", table);
+                            await recordMigrationSuccess(this.db, historyId, updatedMeta, liveMeta);
+                        }
                         else await recordMigrationRolledBack(this.db, historyId);
                     }
                 } catch (ddlErr) {
@@ -1418,7 +1493,7 @@ export class AutoSQLHandler {
             const end = new Date();
             return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
         }
-      });
+      }));
     }
 
     /**
@@ -1444,6 +1519,23 @@ export class AutoSQLHandler {
     ): Promise<QueryResult> {
       return this.db.runWithSchema(schema, async () => {
         const start = new Date();
+
+        // Dataset-level number format is resolved ONCE from the first non-empty chunk and LOCKED for
+        // the whole load (across chunks only column lengths grow, never the format). Peek that chunk,
+        // resolve, then process it and the rest under the resolved separators.
+        const iterator = chunks[Symbol.asyncIterator]();
+        let pending = await iterator.next();
+        while (!pending.done && pending.value.length === 0) pending = await iterator.next();
+        const firstValue: Record<string, any>[] | null = pending.done ? null : pending.value;
+        const separators = firstValue ? this.resolveSeparatorConsensus(firstValue) : undefined;
+        const remaining: AsyncIterable<Record<string, any>[]> = {
+            async *[Symbol.asyncIterator]() {
+                if (firstValue !== null) yield firstValue;
+                let r; while (!(r = await iterator.next()).done) yield r.value;
+            }
+        };
+
+        return this.db.runWithSeparators(separators, async () => {
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
         const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
@@ -1458,7 +1550,7 @@ export class AutoSQLHandler {
         let totalRows = 0;
 
         try {
-            for await (const chunk of chunks) {
+            for await (const chunk of remaining) {
                 if (chunk.length === 0) continue;
                 totalRows += chunk.length;
 
@@ -1587,6 +1679,7 @@ export class AutoSQLHandler {
                 error: error instanceof Error ? error.message : String(error)
             };
         }
+        });
       });
     }
 
@@ -1604,6 +1697,12 @@ export class AutoSQLHandler {
         primaryKey?: string[]
     ): Promise<AutoSQLStreamHandle> {
       return this.db.runWithSchema(schema, async () => {
+        // Streaming is deferred on SQL Server (D-F): the stream staging/merge/cleanup builders emit
+        // Postgres placeholders/DDL, so limping in would fail with a confusing mid-stream error (and
+        // never clean up its staging table). Fail loud up front instead (A20).
+        if (this.db.getConfig().sqlDialect === 'sqlserver') {
+            throw new Error("openStream is not yet supported on SQL Server (streaming parity is deferred — see roadmap D-F). Use autoSQL/autoSQLChunked instead.");
+        }
         // Connectivity check — surfaces auth/connection errors before first write
         const ping = await this.db.runQuery({ query: 'SELECT 1', params: [] });
         if (!ping.success) {
@@ -1650,231 +1749,5 @@ export class AutoSQLHandler {
                 this.db.error(`Failed to drop orphaned stream staging table '${name}': ${e.message}`)
             );
         }
-    }
-}
-
-export class AutoSQLStreamHandle {
-    private handler: AutoSQLHandler;
-    private db: Database;
-    private table: string;
-    private stagingTable: string;
-    private schema: string | undefined;
-    private primaryKey: string[] | undefined;
-    private columns: string[] | null = null;
-    private stagingCreated = false;
-    private ended = false;
-
-    constructor(
-        handler: AutoSQLHandler,
-        db: Database,
-        table: string,
-        stagingTable: string,
-        schema: string | undefined,
-        primaryKey: string[] | undefined
-    ) {
-        this.handler = handler;
-        this.db = db;
-        this.table = table;
-        this.stagingTable = stagingTable;
-        this.schema = schema;
-        this.primaryKey = primaryKey;
-    }
-
-    /**
-     * Append a chunk of rows to this run's staging table.
-     *
-     * Contract: returns a promise that **rejects** on failure and MUST be awaited (or
-     * `.catch`ed). It is NOT fire-and-forget — an un-awaited write() that fails becomes an
-     * unhandled promise rejection and its error is lost.
-     *
-     * A rejected write() leaves the staging table in an indeterminate state (the chunk may be
-     * partly applied or absent). On rejection, either **retry the same chunk** (write() is
-     * append-only, so re-sending after a transient failure is safe) or call {@link abort} to
-     * discard the run. Do NOT call {@link end} after a failed/un-awaited write() expecting the
-     * gap to be ignored: end() merges whatever is staged, so a lost chunk becomes missing rows.
-     */
-    async write(chunk: Record<string, any>[]): Promise<void> {
-        if (this.ended) throw new Error(`autoSQLStream: write() called after end()/abort()`);
-        if (chunk.length === 0) return;
-        return this.db.runWithSchema(this.schema, async () => {
-            const config = this.db.getConfig();
-
-            if (!this.stagingCreated) {
-                // Derive columns from first row
-                this.columns = Object.keys(chunk[0]);
-                const createQ = buildCreateStreamStagingTableQuery(this.stagingTable, this.columns, config);
-                const createResult = await this.db.runTransaction([createQ]);
-                if (!createResult.success) {
-                    throw new Error(`autoSQLStream: failed to create stream staging table '${this.stagingTable}': ${createResult.error}`);
-                }
-                this.stagingCreated = true;
-            }
-
-            const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, chunk, config);
-            const insertResult = await this.db.runTransaction([insertQ]);
-            if (!insertResult.success) {
-                throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error}`);
-            }
-        });
-    }
-
-    /**
-     * Merge all staged rows into the target table (infer schema, apply DDL, bulk INSERT…SELECT
-     * with a per-row retry fallback), then drop the staging table.
-     *
-     * Contract: returns a promise that **rejects** on failure and must be awaited. end() merges
-     * whatever is currently staged — it does not know about {@link write} calls that failed or
-     * were never awaited, so ensure every chunk resolved (or was retried) before calling this, or
-     * a lost chunk will silently become missing rows. To discard instead of merge, use {@link abort}.
-     */
-    async end(): Promise<QueryResult> {
-      return this.db.runWithSchema(this.schema, async () => {
-        const start = new Date();
-        this.ended = true;
-        const config = this.db.getConfig();
-        const insertType = config.insertType ?? 'UPDATE';
-        const maxRetries = config.streamMaxRetries ?? defaults.streamMaxRetries;
-        // Per-run instrumentation (QueryStats). For a stream these cover the `end()` FLUSH — read
-        // staging + infer (prepare) → DDL (configure) → merge (load) — not the incremental write()s.
-        const perf = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
-        const phases: { prepare?: number; configure?: number; load?: number } = {};
-
-        try {
-            if (!this.stagingCreated) {
-                // Nothing was written
-                return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
-            }
-
-            // Read all staging rows
-            const selectQ = buildSelectFromStreamStagingQuery(this.stagingTable, config);
-            const selectResult = await this.db.runQuery(selectQ);
-            if (!selectResult.success || !selectResult.results) {
-                throw new Error(`autoSQLStream: failed to read staging data: ${selectResult.error}`);
-            }
-            const stagingRows: Record<string, any>[] = selectResult.results;
-            if (stagingRows.length === 0) {
-                return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
-            }
-
-            // Infer schema from staging data
-            const tPrepare = perf();
-            const inferredMeta = await getMetaData(config, stagingRows, this.primaryKey);
-            const { currentMetaData } = await this.handler.fetchTableMetadata(this.table);
-            const { changes, updatedMetaData } = compareMetaData(currentMetaData, inferredMeta, this.db.getDialectConfig(), config.logger);
-            phases.prepare = perf() - tPrepare;
-
-            // Configure main table (with schema lock + history if enabled)
-            const insertInput = [{
-                table: this.table,
-                data: stagingRows,
-                metaData: updatedMetaData,
-                previousMetaData: currentMetaData,
-                comparedMetaData: { changes, updatedMetaData },
-                stagingPrefix: config.stagingPrefix,
-                historyTableSuffix: config.historyTableSuffix,
-            }];
-
-            const useSchemaLock = config.useSchemaLock;
-            const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
-            const useHistory = config.schemaHistory;
-            let historyId: number | undefined;
-
-            if (useSchemaLock) await this.db.acquireSchemaLock(this.table, lockTimeout);
-            try {
-                if (useHistory) {
-                    await bootstrapSchemaHistoryTable(this.db);
-                    if (tableChangesExist(changes)) {
-                        historyId = await recordMigrationStart(this.db, this.table, currentMetaData || {}, changes);
-                    }
-                }
-                try {
-                    const tConfigure = perf();
-                    await this.handler['configureTables'](insertInput);
-                    phases.configure = perf() - tConfigure;
-                    if (historyId !== undefined) await recordMigrationSuccess(this.db, historyId, updatedMetaData);
-                } catch (ddlErr) {
-                    if (historyId !== undefined) await recordMigrationFailed(this.db, historyId).catch(() => {});
-                    throw ddlErr;
-                }
-            } finally {
-                if (useSchemaLock) await this.db.releaseSchemaLock(this.table);
-            }
-
-            // Attempt bulk merge with casts
-            const tLoad = perf();
-            const mergeQ = buildMergeFromStreamQuery(this.table, this.stagingTable, updatedMetaData, insertType as 'UPDATE' | 'INSERT', config);
-            const mergeResult = await this.db.runTransaction([mergeQ]);
-
-            let affectedRows = mergeResult.affectedRows ?? 0;
-
-            if (!mergeResult.success) {
-                // Fallback: per-row retry with schema widening
-                affectedRows = await this._perRowMerge(stagingRows, updatedMetaData, insertType as 'UPDATE' | 'INSERT', maxRetries);
-            }
-            phases.load = perf() - tLoad;
-
-            const end = new Date();
-            const durationMs = end.getTime() - start.getTime();
-            const stats: QueryStats = {
-                table: this.table,
-                rows: stagingRows.length,
-                affectedRows,
-                durationMs,
-                rowsPerSecond: durationMs > 0 ? Math.round((stagingRows.length / durationMs) * 1000) : 0,
-                phases: {
-                    prepare: phases.prepare !== undefined ? Math.round(phases.prepare) : undefined,
-                    configure: phases.configure !== undefined ? Math.round(phases.configure) : undefined,
-                    load: phases.load !== undefined ? Math.round(phases.load) : undefined,
-                },
-                staged: true,
-                bulkLoad: !!config.bulkLoad,
-            };
-            try { config.logger?.stats?.(stats); } catch { /* a metrics sink must never break a load */ }
-            return { start, end, success: true, duration: durationMs, affectedRows, table: this.table, stats };
-        } catch (error: any) {
-            const end = new Date();
-            return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
-        } finally {
-            // Always drop staging table
-            if (this.stagingCreated) {
-                const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
-                await this.db.runTransaction([dropQ]).catch(e =>
-                    this.db.error(`autoSQLStream: failed to drop staging table '${this.stagingTable}': ${e.message}`)
-                );
-            }
-            this.handler.releaseStreamStaging(this.stagingTable);
-        }
-      });
-    }
-
-    private async _perRowMerge(
-        rows: Record<string, any>[],
-        metaData: MetadataHeader,
-        insertType: 'UPDATE' | 'INSERT',
-        maxRetries: number
-    ): Promise<number> {
-        // Shared with the non-streaming direct-insert path — see AutoSQLHandler.perRowInsertWithRetry.
-        const { inserted } = await this.handler.perRowInsertWithRetry(
-            this.table, rows, metaData, insertType, maxRetries, this.primaryKey, 'autoSQLStream'
-        );
-        return inserted;
-    }
-
-    /**
-     * Discard the run: drop the staging table without merging. Safe to call even if {@link write}
-     * was never called, and the correct way to bail out after a failed write(). Returns a promise
-     * that should be awaited.
-     */
-    async abort(): Promise<void> {
-        this.ended = true;
-        return this.db.runWithSchema(this.schema, async () => {
-            if (this.stagingCreated) {
-                const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
-                await this.db.runTransaction([dropQ]).catch(e =>
-                    this.db.error(`autoSQLStream: failed to drop staging table during abort: ${e.message}`)
-                );
-            }
-            this.handler.releaseStreamStaging(this.stagingTable);
-        });
     }
 }

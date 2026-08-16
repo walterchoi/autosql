@@ -3,6 +3,7 @@ import os from 'os';
 import { Database } from '../db/database';
 import { MetadataHeader, DatabaseConfig, QueryResult } from '../config/types';
 import { SchemaDriftError } from '../errors';
+import { escapeIdentifier } from '../db/utils/escape';
 
 // ---------------------------------------------------------------------------
 // Stable JSON stringify (key-sorted, recursive) for deterministic checksums
@@ -24,10 +25,16 @@ function getAppliedBy(): string {
     return `${os.hostname()}:${process.pid}`;
 }
 
+// Escaped, dialect-quoted reference to the history table (A13). Routes schema and table each through
+// escapeIdentifier — the old version returned a raw `schema.table` string that every caller then
+// re-split on '.', which dropped 3rd+ segments, corrupted any name containing a dot, and bypassed the
+// injection-safe escaping the rest of the codebase uses.
 function historyTableRef(config: DatabaseConfig): string {
     const table = config.schemaHistoryTable || 'autosql_schema_history';
     const schema = config.schemaHistorySchema || config.schema;
-    return schema ? `${schema}.${table}` : table;
+    const dialect = config.sqlDialect;
+    const t = escapeIdentifier(table, dialect);
+    return schema ? `${escapeIdentifier(schema, dialect)}.${t}` : t;
 }
 
 // ---------------------------------------------------------------------------
@@ -38,7 +45,7 @@ export async function bootstrapSchemaHistoryTable(db: Database): Promise<void> {
     const dialect = db.getConfig().sqlDialect;
     let ddl: string;
     if (dialect === 'mysql') {
-        ddl = `CREATE TABLE IF NOT EXISTS \`${ref.replace('.', '\`.\`')}\` (
+        ddl = `CREATE TABLE IF NOT EXISTS ${ref} (
   id              BIGINT AUTO_INCREMENT PRIMARY KEY,
   table_name      VARCHAR(255) NOT NULL,
   version         INT UNSIGNED NOT NULL,
@@ -52,10 +59,7 @@ export async function bootstrapSchemaHistoryTable(db: Database): Promise<void> {
   UNIQUE KEY uq_table_version (table_name, version)
 );`;
     } else {
-        // PostgreSQL — split schema.table if present
-        const parts = ref.includes('.') ? ref.split('.') : [null, ref];
-        const schemaQ = parts[0] ? `"${parts[0]}"."${parts[1]}"` : `"${parts[1]}"`;
-        ddl = `CREATE TABLE IF NOT EXISTS ${schemaQ} (
+        ddl = `CREATE TABLE IF NOT EXISTS ${ref} (
   id              BIGSERIAL PRIMARY KEY,
   table_name      VARCHAR(255) NOT NULL,
   version         INTEGER      NOT NULL,
@@ -70,7 +74,12 @@ export async function bootstrapSchemaHistoryTable(db: Database): Promise<void> {
 );`;
     }
     // runQuery validates single-statement — use executeQuery via runTransaction
-    await db.runTransaction([{ query: ddl, params: [] }]);
+    const res = await db.runTransaction([{ query: ddl, params: [] }]);
+    if (!res.success) {
+        // schemaHistory is opt-in; if its table cannot be created the feature cannot work. Fail loud
+        // rather than silently record nothing and later report "no drift" when actually blind (A19).
+        throw new Error(`schemaHistory: failed to create the history table ${ref}: ${res.error ?? "unknown error"}. Grant the load user CREATE on the schema/database, or disable schemaHistory.`);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -86,15 +95,13 @@ async function sweepStalePending(db: Database, table: string): Promise<void> {
     const ref = historyTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
     const cutoff = new Date(Date.now() - STALE_PENDING_MS);
-    const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
+    const tableRef = ref; // already dialect-escaped (A13)
     if (dialect === 'mysql') {
-        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
         await db.runQuery({
             query: `UPDATE ${tableRef} SET status = 'failed' WHERE table_name = ? AND status = 'pending' AND applied_at < ?`,
             params: [table, cutoff.toISOString().slice(0, 19).replace('T', ' ')]
         }).catch(() => {});
     } else {
-        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
         await db.runQuery({
             query: `UPDATE ${tableRef} SET status = 'failed' WHERE table_name = $1 AND status = 'pending' AND applied_at < $2`,
             params: [table, cutoff.toISOString()]
@@ -124,8 +131,7 @@ export async function recordMigrationStart(
         const now = new Date();
         let result: QueryResult;
         if (dialect === 'mysql') {
-            const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-            const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+            const tableRef = ref; // already dialect-escaped (A13)
             const query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
 SELECT ?, COALESCE(MAX(version), 0) + 1, 'pending', ?, ?, ?, ?
 FROM ${tableRef} WHERE table_name = ?`;
@@ -147,8 +153,7 @@ FROM ${tableRef} WHERE table_name = ?`;
                 { query: 'SELECT LAST_INSERT_ID() AS id', params: [] }
             ]);
         } else {
-            const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-            const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+            const tableRef = ref; // already dialect-escaped (A13)
             // $1 is used both in the SELECT list and the WHERE clause; without an explicit cast
             // Postgres infers it as text in one place and varchar in the other and rejects the
             // statement with "inconsistent types deduced for parameter $1".
@@ -171,10 +176,13 @@ RETURNING id`;
         const id = Number(result.results?.[0]?.id ?? 0);
         if (id > 0) return id;
         if (attempt < maxAttempts && UNIQUE_VIOLATION.test(result.error ?? '')) continue;
-        // Failed to record the start — return undefined so callers' `id !== undefined`
-        // guard actually skips the follow-up UPDATE (a 0 would run UPDATE ... WHERE id = 0).
+        // Failed to record the start — warn (the change proceeds, just untracked) and return undefined
+        // so callers' `id !== undefined` guard skips the follow-up UPDATE (a 0 would run
+        // UPDATE ... WHERE id = 0). Previously this returned silently (A19).
+        db.warn(`schemaHistory: could not record migration start for '${table}' (${result.error ?? 'unknown error'}); the schema change will proceed but won't be recorded in history.`);
         return undefined;
     }
+    db.warn(`schemaHistory: could not record migration start for '${table}' after ${maxAttempts} attempts; the schema change will proceed but won't be recorded in history.`);
     return undefined;
 }
 
@@ -185,22 +193,29 @@ async function updateHistoryStatus(
     db: Database,
     id: number,
     status: 'applied' | 'failed' | 'rolled_back',
-    newSchema?: MetadataHeader
+    newSchema?: MetadataHeader,
+    checksumSchema?: MetadataHeader | null
 ): Promise<void> {
     const ref = historyTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
-    const checksum = newSchema ? computeChecksum(newSchema) : null;
+    // The drift baseline must be comparable to the drift-time check, which reads the LIVE (introspected)
+    // schema. So checksum the introspected `checksumSchema` when the caller re-introspects post-migration
+    // (A6): both sides then come from introspection and match for an unchanged table — inferred-vs-
+    // introspected would false-positive on legitimate type round-trips. `checksumSchema === undefined`
+    // (caller didn't re-introspect) falls back to `newSchema`; an explicit `null` (introspection read
+    // nothing) stores a null checksum → treated as "no baseline" at drift time, not a false positive.
+    // `new_schema` itself stays the inferred schema (used for point-in-time reconstruction).
+    const checksumSource = checksumSchema !== undefined ? checksumSchema : newSchema;
+    const checksum = checksumSource ? computeChecksum(checksumSource) : null;
 
     if (dialect === 'mysql') {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+        const tableRef = ref; // already dialect-escaped (A13)
         await db.runQuery({
             query: `UPDATE ${tableRef} SET status = ?, new_schema = ?, checksum = ? WHERE id = ?`,
             params: [status, newSchema ? JSON.stringify(newSchema) : null, checksum, id]
         });
     } else {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+        const tableRef = ref; // already dialect-escaped (A13)
         await db.runQuery({
             query: `UPDATE ${tableRef} SET status = $1, new_schema = $2::jsonb, checksum = $3 WHERE id = $4`,
             params: [status, newSchema ? JSON.stringify(newSchema) : null, checksum, id]
@@ -208,8 +223,8 @@ async function updateHistoryStatus(
     }
 }
 
-export async function recordMigrationSuccess(db: Database, id: number, newSchema: MetadataHeader): Promise<void> {
-    await updateHistoryStatus(db, id, 'applied', newSchema);
+export async function recordMigrationSuccess(db: Database, id: number, newSchema: MetadataHeader, checksumSchema?: MetadataHeader | null): Promise<void> {
+    await updateHistoryStatus(db, id, 'applied', newSchema, checksumSchema);
 }
 
 export async function recordMigrationRolledBack(db: Database, id: number): Promise<void> {
@@ -236,29 +251,36 @@ export async function detectSchemaDrift(
     const ref = historyTableRef(config);
     const dialect = config.sqlDialect;
 
-    const liveSchema = await db.getTableMetaData(config.schema || config.database || '', table);
-    if (!liveSchema) {
-        return { drifted: false, expected: null, actual: '' };
-    }
-    const actual = computeChecksum(liveSchema);
-
+    // Read the recorded baseline FIRST. No applied record (or a null checksum) → no reliable baseline
+    // for this table: a first run (the table legitimately doesn't exist yet) or a migration whose
+    // post-migration introspection couldn't read the table. Nothing to compare — return quietly, and
+    // crucially DON'T warn about a "missing" table that isn't supposed to exist yet (A6/A19).
     let query: string;
     if (dialect === 'mysql') {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+        const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT checksum FROM ${tableRef} WHERE table_name = ? AND status = 'applied' ORDER BY version DESC LIMIT 1`;
     } else {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+        const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT checksum FROM ${tableRef} WHERE table_name = $1 AND status = 'applied' ORDER BY version DESC LIMIT 1`;
     }
 
     const result = await db.runQuery({ query, params: [table] });
-    if (!result.success || !result.results?.length) {
-        return { drifted: false, expected: null, actual };
+    const expected: string | null = (result.success && result.results?.length) ? (result.results[0].checksum ?? null) : null;
+    if (expected === null) {
+        return { drifted: false, expected: null, actual: '' };
     }
 
-    const expected: string = result.results[0].checksum;
+    // We HAVE a baseline — read the live (introspected) schema and compare. Both the stored baseline
+    // (recorded from a post-migration re-introspection) and this are introspection-derived, so an
+    // unchanged table matches exactly.
+    const liveSchema = await db.getTableMetaData(config.schema || config.database || '', table);
+    if (!liveSchema) {
+        // Had a baseline but can't read the live table now — NOT a clean bill. Warn instead of
+        // silently reporting "no drift" (A19).
+        db.warn(`Schema drift check for '${table}' could not read the live table schema (introspection returned nothing); skipping the check. This is not a clean bill — verify the table if it persists.`);
+        return { drifted: false, expected, actual: '' };
+    }
+    const actual = computeChecksum(liveSchema);
     const drifted = expected !== actual;
 
     if (drifted) {
@@ -292,12 +314,10 @@ export async function getSchemaAt(
 
     let query: string;
     if (dialect === 'mysql') {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `\`${s}\`.\`${t}\`` : `\`${t}\``;
+        const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT new_schema FROM ${tableRef} WHERE table_name = ? AND status = 'applied' AND applied_at <= ? ORDER BY applied_at DESC LIMIT 1`;
     } else {
-        const [s, t] = ref.includes('.') ? ref.split('.') : ['', ref];
-        const tableRef = s ? `"${s}"."${t}"` : `"${t}"`;
+        const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT new_schema FROM ${tableRef} WHERE table_name = $1 AND status = 'applied' AND applied_at <= $2 ORDER BY applied_at DESC LIMIT 1`;
     }
 

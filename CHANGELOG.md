@@ -1,5 +1,200 @@
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-16
+
+> **Locale-aware number ingestion.** Zero-config detection of the dataset's number format, an explicit
+> `numberFormat` preset, and a warning for the genuinely-ambiguous `"1,234"` shape — plus a fix so the
+> per-row degradation fallback (and therefore `openStream`) normalizes values like the bulk path. All
+> backward-compatible. Note: number-format **consensus is automatic** — a dataset that pairs an
+> ambiguous `"1,234"` with a decisive `"1,234,567"` now reads the ambiguous value as `1234` (previously
+> `1.234`); pass `numberFormat`/separators to override, or rely on the once-per-run detection log.
+
+### ✨ New
+- **`DatabaseConfig.numberFormat` — regional number-format preset (`"US"` / `"EU"` / `"IN"`).** Sugar
+  over `thousandsSeparator`/`decimalSeparator`: it resolves to those fields in `validateConfig`, so a
+  known source locale disambiguates lone-separator values through the **same** path that type inference
+  and value storage already use (no new plumbing). `"US"`/`"IN"` = thousands `,`, decimal `.` (Indian
+  lakh/crore grouping is accepted automatically — it shares US separators); `"EU"` = thousands `.`,
+  decimal `,`. Explicit `thousandsSeparator`/`decimalSeparator` still take precedence. Omit it to use
+  the auto-detection heuristic.
+- **Automatic dataset-level number-format detection (zero-config).** When neither explicit separators
+  nor `numberFormat` are given, autosql now infers the format from **structural evidence in the data
+  itself** — a value that can only be one layout (e.g. `"1,234,567"` → comma is thousands, or `"12,5"`
+  → comma is decimal) votes, and the ambiguous `"1,234"` shape abstains. Evidence is pooled across
+  **all columns** (one format per dataset, since a single source doesn't mix US and EU), so a decisive
+  column resolves an ambiguous sibling: `amt: "1,234"` next to `total: "1,234,567"` stores `1234`, no
+  config. It's **self-contained** (reads only the batch — no extra DB queries), resolved once per load
+  and **locked** (across chunks only column lengths grow, never the format), logs the detected format
+  via `logger.log`, and falls back to assume-decimal + the A24c warning when evidence is absent or
+  genuinely contradictory. `numberFormatMinEvidence` (default 1) raises the vote floor. Applies to
+  `autoSQL`, `autoSQLChunked` **and `openStream`** — separators now flow through every load path,
+  including the per-row degradation fallback (see the Bug Fixes entry below).
+
+### 🛡️ Robustness
+- **Ambiguous single-separator numbers now warn once per column (A24c).** A lone `,` or `.` followed by
+  exactly three digits (e.g. `"1,234"`) is genuinely ambiguous between thousands-grouping (`1234`) and a
+  decimal (`1.234`) — and only three trailing digits are ambiguous, since a trailing thousands group is
+  always three digits in both Western and Indian formats. autosql still assumes decimal, but now logs a
+  one-per-run warning (via `logger.warn`) naming the affected **numeric** column(s), so you can set
+  `numberFormat` / separators when the guess is wrong. Suppressed when separators are supplied; silent
+  for text columns that merely contain such a value.
+
+### 🐛 Bug Fixes
+- **The per-row degradation fallback now normalizes values like the bulk path (`sqlize`).**
+  `perRowInsertWithRetry` built its INSERT from raw row objects (no `sqlize`), while the bulk direct
+  path normalizes them — so when a load *degraded to per-row*, values were stored differently (or
+  rejected): a locale number like `"1,234"`/`"1.234"`, a decimal needing half-up rounding, a
+  timezone-normalized datetime, a canonicalized boolean. It now pre-sqlizes each row exactly as the
+  bulk path does, so degradation stores identical values. This also makes **`openStream` honour
+  `numberFormat` and consensus** — a stream's bulk merge is a DB `CAST` that rejects grouped numbers
+  and always degrades to per-row, which previously bound them raw.
+
+## [2.2.0] - 2026-08-16
+
+> **Audit-remediation release.** Two independent code audits of 2.1.0 (Opus + Fable) produced 25
+> prioritised findings; this release fixes all of them (or defers a few with documented rationale),
+> plus a requested `sourceTimeZone` override for going global. The headline is **silent
+> data-corruption fixes** (timezone shifting, decimal truncation, history over-capture, introspected
+> defaults bound as values) and **fail-loud hardening** (no more silently-dropped rejected rows,
+> false-positive drift, or worker crashes). Also: SSH host-key verification, an opt-in unique-drop
+> gate, cross-dialect upsert/DDL consistency, and internal test/refactor guardrails (a non-UTC test
+> zone, a DB preflight health check, a cross-dialect conformance matrix, and unified insert builders).
+> Backwards-compatible with 2.1.0 except for the documented behaviour changes below — each is a
+> correctness fix or a new default-safe gate; the pre-existing corrupt/silent behaviour is the only
+> thing that changes.
+
+### ✨ New
+- **`DatabaseConfig.sourceTimeZone` — opt-in timezone override for zoneless datetimes.** Set an IANA
+  zone (e.g. `"America/New_York"`, `"Australia/Sydney"`, `"UTC"`) and a datetime **without** an offset
+  (e.g. `"2024-01-15 12:00:00"`) is interpreted as local time in that zone and stored as the
+  corresponding **UTC instant** (DST-correct, both hemispheres). Inputs that already carry a zone
+  (`…Z` / `+05:00`) are unaffected (already absolute), and `date`/`time` columns are never shifted.
+  Omit it (the default) to store zoneless values exactly as given. No new dependency (uses `Intl`);
+  an invalid zone is rejected up front by `validateConfig`. Note: this normalises the stored *instant*
+  for plain `datetime`/`timestamp`; full `timestamptz` offset round-tripping remains a separate item.
+
+### ⚠️ Behavior change
+- **Timezone-naive datetimes are no longer shifted by the host's UTC offset (A1).** `sqlize` parsed a
+  zoneless datetime string through `new Date()`, which reads it in the **Node process's local zone**,
+  then re-emitted UTC — so the same input was stored differently depending on where the process ran
+  (invisible on a UTC host/CI). Zoneless values are now normalised **textually** (wall-clock preserved,
+  no `Date` involved); only zone-qualified inputs are converted to UTC (they carry an absolute
+  instant); `date`/`time` columns keep the wall-clock regardless of any zone. Result is host-timezone
+  independent. Offset-bearing (`+02:00`) and fractional-second inputs, previously mangled by the
+  cleaning step, now normalise correctly.
+- **Decimal values now round half-up instead of truncating downward (A4).** With a `decimalMaxLength`
+  cap, a value with more fractional digits than the cap was **always truncated** (`2.675` → `2.67`) —
+  a systematic downward bias (notably on currency) — because the rounding step operated on
+  already-truncated digits. Rounding is now exact half-up (away from zero, matching MySQL/Postgres),
+  computed with string/digit arithmetic so it is correct at any magnitude. (This supersedes the
+  `precision > 15` truncation fallback from 2.0.0's D-G, which existed only to avoid float error.)
+- **Unique constraints are no longer auto-dropped without opt-in (A10).** When incoming data collided
+  with a `UNIQUE` constraint (staged data hitting an existing unique, or a batch with duplicates in a
+  previously-unique column), autosql **silently and permanently dropped the constraint** — including a
+  user-defined one — to force the load through. This is now gated behind **`dropUniqueConstraints`
+  (default `false`)**, mirroring `deleteColumns`/`updatePrimaryKey`: by default the constraint is kept
+  and a warning is logged naming it (the load then fails loud on Postgres, or upserts on the secondary
+  unique on MySQL); set `dropUniqueConstraints: true` to restore the auto-drop (still warned).
+
+### 🐛 Bug Fixes
+- **Row-level history no longer records unchanged rows on incremental loads (A2).** The before-image
+  capture `LEFT JOIN`ed the full target table against the staged batch, so on an incremental load
+  every row **not** in the batch was written to the history table on every run (history growth
+  proportional to table size, not batch size). It now `INNER JOIN`s, capturing a before-image only for
+  the rows the merge actually changes. Fixed on MySQL, Postgres, and SQL Server.
+- **Introspected column defaults are no longer stored as literal values (A3).** When loading into a
+  pre-existing table (Postgres/SQL Server) whose column has a DDL `DEFAULT`, a row with a NULL/omitted
+  value for that column could store the introspected **default expression string** (e.g.
+  `'active'::character varying`, `CURRENT_TIMESTAMP`) as the value. Introspected defaults are now kept
+  separate from the value-substitution path; a missing value becomes `NULL` (or the DB's own default),
+  never the expression. (MySQL was unaffected — it does not introspect the default.)
+- **Failed graceful-degradation diverts now fail loud instead of silently dropping rows (A5).** When a
+  row failed the load and was diverted to `rejectedRowsTable`, the divert writes were unchecked — so a
+  broken/incompatible rejects table (missing privilege, wrong shape) swallowed the rows while the load
+  still reported `success: true`. Both divert paths now check the result and **throw** if the divert
+  itself fails, so no row is ever lost silently. `rejectedRowsTable` is also now rejected up front on
+  SQL Server (its builder emits Postgres-only DDL — previously a guaranteed silent loss; parity deferred).
+- **Schema-drift detection no longer false-positives on every run (A6).** With `schemaHistory`, the
+  recorded baseline checksum was taken over the *inferred* schema while the drift check compared the
+  *introspected* schema — different shapes for the same table — so under `strictDriftDetection` it threw
+  and **blocked every load after the first** (and warned falsely otherwise). The baseline is now recorded
+  from a post-migration re-introspection, so both sides are introspection-derived and match for an
+  unchanged table; genuine out-of-band changes are still detected.
+- **The schema-history subsystem no longer fails silently (A19).** A failed history-table bootstrap now
+  throws (opt-in feature that can't work fails loud); an unrecordable migration-start now warns;
+  `detectSchemaDrift` distinguishes "no baseline / first run" from "couldn't read the live table" (the
+  latter now warns instead of silently reporting no drift); a dead table-existence check is fixed; and
+  `schemaHistory` is rejected up front on SQL Server (Postgres-only bootstrap; parity deferred).
+- **Ambiguous single-row insert failures are no longer retried into duplicates (A15).** On the per-row
+  degradation path, `runQuery`'s internal retry could re-execute a non-idempotent `INSERT` whose failure
+  was ambiguous (connection dropped after the server applied it), duplicating the row. That path (which
+  already owns an outer retry loop) now runs each insert once. `runQuery` gained an optional per-call
+  attempts override; the default retry behavior is unchanged.
+- **Postgres primary-key changes are now atomic (A9).** The adapter injected literal `COMMIT;`/`BEGIN;`
+  around a PK change, splitting the migration into three transactions — a failure partway through could
+  leave the table with no primary key while the call reported failure. The drop/alter/add now run in one
+  transaction (Postgres DDL is transactional).
+- **Postgres type-conversion `ALTER … USING` casts now name real Postgres types (A12).** Conversions like
+  `→ double` / `→ tinyint` / `→ datetime` emitted `::double` / `::tinyint` / `::datetime` (local inference
+  tokens that don't exist in Postgres), so the ALTER failed at execution while MySQL/SQL Server succeeded.
+  The cast target is now translated to the server type.
+- **Cross-dialect upsert consistency (A11).** With no updatable columns, a duplicate key now skips on all
+  three dialects (MySQL previously errored on a bare INSERT; it now emits a no-op self-update). The SQL
+  Server `MERGE` now takes `WITH (HOLDLOCK)` to prevent a concurrent-upsert double-insert race.
+- **`schemaHistory` table references are now escaped consistently (A13).** The history module built its
+  table references by splitting on `.` instead of routing through `escapeIdentifier`, which corrupted any
+  schema/table name containing a dot and bypassed the identifier guards; it now escapes schema and table
+  the same way the rest of the engine does.
+- **Sparse columns are inferred as nullable, not spuriously NOT-NULL/unique (A17).** A column that first
+  appeared partway through the data had its earlier absences uncounted, so it looked NOT-NULL and unique
+  — a spurious primary-key candidate the same batch then failed to insert. Rows before a column's first
+  value now count as nulls, so it infers nullable.
+- **Streaming (`openStream`) no longer silently drops columns or mangles objects (A18).** A key that first
+  appeared in a later row/chunk was silently dropped (its column didn't exist in the staging table); the
+  first chunk's columns are now the union of its rows, and a genuinely new later column fails loud instead
+  of vanishing. Object/array values are JSON-serialised (were becoming `"[object Object]"`), matching the
+  `autoSQL` batch path.
+
+### 🛡️ Robustness
+- **`runTransaction` never rejects, even on connection-pool failure (A16).** The pool acquire was
+  awaited outside the retry guard, so pool exhaustion / an acquire timeout could escape as an unhandled
+  rejection and crash a caller relying on the "always resolves to a result" contract. It now returns
+  `{ success: false }` like every other failure.
+- **The worker path no longer crashes with a configured `logger`, and cleans up its connections (A8/A14).**
+  With `useWorkers` (the default), passing a `logger` (or using an SSH tunnel) threw `DataCloneError`
+  when the config was cloned to the worker, crashing the load; the non-cloneable fields are now stripped
+  before spawning. `maxWorkers` is now honoured, the pool is capped at the number of tasks, and a
+  single-table load skips workers entirely (no thread/connection-pool overhead). Workers are now shut
+  down gracefully — each closes its database connections before the thread is terminated — instead of
+  being killed abruptly and leaking server-side connections on every worker-backed load.
+- **Assorted low-severity hardening.** `openStream` fails fast on SQL Server (A20) instead of emitting
+  Postgres-shaped SQL that failed mid-stream; SQL Server unrecoverable connect errors (login failed /
+  cannot open database) are classified and no longer retried (A21); the single-statement guard
+  (`isValidSingleQuery`) is now a proper tokenizer (A23) that no longer mis-parses comments straddling
+  string literals, doubled quotes, or dollar-quoting; a connection whose `ROLLBACK` failed is discarded
+  rather than returned to the pool (A24); composite-key uniqueness checks are unambiguous (A24); and
+  `estimateRowSize` counts varchar bytes per dialect (A25) so table auto-splitting doesn't under-trigger
+  on multibyte columns.
+
+### 🔒 Security
+- **SSH tunnels now verify the host key (A7).** The `ssh2` tunnel performed **no** host-key
+  verification — it accepted whatever key the server presented, so the tunnel that protects the DB
+  credentials in transit was silently MITM-able. New `SSHKeys.hostFingerprint` (OpenSSH `SHA256:…`
+  form, from `ssh-keyscan <host> | ssh-keygen -lf -`) pins the bastion's key and refuses a mismatch;
+  when it's omitted the tunnel still connects but logs a loud warning that its identity is unverified
+  (parity with the TLS `rejectUnauthorized: false` warning). Also: `setSSH` no longer mutates the
+  caller's `sshKeys` object, and SSH debug output routes through the configured logger, not `console`.
+
+### 🔧 Maintenance
+- **Tests run in a non-UTC timezone by default** (`TZ=Australia/Sydney`, overridable) so
+  timezone-sensitive bugs like A1 can't hide behind a UTC-only CI host; the date tests assert a
+  non-UTC offset so a misconfigured harness fails loud rather than passing vacuously.
+- **DB preflight health check for the live suite.** If a test database is unreachable, the full run
+  now fails fast with one clear, actionable message (`npm run db:up`) instead of dozens of tests
+  failing with a cryptic, empty-message `ECONNREFUSED`. Docker Compose gained per-service healthchecks
+  and `db:up` waits for healthy; the unit run excludes all `*-live` tests by convention so it stays
+  database-free.
+
 ## [2.1.0] - 2026-08-15
 
 > Adds encrypted-connection support (`ssl`, all three dialects) and BYOD/least-privilege hardening:

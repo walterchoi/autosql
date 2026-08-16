@@ -1,6 +1,6 @@
 import { DatabaseConfig } from '../config/types';
 import { normalizeNumber, validateConfig, shuffleArray, sqlize } from './utilities';
-import { groupings } from '../config/groupings';
+import { groupings, isNumeric } from '../config/groupings';
 import { collateTypes } from './columnTypes';
 import { predictType } from './columnTypes';
 import { defaults, nonCategoricalTypes, DEFAULT_LENGTHS } from '../config/defaults';
@@ -146,6 +146,17 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         }
     };
 
+    // A24c: columns whose values include a lone-separator number that is genuinely ambiguous between
+    // thousands-grouping and a decimal (e.g. "1,234"). normalizeNumber() flags these via the callback
+    // below; we assume decimal but warn once per run so the caller can disambiguate with
+    // thousandsSeparator/decimalSeparator. A single hoisted closure (no per-value allocation) records
+    // the current column, which is set immediately before each predictType() call.
+    const ambiguousSeparatorColumns = new Set<string>();
+    let ambiguitySeparatorColumn: string | null = null;
+    const noteAmbiguousSeparator = () => {
+        if (ambiguitySeparatorColumn !== null) ambiguousSeparatorColumns.add(ambiguitySeparatorColumn);
+    };
+
     for (const row of sampleData) {
         const rowColumns = Object.keys(row);
         rowColumns.forEach(column => allColumns.add(column))
@@ -206,7 +217,8 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 continue;
             }
 
-            const type = predictType(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator)
+            ambiguitySeparatorColumn = column;
+            const type = predictType(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator, noteAmbiguousSeparator)
             if(!type) continue;
             const sqlizedValue = sqlize(value, type, dialectConfig, databaseConfig)
             metaDataInterim[column].valueCount++;
@@ -242,6 +254,18 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 metaDataInterim[column].byteLength = Math.max(metaDataInterim[column].byteLength, Buffer.byteLength(String(value), "utf8"));
             }
         }
+    }
+
+    // A17: a column that first APPEARS partway through the sample never had the EARLIER rows counted as
+    // nulls for it (it wasn't in `allColumns` yet). Without this, a sparse column (present in a few rows,
+    // absent in many) looks NOT-NULL and fully-unique — a spurious PRIMARY-KEY candidate that the very
+    // same batch then fails to insert. Reconcile: every row scanned before a column's first value counts
+    // as a null, so the column is correctly inferred nullable (and thus not a PK).
+    const totalSampledRows = sampleData.length;
+    for (const column in metaDataInterim) {
+        const interim = metaDataInterim[column];
+        const seen = interim.valueCount + interim.nullCount;
+        if (seen < totalSampledRows) interim.nullCount += totalSampledRows - seen;
     }
 
     for (const column in metaDataInterim) {
@@ -442,6 +466,22 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     for (const key of emptyOrNullKeys) {
         delete metaData[key];
     }
+
+    // A24c: warn once per run for columns that resolved to a numeric type AND carried a genuinely
+    // ambiguous lone-separator value. Suppressed when the caller supplied explicit separators (no
+    // ambiguity then — normalizeNumber takes the override path and never flags), and filtered to
+    // numeric columns so a text column that merely contained "1,234" stays silent.
+    if (ambiguousSeparatorColumns.size > 0
+        && databaseConfig.thousandsSeparator === undefined
+        && databaseConfig.decimalSeparator === undefined) {
+        const numericAmbiguous = [...ambiguousSeparatorColumns]
+            .filter(col => metaData[col] && isNumeric(metaData[col].type ?? ""));
+        if (numericAmbiguous.length > 0) {
+            const warn = databaseConfig.logger?.warn ?? databaseConfig.logger?.log;
+            warn?.(`autosql: column(s) ${numericAmbiguous.map(c => `"${c}"`).join(", ")} contain values with a single ',' or '.' followed by exactly three digits (e.g. "1,234"), which is ambiguous between thousands grouping (1234) and a decimal (1.234). Assuming decimal — if these are grouped integers, pass thousandsSeparator + decimalSeparator to disambiguate.`);
+        }
+    }
+
     return metaData
 }
 

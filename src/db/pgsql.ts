@@ -223,6 +223,12 @@ export class PostgresDatabase extends Database {
         if (client) client.release();
     }
 
+    protected destroyConnection(client: PoolClient): void {
+        // release(true) removes the client from the pool (A24) — a client whose rollback failed is in an
+        // aborted-transaction state and must not be handed to the next borrower.
+        if (client) { try { client.release(true); } catch { /* already broken */ } }
+    }
+
     protected async executeQuery(query: string, client?: PoolClient): Promise<any>;
     protected async executeQuery(QueryInput: QueryInput, client?: PoolClient): Promise<any>;
     protected async executeQuery(queryOrParams: QueryInput, client?: PoolClient): Promise<{ rows: any[]; affectedRows: number }> {
@@ -301,15 +307,19 @@ export class PostgresDatabase extends Database {
         // R9: surface schema changes that are computed but blocked by the safe-default flags.
         if (!isStagingTable) this.warnBlockedSchemaChanges(table, alterTableChanges);
 
+        // A9: no embedded COMMIT;/BEGIN; around the PK change. Postgres DDL is fully transactional, so
+        // drop-PK + column alters + add-PK all run in the ONE transaction runTransaction provides —
+        // committing mid-way split the migration into three transactions, so a failure after the first
+        // COMMIT left the table with NO primary key (durably) while the caller got success:false.
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getDropPrimaryKeyQuery(table));
-            queries.push({ query: "COMMIT;", params: [] });
-            queries.push({ query: "BEGIN;", params: [] });
         }
 
         // ✅ Only fetch unique indexes if there are columns to remove uniqueness from
         let indexesToDrop: string[] = [];
-        if (alterTableChanges.noLongerUnique.length > 0) {
+        // Only drop the unique when the caller opted in (A10). Off (default) → keep it; the load fails
+        // loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
+        if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {
             // Extract the results from the QueryResult response
             const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
         
@@ -336,10 +346,8 @@ export class PostgresDatabase extends Database {
         const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.getConfig().schema, this.getConfig());
         queries.push(...alterQueries);
 
-        // Add New Primary Key (if changed and allowed)
+        // Add New Primary Key (if changed and allowed) — same transaction (A9).
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
-            queries.push({ query: "COMMIT;", params: [] });
-            queries.push({ query: "BEGIN;", params: [] });
             queries.push(this.getAddPrimaryKeyQuery(table, alterTableChanges.primaryKeyChanges));
         }
 

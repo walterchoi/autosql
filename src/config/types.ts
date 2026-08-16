@@ -22,6 +22,14 @@ export interface ColumnDefinition {
   primary?: boolean;
   autoIncrement?: boolean;
   default?: any;
+  /**
+   * DDL default EXPRESSION introspected from the live catalog (e.g. Postgres `'active'::character
+   * varying`, `CURRENT_TIMESTAMP`, `nextval('…'::regclass)`). Kept SEPARATE from `default` because
+   * `default` doubles as the literal value `getInsertValues` substitutes for a missing cell — binding
+   * an introspected DDL expression as a row value would store the expression string verbatim (A3).
+   * This field is informational: DDL builders may read it, but the insert path never binds it.
+   */
+  ddlDefault?: any;
   decimal?: number;
   calculated?: boolean;
   updatedCalculated?: boolean;
@@ -167,6 +175,17 @@ export interface DatabaseConfig {
       safeMode?: boolean;
       deleteColumns?: boolean;
 
+      /**
+       * Allow autosql to DROP a UNIQUE constraint when incoming data would violate it — either staged
+       * data colliding with an existing unique (resolveConflicts) or a batch containing duplicates in
+       * a previously-unique column. Default false (safe): the constraint is KEPT and the load fails
+       * loud (or diverts to `rejectedRowsTable`) on the colliding rows, rather than silently and
+       * permanently removing a uniqueness guarantee — including a user-defined one — based on one
+       * batch's data. Set true to auto-drop (a warning naming the constraint is logged either way).
+       * Mirrors `deleteColumns` / `updatePrimaryKey`.
+       */
+      dropUniqueConstraints?: boolean;
+
       autoSplit?: boolean;
 
       addTimestamps?: boolean;
@@ -238,6 +257,48 @@ export interface DatabaseConfig {
        */
       thousandsSeparator?: string;
       decimalSeparator?: string;
+
+      /**
+       * Regional number-format preset — sugar over `thousandsSeparator`/`decimalSeparator`
+       * that resolves to those fields in `validateConfig`, so it flows to BOTH type inference
+       * and value storage. Use it when you know the source locale and want lone-separator
+       * values disambiguated (e.g. `"US"` reads "1,234" as 1234; `"EU"` reads "1.234" as 1234).
+       *
+       *  - `"US"` / `"IN"` — thousands `","`, decimal `"."` (Indian lakh/crore grouping is
+       *    accepted automatically; it shares US separators).
+       *  - `"EU"` — thousands `"."`, decimal `","`.
+       *
+       * Explicit `thousandsSeparator`/`decimalSeparator` take precedence when both are supplied.
+       * Omit to use the auto-detection heuristic (a lone separator is treated as decimal, with a
+       * one-per-run warning for the genuinely ambiguous "1,234"-style case).
+       */
+      numberFormat?: "US" | "EU" | "IN";
+
+      /**
+       * When neither explicit separators nor `numberFormat` are given, autosql infers the number
+       * format from **structural evidence in the data itself** (dataset-level: one layout for the
+       * whole load, since a single source doesn't mix US and EU). A value that can only be one layout
+       * — e.g. `"1,234,567"` (comma = thousands) or `"12.5"` (dot = decimal) — is a vote; the lone
+       * ambiguous `"1,234"` shape abstains. If both layouts appear (contradictory, ~never happens for
+       * real data) it falls back to assume-decimal + a warning.
+       *
+       * `numberFormatMinEvidence` is the number of votes a layout needs before it's trusted (and
+       * before an opposing minority counts as a genuine conflict). Default **1** — one structural
+       * value is certainty, not a guess. Raise it to tolerate a few stray/mis-parsed values.
+       */
+      numberFormatMinEvidence?: number;
+
+      /**
+       * IANA time zone (e.g. "America/New_York", "Australia/Sydney", "UTC") that ZONELESS datetime
+       * inputs should be interpreted as. When set, a value with no offset (e.g. "2024-01-15 12:00:00")
+       * is treated as local time in this zone and converted to a UTC instant before storage. Inputs
+       * that ALREADY carry a zone ("…Z" / "+05:00") are unaffected — they are already absolute — and
+       * `date`/`time` columns are never shifted. Omit (the default) to store zoneless values exactly
+       * as given (wall-clock preserved, no zone assumed). autosql NEVER infers this from the host
+       * process timezone. Note: this normalises the stored INSTANT; it does not by itself make a
+       * `datetimetz`/`timestamptz` column round-trip a source offset (a separate concern).
+       */
+      sourceTimeZone?: string;
 
       /**
        * Acquire a per-table advisory lock before running schema inference and
@@ -346,6 +407,14 @@ export interface SSHKeys {
   password?: string;
   private_key_path?: string;
   private_key?: string;
+  /**
+   * Expected OpenSSH host-key fingerprint of the SSH server, e.g. "SHA256:abc123…" (obtain via
+   * `ssh-keyscan -t ed25519 <host> | ssh-keygen -lf -`). When set, the tunnel VERIFIES the bastion's
+   * host key against it and refuses a mismatch — closing the MITM window (ssh2 does NO verification by
+   * default). When omitted, the tunnel still connects but logs a loud warning that its identity is
+   * unverified. The "SHA256:" prefix and trailing base64 padding are optional.
+   */
+  hostFingerprint?: string;
   timeout?: number;
   debug?: boolean;
   source_address?: string;

@@ -26,6 +26,13 @@ export abstract class Database {
     // runs its whole async operation inside this context so concurrent calls with different
     // schemas stay isolated instead of racing on a shared, mutated this.config.schema.
     private schemaContext = new AsyncLocalStorage<string>();
+    // Per-operation number-format override. Dataset-level separator consensus resolves ONE
+    // {thousands, decimal} pair from the batch and runs the whole load inside this context, so
+    // BOTH inference and load-time sqlize (and worker dispatch, which clones getConfig() inside the
+    // scope) see the resolved separators — without mutating the shared config or threading it through
+    // every call site. Concurrent loads with different formats stay isolated (same rationale as
+    // schemaContext). Consumed via getConfig().thousandsSeparator/decimalSeparator.
+    private separatorContext = new AsyncLocalStorage<{ thousands: string; decimal: string }>();
 
     constructor(config: DatabaseConfig) {
         this.config = validateConfig(config);
@@ -33,8 +40,15 @@ export abstract class Database {
 
     public getConfig() {
         const ctxSchema = this.schemaContext.getStore();
-        if (ctxSchema !== undefined) return { ...this.config, schema: ctxSchema };
-        return this.config;
+        const ctxSep = this.separatorContext.getStore();
+        if (ctxSchema === undefined && ctxSep === undefined) return this.config;
+        const cfg = { ...this.config };
+        if (ctxSchema !== undefined) cfg.schema = ctxSchema;
+        if (ctxSep !== undefined) {
+            cfg.thousandsSeparator = ctxSep.thousands;
+            cfg.decimalSeparator = ctxSep.decimal;
+        }
+        return cfg;
     }
 
     /**
@@ -46,6 +60,17 @@ export abstract class Database {
     public runWithSchema<T>(schema: string | undefined, fn: () => T): T {
         if (!schema) return fn();
         return this.schemaContext.run(schema, fn);
+    }
+
+    /**
+     * Run `fn` with resolved number-format separators as the effective config for the duration of
+     * the async operation (and everything it awaits, including worker dispatch), without mutating
+     * the shared instance config. Used by dataset-level separator consensus. A falsy pair runs `fn`
+     * unchanged (no override).
+     */
+    public runWithSeparators<T>(separators: { thousands: string; decimal: string } | undefined, fn: () => T): T {
+        if (!separators) return fn();
+        return this.separatorContext.run(separators, fn);
     }
 
     public updateTableMetadata(table: string, metaData: MetadataHeader, type: "metaData" | "existingMetaData" = "metaData"): void {
@@ -82,6 +107,9 @@ export abstract class Database {
         }
         if (changes.primaryKeyChanges?.length && !this.config.updatePrimaryKey) {
             this.warn(`Schema change not applied to '${table}': a primary-key change is pending (${changes.primaryKeyChanges.join(", ")}) but 'updatePrimaryKey' is off. Set updatePrimaryKey: true to apply it.`);
+        }
+        if (changes.noLongerUnique?.length && !this.config.dropUniqueConstraints) {
+            this.warn(`Schema change not applied to '${table}': ${changes.noLongerUnique.length} column(s) (${changes.noLongerUnique.join(", ")}) now contain duplicate values that would require DROPPING their UNIQUE constraint, but 'dropUniqueConstraints' is off. The constraint is KEPT (the load may then fail on the duplicate rows); set dropUniqueConstraints: true to relax it.`);
         }
     }
 
@@ -126,6 +154,9 @@ export abstract class Database {
     // statements (START/…/COMMIT/ROLLBACK) on the same connection.
     protected abstract acquireConnection(): Promise<any>;
     protected abstract releaseConnection(client: any): void;
+    // Discard a connection instead of returning it to the pool — used when a ROLLBACK failed, so the
+    // next borrower isn't handed a connection stuck in an aborted-transaction state (A24).
+    protected abstract destroyConnection(client: any): void;
 
     public async establishConnection(): Promise<void> {
         let attempts = 0;
@@ -134,7 +165,7 @@ export abstract class Database {
         while (attempts < maxAttempts) {
             try {
                 if (this.config.sshConfig) {
-                    const { stream, sshClient } = await setSSH(this.config.sshConfig);
+                    const { stream, sshClient } = await setSSH(this.config.sshConfig, this.config.logger);
                     this.config.sshStream = stream;
                     this.config.sshClient = sshClient;
                 }
@@ -276,9 +307,13 @@ export abstract class Database {
         }
     }
     
-    public async runQuery(queryOrParams: QueryInput): Promise<QueryResult> {
+    public async runQuery(queryOrParams: QueryInput, maxAttemptsOverride?: number): Promise<QueryResult> {
         const results: any[] = [];
-        const maxAttempts = maxQueryAttempts || 3;
+        // `maxAttemptsOverride` lets a caller that owns its OWN retry loop opt out of the internal
+        // retry. This matters for NON-idempotent statements (e.g. a single-row INSERT): on an
+        // ambiguous failure (connection dropped AFTER the server applied the row) the internal retry
+        // would re-execute and duplicate it. `perRowInsertWithRetry` passes 1 for exactly this (A15).
+        const maxAttempts = maxAttemptsOverride ?? maxQueryAttempts ?? 3;
         let attempts = 0;
         let _error: any;
         const start = new Date();
@@ -355,10 +390,16 @@ export abstract class Database {
         const maxAttempts = containsDDL ? 1 : (maxQueryAttempts || 3);
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            const client = await this.acquireConnection();
+            let client: any;
+            let rollbackFailed = false;
             let results: any[] = [];
             let totalAffectedRows = 0;
             try {
+                // Acquire INSIDE the try: pool exhaustion, an acquire timeout, or a connection dropped
+                // between establish and acquire must become a {success:false} QueryResult, not an
+                // unhandled rejection that escapes this method — callers (autosql.ts) invoke it bare and
+                // rely on the documented "always resolves, never rejects" contract (A16).
+                client = await this.acquireConnection();
                 await this.startTransaction(client);
 
                 for (const QueryInput of queries) {
@@ -380,10 +421,13 @@ export abstract class Database {
                 };
             } catch (error: any) {
                 this.error(`Transaction error (attempt ${attempt}/${maxAttempts}): ${error}`);
-                try {
-                    await this.rollback(client);
-                } catch (rollbackError) {
-                    this.error(`Rollback failed: ${rollbackError}`);
+                if (client) {
+                    try {
+                        await this.rollback(client);
+                    } catch (rollbackError) {
+                        rollbackFailed = true;
+                        this.error(`Rollback failed: ${rollbackError}`);
+                    }
                 }
 
                 const permanentErrors = await this.getPermanentErrors();
@@ -393,7 +437,12 @@ export abstract class Database {
                 }
                 await new Promise(res => setTimeout(res, 1000)); // Wait before retrying the whole transaction
             } finally {
-                this.releaseConnection(client);
+                if (client) {
+                    // A failed rollback leaves the connection dirty (esp. Postgres: aborted transaction);
+                    // destroy it rather than return a poisoned connection to the pool (A24).
+                    if (rollbackFailed) this.destroyConnection(client);
+                    else this.releaseConnection(client);
+                }
             }
         }
 
@@ -466,8 +515,16 @@ export abstract class Database {
     
             const existsQueryInput = this.getTableExistsQuery(schema, table);
             const exists = await this.runQuery(existsQueryInput);
-            if (!exists) return null;
-    
+            // `exists` is always a (truthy) QueryResult, so the old `if (!exists)` never fired (A19).
+            // Surface a failed existence probe, and read the COUNT(*) it returns to short-circuit for a
+            // genuinely absent table (key casing varies by dialect, so read the first column value).
+            if (!exists.success) {
+                throw new Error(`Failed to check whether ${schema}.${table} exists: ${exists.error ?? "unknown error"}`);
+            }
+            const countRow = exists.results?.[0];
+            const tableExists = countRow ? Number(Object.values(countRow)[0] ?? 0) > 0 : false;
+            if (!tableExists) return null;
+
             const MetaQueryInput = this.getTableMetaDataQuery(schema, table);
             const result = await this.runQuery(MetaQueryInput);
             if (!result.success || !result.results) {

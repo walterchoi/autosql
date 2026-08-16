@@ -10,6 +10,8 @@ const base = require('./jest.config.js');
 
 module.exports = {
   ...base,
+  // Benchmarks are inference-only (no DB) — skip the DB preflight the full config runs.
+  globalSetup: undefined,
   testMatch: ['**/*.bench.ts'],
   // Benchmarks process large datasets; give them room beyond the default 30s.
   testTimeout: 120000,

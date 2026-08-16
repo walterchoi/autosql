@@ -6,8 +6,13 @@ const base = require('./jest.config.js');
 
 module.exports = {
   ...base,
+  // Unit tests need no database — skip the DB preflight the full config runs.
+  globalSetup: undefined,
   testPathIgnorePatterns: [
     '/node_modules/',
+    // Belt-and-braces: exclude EVERY live test by convention so a new `*-live` test can never leak
+    // into the DB-free unit run (which is what made a DB-down run fail cryptically before).
+    '.*-live\\.test\\.ts$',
     'tests/alter-table\\.test\\.ts',
     'tests/alter-table-complex\\.test\\.ts',
     'tests/auto-configure\\.test\\.ts',

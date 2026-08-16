@@ -210,6 +210,11 @@ export class MySQLDatabase extends Database {
         if (client) client.release();
     }
 
+    protected destroyConnection(client: PoolConnection): void {
+        // Discard rather than return to the pool (A24) — after a failed rollback the connection may be dirty.
+        if (client) { try { client.destroy(); } catch { /* already broken */ } }
+    }
+
     protected async executeQuery(query: string, client?: PoolConnection): Promise<any>;
     protected async executeQuery(QueryInput: QueryInput, client?: PoolConnection): Promise<any>;
     protected async executeQuery(queryOrParams: QueryInput, client?: PoolConnection): Promise<{ rows: any[]; affectedRows: number }> {
@@ -302,7 +307,9 @@ export class MySQLDatabase extends Database {
         }
 
         let indexesToDrop: string[] = [];
-        if (alterTableChanges.noLongerUnique.length > 0) {
+        // Only drop the unique when the caller opted in (A10). Off (default) → keep it; the load fails
+        // loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
+        if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {
             const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
         
             if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {

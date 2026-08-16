@@ -55,6 +55,15 @@ export function buildCreateStreamStagingTableQuery(
  * Build INSERT for a single chunk of rows into the stream staging table.
  * All values are cast to strings (TEXT columns) and parameter-bound.
  */
+// Objects/arrays must serialise to JSON, not String()'s useless "[object Object]" / "a,b,c" (A18) —
+// matching what sqlize does for JSON values on the batch path, so a JSON-bearing source round-trips
+// the same via openStream as via autoSQL.
+function streamCell(v: any): string | null {
+    if (v === null || v === undefined) return null;
+    if (typeof v === "object") return JSON.stringify(v);
+    return String(v);
+}
+
 export function buildInsertIntoStreamStagingQuery(
     stagingTable: string,
     columns: string[],
@@ -72,8 +81,7 @@ export function buildInsertIntoStreamStagingQuery(
         for (const row of rows) {
             rowPlaceholders.push(`(${columns.map(() => '?').join(', ')})`);
             for (const col of columns) {
-                const v = row[col];
-                params.push(v === null || v === undefined ? null : String(v));
+                params.push(streamCell(row[col]));
             }
         }
     } else {
@@ -82,8 +90,7 @@ export function buildInsertIntoStreamStagingQuery(
             const holders = columns.map(() => `$${paramIdx++}`);
             rowPlaceholders.push(`(${holders.join(', ')})`);
             for (const col of columns) {
-                const v = row[col];
-                params.push(v === null || v === undefined ? null : String(v));
+                params.push(streamCell(row[col]));
             }
         }
     }

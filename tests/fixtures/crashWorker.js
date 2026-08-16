@@ -7,6 +7,10 @@ const { parentPort } = require("worker_threads");
 parentPort.on("message", (task) => {
   const { method, params } = task;
   switch (method) {
+    case "__closeConnection__":
+      // Graceful-shutdown handshake (A14): ack so the pool terminates promptly.
+      parentPort.postMessage({ __closed__: true });
+      break;
     case "ok":
       // Normal completion — echoes params back so healthy work is verifiable.
       parentPort.postMessage({ success: true, result: params });

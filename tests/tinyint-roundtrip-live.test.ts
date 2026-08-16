@@ -15,7 +15,9 @@ Object.values(DB_CONFIG).forEach((config) => {
         let db: Database;
 
         beforeAll(async () => {
-            db = Database.create({ ...config, schema: "test_schema", useWorkers: false });
+            // These flows relax an inferred unique as more data arrives, which is now opt-in (A10);
+            // this suite is about key/boolean round-trip, not the unique gate, so enable auto-drop.
+            db = Database.create({ ...config, schema: "test_schema", useWorkers: false, dropUniqueConstraints: true });
             await db.establishConnection();
             await db.runQuery({ query: `DROP TABLE IF EXISTS ${tempRef}`, params: [] }).catch(() => {});
             await db.runQuery({ query: `DROP TABLE IF EXISTS ${ref}`, params: [] }).catch(() => {});

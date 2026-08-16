@@ -92,8 +92,57 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         if (merged.streamMaxRetries !== undefined && merged.streamMaxRetries < 1) {
             throw new Error("streamMaxRetries must be at least 1.");
         }
+        if (merged.numberFormatMinEvidence !== undefined
+            && (!Number.isInteger(merged.numberFormatMinEvidence) || merged.numberFormatMinEvidence < 1)) {
+            throw new Error("numberFormatMinEvidence must be a positive integer (>= 1).");
+        }
         if ((merged.thousandsSeparator === undefined) !== (merged.decimalSeparator === undefined)) {
             throw new Error("thousandsSeparator and decimalSeparator must be provided together.");
+        }
+        if (merged.numberFormat !== undefined) {
+            // numberFormat is pure sugar: resolve it to thousandsSeparator/decimalSeparator here so it
+            // flows through the SAME fields the load path (sqlize) already reads — no new plumbing. IN
+            // shares US separators; Indian lakh/crore grouping is accepted by normalizeNumber's
+            // Western/Indian validation automatically.
+            const NUMBER_FORMATS: Record<string, { thousands: string; decimal: string }> = {
+                US: { thousands: ",", decimal: "." },
+                IN: { thousands: ",", decimal: "." },
+                EU: { thousands: ".", decimal: "," },
+            };
+            const preset = NUMBER_FORMATS[merged.numberFormat];
+            if (!preset) {
+                throw new Error(`Invalid numberFormat "${merged.numberFormat}": expected one of ${Object.keys(NUMBER_FORMATS).join(", ")}.`);
+            }
+            // Explicit separators win. They must be supplied together (enforced above), so checking
+            // one is enough; only fill from the preset when the caller gave neither.
+            if (merged.thousandsSeparator === undefined) {
+                merged.thousandsSeparator = preset.thousands;
+                merged.decimalSeparator = preset.decimal;
+            }
+        }
+        if (merged.sourceTimeZone !== undefined) {
+            // Validate the zone up front (fail loud). A bad zone would otherwise surface per-row inside
+            // sqlize's try/catch, which swallows and returns the raw value — a silent skip of the
+            // conversion the caller asked for.
+            try {
+                new Intl.DateTimeFormat("en-US", { timeZone: merged.sourceTimeZone });
+            } catch {
+                throw new Error(`Invalid sourceTimeZone "${merged.sourceTimeZone}": must be a valid IANA time zone name (e.g. "America/New_York", "Australia/Sydney", "UTC").`);
+            }
+        }
+        if (merged.rejectedRowsTable && merged.sqlDialect === "sqlserver") {
+            // The rejected-rows builders emit Postgres-only DDL (BIGSERIAL/JSONB/TIMESTAMPTZ) and `$n`
+            // placeholders, so on SQL Server the divert would fail — and rather than let the load run and
+            // then fail loud only if rows actually need diverting, refuse it here. SQL Server
+            // streaming/degradation parity is deferred (roadmap D-F); fail loud rather than risk a
+            // silent drop (A5).
+            throw new Error("rejectedRowsTable is not yet supported on SQL Server (the rejected-rows table builder emits Postgres-only DDL/placeholders; SQL Server streaming/degradation parity is deferred — see roadmap D-F). Omit rejectedRowsTable on SQL Server for now.");
+        }
+        if (merged.schemaHistory && merged.sqlDialect === "sqlserver") {
+            // The history-table bootstrap emits Postgres-only DDL (BIGSERIAL/JSONB), so schemaHistory
+            // silently no-ops (or errors) on SQL Server today. Fail loud rather than report "no drift"
+            // while blind. SQL Server parity is deferred (roadmap D-F) (A19).
+            throw new Error("schemaHistory is not yet supported on SQL Server (the history-table bootstrap emits Postgres-only DDL; SQL Server parity is deferred — see roadmap D-F). Disable schemaHistory on SQL Server for now.");
         }
         if (merged.surrogateKey) {
             // A surrogate is unique per physical insert, so these features are incoherent with it:
@@ -130,7 +179,7 @@ export function calculateColumnLength(column: any, dataPoint: string, sqlLookupT
     }
 }
 
-export function normalizeNumber(input: any, thousandsIndicatorOverride?: string, decimalIndicatorOverride?: string): string | null {
+export function normalizeNumber(input: any, thousandsIndicatorOverride?: string, decimalIndicatorOverride?: string, onAmbiguousSeparator?: () => void): string | null {
     if ((thousandsIndicatorOverride && !decimalIndicatorOverride) || (!thousandsIndicatorOverride && decimalIndicatorOverride)) {
         throw new Error("Both 'thousandsIndicatorOverride' and 'decimalIndicatorOverride' must be provided together.");
     }
@@ -225,6 +274,18 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         // Only one separator exists, assume it is the decimal separator
         thousandsIndicator = "";
         decimalIndicator = dotCount === 1 ? "." : ",";
+        // A24c: a lone separator followed by exactly three digits (with 1–3 leading digits) is the
+        // one shape that could equally be a Western/Indian thousands group (e.g. "1,234" -> 1234) —
+        // in BOTH formats the trailing group is 3 digits (Indian's 2-digit groups are only ever
+        // middle groups, never trailing). We still assume decimal, but signal the ambiguity so the
+        // caller can warn. Anything else (2 trailing digits, 4+, or >3 leading) is an unambiguous
+        // decimal in every locale and stays silent.
+        if (onAmbiguousSeparator) {
+            const [before, after] = inputStr.split(decimalIndicator);
+            if (after !== undefined && after.length === 3 && before.length >= 1 && before.length <= 3) {
+                onAmbiguousSeparator();
+            }
+        }
     }
 
     const decimalSplit = inputStr.split(decimalIndicator);
@@ -359,7 +420,11 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
             index: columnKey === "INDEX",
             autoIncrement: autoIncrement,
             decimal: lengthInfo.decimal ?? undefined,
-            default: normalizedRow["column_default"],
+            // Introspected DDL default expression → ddlDefault, NOT default. `default` feeds
+            // getInsertValues' missing-value substitution; an introspected expression string
+            // (`'active'::character varying`, `CURRENT_TIMESTAMP`) bound as a row value corrupts the
+            // stored data (A3). DDL builders that need the expression read ddlDefault instead.
+            ddlDefault: normalizedRow["column_default"],
         };
     });
 
@@ -384,7 +449,9 @@ export function isCombinationUnique(data: Record<string, any>[], columns: string
     const seenValues = new Set<string>();
 
     for (const row of data) {
-        const key = columns.map(col => row[col]).join("|");
+        // JSON-encode the tuple (A24) so the composite key is unambiguous: a plain "|" join collides on
+        // an embedded "|", coerces null to "" (conflating null vs empty), and reads 1 the same as "1".
+        const key = JSON.stringify(columns.map(col => row[col] ?? null));
         if (seenValues.has(key)) return false;
         seenValues.add(key);
     }
@@ -445,7 +512,12 @@ export function isMetadataHeader(input: any): input is MetadataHeader {
 
 export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supportedDialects): { rowSize: number; exceedsLimit: boolean, nearlyExceedsLimit: boolean } {
     let totalSize = 0;
-  
+    // Row-size limits are counted in BYTES, but a varchar char can be multi-byte: utf8mb4 (MySQL) up to
+    // 4, SQL Server NVARCHAR is UTF-16 = 2. Scale the declared CHAR length by the dialect's max bytes per
+    // char so a wide table is measured against the byte limit correctly — otherwise autoSplit
+    // under-triggers on multibyte-capable columns (A25).
+    const varcharBytesPerChar = dbType === "mysql" ? 4 : dbType === "sqlserver" ? 2 : 1;
+
     for (const columnName in mergedMetaData) {
       const column = mergedMetaData[columnName];
       const type = column.type?.toLowerCase() || "varchar";
@@ -463,7 +535,7 @@ export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supporte
       } else if (["decimal", "double", "exponent"].includes(type)) {
         columnSize = column.decimal ? Math.ceil(column.decimal / 2) + 1 : DEFAULT_LENGTHS.decimal;
       } else if (["varchar"].includes(type)) {
-        columnSize = column.length ?? DEFAULT_LENGTHS.varchar;
+        columnSize = (column.length ?? DEFAULT_LENGTHS.varchar) * varcharBytesPerChar;
       } else if (["text", "mediumtext", "longtext", "json"].includes(type)) {
         columnSize = DEFAULT_LENGTHS[type as keyof typeof DEFAULT_LENGTHS] ?? 4; // Only store pointer size
       } else if (["date"].includes(type)) {
@@ -695,6 +767,107 @@ export function getInsertValues(metaData: MetadataHeader, row: Record<string, an
     return newRow
 }
 
+// One Intl.DateTimeFormat per zone. Constructing it is ~100× the cost of a formatToParts call, and
+// this only runs when `sourceTimeZone` is set (never on the default path). Cached module-level so the
+// per-value insert hot path pays construction once per zone, not once per value.
+const tzFormatterCache = new Map<string, Intl.DateTimeFormat>();
+function tzFormatter(timeZone: string): Intl.DateTimeFormat {
+    let f = tzFormatterCache.get(timeZone);
+    if (!f) {
+        f = new Intl.DateTimeFormat("en-US", {
+            timeZone, hourCycle: "h23",
+            year: "numeric", month: "2-digit", day: "2-digit",
+            hour: "2-digit", minute: "2-digit", second: "2-digit",
+        });
+        tzFormatterCache.set(timeZone, f);
+    }
+    return f;
+}
+
+// Minutes `timeZone` is ahead of UTC at the given absolute instant. Host-independent: it reads an
+// EXPLICIT IANA zone via Intl, never the host's local Date methods (which would reintroduce A1).
+function tzOffsetMinutes(utcMs: number, timeZone: string): number {
+    const p: Record<string, string> = {};
+    for (const part of tzFormatter(timeZone).formatToParts(new Date(utcMs))) p[part.type] = part.value;
+    const asIfUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+    return (asIfUtc - utcMs) / 60000;
+}
+
+// Interpret Y-Mo-D h:mi:se[.frac] as a WALL-CLOCK in `timeZone` and return the matching UTC instant
+// as an ISO string. Two passes so a DST boundary (offset differs either side of the wall time)
+// resolves to one deterministic instant. Uses Date.UTC + Intl only (host-independent). Precision on
+// this converted path is milliseconds.
+function zonedWallClockToUtcIso(Y: string, Mo: string, D: string, h: string, mi: string, se: string, frac: string | undefined, timeZone: string): string {
+    const ms = frac ? Math.round(parseFloat(frac) * 1000) : 0;
+    const naiveUtc = Date.UTC(+Y, +Mo - 1, +D, +h, +mi, +se, ms);
+    const off1 = tzOffsetMinutes(naiveUtc, timeZone);
+    let utc = naiveUtc - off1 * 60000;
+    const off2 = tzOffsetMinutes(utc, timeZone);
+    if (off2 !== off1) utc = naiveUtc - off2 * 60000;
+    return new Date(utc).toISOString();
+}
+
+/**
+ * Normalise a date/time string for `sqlize` into an ISO-ish form the per-dialect sqlize regex rules
+ * then reduce to the final literal (`T`→space, strip trailing `Z`).
+ *
+ * CRITICAL (A1): never route a ZONELESS value through `new Date()`. `new Date("2024-01-15 12:00:00")`
+ * parses it in the Node process's LOCAL zone, and `toISOString()` re-emits UTC — silently shifting the
+ * wall-clock by the host's UTC offset on any non-UTC machine (a corruption UTC-only CI cannot see).
+ * Only a zone-qualified value (`Z` or `±HH:MM`) denotes an absolute instant and may be converted to
+ * UTC. `date`/`time` columns keep the wall-clock portion regardless of any zone — converting a zoned
+ * value to UTC can shift the stored day/time (`2024-01-15T02:00:00+05:00` into a `date` → 2024-01-14).
+ */
+function normalizeDateValue(strValue: string, columnType: string, sourceTimeZone?: string): string {
+    const s = strValue.trim();
+    const dateOnly = columnType === "date";
+    const timeOnly = columnType === "time";
+
+    // ASP.NET "/Date(<epoch-ms>[±offset])/" — epoch ms is an absolute UTC instant.
+    const aspNet = s.match(/\/Date\((\d+)(?:[+-]\d+)?\)\//);
+    if (aspNet) {
+        const iso = new Date(parseInt(aspNet[1], 10)).toISOString(); // 2024-01-15T12:00:00.000Z
+        if (dateOnly) return iso.slice(0, 10);
+        if (timeOnly) return iso.slice(11, 19);
+        return iso;
+    }
+
+    // Zone-qualified datetime → absolute instant, safe to convert to UTC (the zone is explicit, no
+    // local guessing). Never for date/time columns — see the day-shift note above.
+    const hasZone = /\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:Z|[+-]\d{2}:?\d{2})$/.test(s);
+    if (hasZone && !dateOnly && !timeOnly) {
+        const d = new Date(s);
+        if (!isNaN(d.getTime())) return d.toISOString();
+        // Unparseable despite a zone marker — fall through to textual handling.
+    }
+
+    // Otherwise keep the WALL-CLOCK exactly as written: parse the components textually, never via Date.
+    const dt = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?)?/);
+    if (dt) {
+        const [, Y, Mo, D, h, mi, se, frac] = dt;
+        if (timeOnly) return h !== undefined ? `${h}:${mi}:${se ?? "00"}${frac ?? ""}` : s;
+        if (dateOnly || h === undefined) return `${Y}-${Mo}-${D}`;
+        // datetime/timestamp/datetimetz, zoneless. If the caller declared the source zone, interpret
+        // this wall-clock in THAT zone and convert to a UTC instant; otherwise preserve the wall-clock
+        // verbatim (no timezone assumed). Neither path involves the host zone.
+        if (sourceTimeZone) {
+            return zonedWallClockToUtcIso(Y, Mo, D, h, mi, se ?? "00", frac, sourceTimeZone);
+        }
+        // Canonical ISO (with Z) from the SAME digits; the dialect rules reduce it to
+        // 'YYYY-MM-DD HH:MM:SS' with the wall-clock unchanged.
+        return `${Y}-${Mo}-${D}T${h}:${mi}:${se ?? "00"}${frac ?? ""}Z`;
+    }
+
+    // A bare time value "HH:MM[:SS]" for a time column.
+    if (timeOnly) {
+        const tm = s.match(/^(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?/);
+        if (tm) return `${tm[1]}:${tm[2]}:${tm[3] ?? "00"}${tm[4] ?? ""}`;
+    }
+
+    // Unrecognised shape — do NOT risk a local-zone shift; hand the original to the driver/DB.
+    return s;
+}
+
 export function sqlize(value: any, columnType: string | null, dialectConfig: DialectConfig, databaseConfig?: DatabaseConfig ): any {
     try {
         if (value === null) return null;
@@ -746,17 +919,7 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
 
         const isDateLike = groupings.dateGroup.includes(columnType);
         if (isDateLike) {
-            const match = strValue.match(/\/Date\((\d+)(?:[+-]\d+)?\)\//);
-            if (match) {
-                const millis = parseInt(match[1], 10);
-                strValue = new Date(millis).toISOString();
-            } else {
-                const cleaned = strValue.replace(/[^\d:-\sT]/g, "");
-                const parsedDate = new Date(cleaned);
-                if (!isNaN(parsedDate.getTime())) {
-                strValue = parsedDate.toISOString();
-                }
-            }
+            strValue = normalizeDateValue(strValue, columnType, databaseConfig?.sourceTimeZone);
         }
 
         const isNumberLike = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
@@ -825,35 +988,51 @@ export async function wait_x_mseconds (x: number) {
     })
 }
 
+// Round a numeric string to `precision` decimal places, half-up (away from zero), using digit-string
+// arithmetic only — never float (A4). The previous float path (`Math.round(Number(...))`) had two
+// defects: it fed digits already sliced to `precision` back through Math.round, so the carry digit was
+// gone and it ALWAYS truncated downward (2.675 → 2.67, currency bias); and above ~15 significant
+// digits Number()/Math.pow lose precision. String carry is exact at any magnitude, so the former
+// `precision > 15` truncation compromise (D-G) is no longer needed. Round-half-away-from-zero matches
+// MySQL/Postgres numeric rounding.
 function roundStringDecimal(valueStr: string, precision: number): string {
     if (!valueStr.includes('.')) return valueStr;
-  
-    const [intPart, decimalPartRaw] = valueStr.split('.');
-    const decimalPart = decimalPartRaw.slice(0, precision);
-    const nextDigit = decimalPartRaw.charAt(precision);
-  
-    if (!nextDigit || parseInt(nextDigit, 10) < 5) {
-      // No rounding needed, just trim excess
-      return decimalPart.length > 0
-        ? `${intPart}.${decimalPart}`
-        : intPart;
-    }
-  
-    // Float-based half-up rounding is only accurate below ~15 significant digits; beyond that
-    // Number()/Math.pow lose precision. For a large scale (the high dialect-max ceilings), fall back
-    // to truncation at the cap — the difference is a single unit in the last (e.g. 30th) place, far
-    // below what matters, and it avoids corrupting the value via float math.
-    if (precision > 15) {
-        return `${intPart}.${decimalPart}`;
+
+    let sign = "";
+    let body = valueStr;
+    if (body.startsWith('-')) { sign = "-"; body = body.slice(1); }
+    else if (body.startsWith('+')) { body = body.slice(1); }
+
+    const [intPart, decimalPartRaw = ""] = body.split('.');
+
+    // Already within the cap — nothing to trim or round.
+    if (decimalPartRaw.length <= precision) return valueStr;
+
+    const kept = decimalPartRaw.slice(0, precision);
+    const roundUp = decimalPartRaw.charCodeAt(precision) - 48 >= 5;
+
+    if (!roundUp) {
+        return sign + (precision > 0 && kept.length > 0 ? `${intPart}.${kept}` : intPart);
     }
 
-    // Perform manual rounding
-    let full = `${intPart}.${decimalPart}`;
-    let roundedNum = Number(full);
-    const multiplier = Math.pow(10, precision);
-    roundedNum = Math.round(roundedNum * multiplier) / multiplier;
+    // Half-up: add 1 in the last kept place by incrementing the concatenated integer+kept digits, then
+    // re-split. A carry can grow the integer part (999 → 1000) or ripple across the decimal point.
+    const incremented = incrementDigits(intPart + kept);
+    if (precision === 0) return sign + incremented;
+    const splitAt = incremented.length - precision;
+    return sign + `${incremented.slice(0, splitAt) || "0"}.${incremented.slice(splitAt)}`;
+}
 
-    return roundedNum.toString();
+// Add 1 to a non-negative integer represented as a digit string (no float, arbitrary length).
+function incrementDigits(digits: string): string {
+    const arr = (digits || "0").split('');
+    let i = arr.length - 1;
+    while (i >= 0) {
+        if (arr[i] === '9') { arr[i] = '0'; i--; }
+        else { arr[i] = String(Number(arr[i]) + 1); break; }
+    }
+    if (i < 0) arr.unshift('1');
+    return arr.join('');
 }
 
 export function generateSafeConstraintName(table: string, column: string, type: 'unique' | 'index' = 'unique'): string {

@@ -10,6 +10,7 @@ function makeDb(insertResults: { success: boolean; error?: string; results?: any
         getConfig: () => ({ sqlDialect: "mysql" as const, schema: "s" }),
         runQuery: jest.fn().mockResolvedValue({ success: true }), // sweepStalePending
         runTransaction: jest.fn().mockImplementation(() => Promise.resolve(insertResults[call++])),
+        warn: jest.fn(), // recordMigrationStart now warns when it can't record a start (A19)
     } as any;
 }
 

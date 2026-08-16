@@ -18,6 +18,16 @@ import { AutoSQLHandler } from "../db/autosql";
     parentPort?.on("message", async (task) => {
         try {
             const { method, params } = task;
+
+            if (method === "__closeConnection__") {
+                // Graceful shutdown (A14): close this worker's DB connections before the pool
+                // terminates the thread, so pooled server-side connections aren't leaked on every
+                // worker-backed load. The pool waits (bounded) for the ack, then terminates.
+                try { await db.closeConnection(); } catch { /* best effort */ }
+                parentPort?.postMessage({ __closed__: true });
+                return;
+            }
+
             const normalizedParams = Array.isArray(params) ? params : [params];
 
             if (method === "test") {

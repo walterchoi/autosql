@@ -59,7 +59,14 @@ export class SqlServerDatabase extends Database {
                 enableArithAbort: true,
             },
         });
-        await pool.connect();
+        try {
+            await pool.connect();
+        } catch (error) {
+            // Map err.number -> err.code (A21) so the base connect-retry loop's permanent-error check
+            // classifies an unrecoverable connect failure — 18456 (login failed), 4060 (cannot open
+            // database) — and aborts instead of retrying it maxAttempts times.
+            throw this.normalizeError(error);
+        }
         this.connection = pool as any;
     }
 
@@ -130,6 +137,11 @@ export class SqlServerDatabase extends Database {
 
     protected releaseConnection(_client: any): void {
         // mssql releases the underlying pooled connection on commit()/rollback(); nothing to do.
+    }
+
+    protected destroyConnection(_client: any): void {
+        // mssql transactions release their pooled connection on settle; there is no per-client handle to
+        // destroy (A24). No-op — the pool manages connection health.
     }
 
     public async startTransaction(client: any): Promise<void> {
@@ -323,7 +335,9 @@ export class SqlServerDatabase extends Database {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 
-        if (alterTableChanges.noLongerUnique.length > 0) {
+        // Only drop the unique when the caller opted in (A10). Off (default) → keep it; the load fails
+        // loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
+        if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {
             const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
             if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {
                 throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error}`);
