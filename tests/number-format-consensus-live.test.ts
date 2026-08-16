@@ -67,7 +67,14 @@ Object.values(DB_CONFIG)
                 }
             });
 
-            test("consensus also holds under useWorkers:true (overlay reaches the worker load path)", async () => {
+            test("consensus is unaffected by useWorkers:true (no regression with the flag on)", async () => {
+                // NOTE: this single-table load does NOT actually dispatch a worker — worker dispatch is
+                // gated on insertInput.length > 1 (multiple/nested tables). It asserts the flag causes no
+                // regression. Worker correctness is guaranteed BY CONSTRUCTION rather than exercised here:
+                // the resolved separators are overlaid on Database.getConfig() (the same AsyncLocalStorage
+                // mechanism as the per-operation schemaContext), and the worker dispatch calls getConfig()
+                // INSIDE the runWithSeparators scope, serializing the overlaid config into the worker's
+                // dbConfig — exactly how schema already reaches workers in production.
                 const db = Database.create({ ...baseConfig, useWorkers: true });
                 await db.establishConnection();
                 try {

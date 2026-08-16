@@ -17,10 +17,12 @@
   config. It's **self-contained** (reads only the batch — no extra DB queries), resolved once per load
   and **locked** (across chunks only column lengths grow, never the format), logs the detected format
   via `logger.log`, and falls back to assume-decimal + the A24c warning when evidence is absent or
-  genuinely contradictory. `numberFormatMinEvidence` (default 1) raises the vote floor. Applies to
-  `autoSQL` and `autoSQLChunked`; **not** to `openStream` (streams store values via DB `CAST` / raw
-  parameter binding without `normalizeNumber`, so separators — consensus *or* `numberFormat` — don't
-  apply there; a stream needs already-normalized numeric values).
+  genuinely contradictory. `numberFormatMinEvidence` (default 1) raises the vote floor. Applies to the
+  **bulk load paths** of `autoSQL` / `autoSQLChunked` (staging populate and direct insert, which
+  sqlize). It does **not** apply to `openStream`, nor to the **per-row degradation fallback**
+  (`perRowInsertWithRetry`) — both store values via DB `CAST` / raw parameter binding without
+  `normalizeNumber`, so separators (consensus *or* `numberFormat`) have no effect there. Those paths
+  need already-normalized numeric values; making them sqlize is a separate follow-up.
 
 ### 🛡️ Robustness
 - **Ambiguous single-separator numbers now warn once per column (A24c).** A lone `,` or `.` followed by
