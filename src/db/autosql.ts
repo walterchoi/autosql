@@ -5,6 +5,7 @@ import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, QueryStats } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
+import { resolveDatasetSeparators } from "../helpers/numberFormat";
 import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults, sqlize } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
@@ -45,6 +46,34 @@ export class AutoSQLHandler {
 
     releaseStreamStaging(stagingTable: string): void {
         this.activeStreamStagingTables.delete(stagingTable);
+    }
+
+    /**
+     * Dataset-level number-format consensus (self-contained — reads only `data`, no DB queries).
+     * When the caller supplied neither explicit separators nor `numberFormat`, infer ONE
+     * {thousands, decimal} pair from structural evidence pooled across all columns of the batch, so
+     * a decisive column resolves ambiguous siblings. The returned pair is meant to be run under
+     * `db.runWithSeparators(...)`, which overlays it on `getConfig()` for BOTH inference and
+     * load-time sqlize (and worker dispatch) for the duration of the call.
+     *
+     * Returns undefined (no override — load uses the assume-decimal default + the A24c per-column
+     * warning) when separators are already configured, there is no data, there is no structural
+     * evidence, or the evidence is genuinely contradictory (warns loudly in that last case).
+     */
+    private resolveSeparatorConsensus(data: Record<string, any>[]): { thousands: string; decimal: string } | undefined {
+        const config = this.db.getConfig();
+        // Explicit separators / numberFormat (both resolve to thousandsSeparator in validateConfig) win.
+        if (config.thousandsSeparator !== undefined || config.decimalSeparator !== undefined) return undefined;
+        if (!Array.isArray(data) || data.length === 0) return undefined;
+
+        const decision = resolveDatasetSeparators(data, config.numberFormatMinEvidence ?? 1);
+        if (decision === null) return undefined; // no evidence → default; A24c warns per ambiguous column
+        if ("conflict" in decision) {
+            this.db.warn(`autosql: the data contains conflicting number formats (some values look US "1,234,567", others EU "1.234.567"). Not guessing — using the default (a lone separator is treated as a decimal). Set numberFormat or thousandsSeparator/decimalSeparator to disambiguate.`);
+            return undefined;
+        }
+        this.db.log(`autosql: detected ${decision.thousands === "," ? "US/IN" : "EU"} number format from the data (thousands "${decision.thousands}", decimal "${decision.decimal}").`);
+        return decision;
     }
 
     async autoCreateTable(table: string, newMetaData: MetadataHeader, tableExists?: boolean, runQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
@@ -1326,7 +1355,10 @@ export class AutoSQLHandler {
     } 
     
     async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<QueryResult> {
-      return this.db.runWithSchema(schema, async () => {
+      // Resolve dataset-level number format ONCE, before inference, and run the whole load under it
+      // so inference, staging, direct insert, and workers all sqlize with the same separators.
+      const separators = this.resolveSeparatorConsensus(data);
+      return this.db.runWithSeparators(separators, () => this.db.runWithSchema(schema, async () => {
         const start = new Date();
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
@@ -1454,7 +1486,7 @@ export class AutoSQLHandler {
             const end = new Date();
             return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
         }
-      });
+      }));
     }
 
     /**
@@ -1480,6 +1512,23 @@ export class AutoSQLHandler {
     ): Promise<QueryResult> {
       return this.db.runWithSchema(schema, async () => {
         const start = new Date();
+
+        // Dataset-level number format is resolved ONCE from the first non-empty chunk and LOCKED for
+        // the whole load (across chunks only column lengths grow, never the format). Peek that chunk,
+        // resolve, then process it and the rest under the resolved separators.
+        const iterator = chunks[Symbol.asyncIterator]();
+        let pending = await iterator.next();
+        while (!pending.done && pending.value.length === 0) pending = await iterator.next();
+        const firstValue: Record<string, any>[] | null = pending.done ? null : pending.value;
+        const separators = firstValue ? this.resolveSeparatorConsensus(firstValue) : undefined;
+        const remaining: AsyncIterable<Record<string, any>[]> = {
+            async *[Symbol.asyncIterator]() {
+                if (firstValue !== null) yield firstValue;
+                let r; while (!(r = await iterator.next()).done) yield r.value;
+            }
+        };
+
+        return this.db.runWithSeparators(separators, async () => {
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
         const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
@@ -1494,7 +1543,7 @@ export class AutoSQLHandler {
         let totalRows = 0;
 
         try {
-            for await (const chunk of chunks) {
+            for await (const chunk of remaining) {
                 if (chunk.length === 0) continue;
                 totalRows += chunk.length;
 
@@ -1623,6 +1672,7 @@ export class AutoSQLHandler {
                 error: error instanceof Error ? error.message : String(error)
             };
         }
+        });
       });
     }
 

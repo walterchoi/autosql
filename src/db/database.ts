@@ -26,6 +26,13 @@ export abstract class Database {
     // runs its whole async operation inside this context so concurrent calls with different
     // schemas stay isolated instead of racing on a shared, mutated this.config.schema.
     private schemaContext = new AsyncLocalStorage<string>();
+    // Per-operation number-format override. Dataset-level separator consensus resolves ONE
+    // {thousands, decimal} pair from the batch and runs the whole load inside this context, so
+    // BOTH inference and load-time sqlize (and worker dispatch, which clones getConfig() inside the
+    // scope) see the resolved separators — without mutating the shared config or threading it through
+    // every call site. Concurrent loads with different formats stay isolated (same rationale as
+    // schemaContext). Consumed via getConfig().thousandsSeparator/decimalSeparator.
+    private separatorContext = new AsyncLocalStorage<{ thousands: string; decimal: string }>();
 
     constructor(config: DatabaseConfig) {
         this.config = validateConfig(config);
@@ -33,8 +40,15 @@ export abstract class Database {
 
     public getConfig() {
         const ctxSchema = this.schemaContext.getStore();
-        if (ctxSchema !== undefined) return { ...this.config, schema: ctxSchema };
-        return this.config;
+        const ctxSep = this.separatorContext.getStore();
+        if (ctxSchema === undefined && ctxSep === undefined) return this.config;
+        const cfg = { ...this.config };
+        if (ctxSchema !== undefined) cfg.schema = ctxSchema;
+        if (ctxSep !== undefined) {
+            cfg.thousandsSeparator = ctxSep.thousands;
+            cfg.decimalSeparator = ctxSep.decimal;
+        }
+        return cfg;
     }
 
     /**
@@ -46,6 +60,17 @@ export abstract class Database {
     public runWithSchema<T>(schema: string | undefined, fn: () => T): T {
         if (!schema) return fn();
         return this.schemaContext.run(schema, fn);
+    }
+
+    /**
+     * Run `fn` with resolved number-format separators as the effective config for the duration of
+     * the async operation (and everything it awaits, including worker dispatch), without mutating
+     * the shared instance config. Used by dataset-level separator consensus. A falsy pair runs `fn`
+     * unchanged (no override).
+     */
+    public runWithSeparators<T>(separators: { thousands: string; decimal: string } | undefined, fn: () => T): T {
+        if (!separators) return fn();
+        return this.separatorContext.run(separators, fn);
     }
 
     public updateTableMetadata(table: string, metaData: MetadataHeader, type: "metaData" | "existingMetaData" = "metaData"): void {

@@ -137,6 +137,14 @@ export class AutoSQLStreamHandle {
                 return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
             }
 
+            // NOTE: dataset-level number-format consensus is intentionally NOT applied on the streaming
+            // path. A stream stores values via the DB CAST in the bulk merge and via raw parameter
+            // binding in the per-row fallback — neither runs `sqlize`/`normalizeNumber`, so separators
+            // (consensus OR `numberFormat`) have no effect on stored values here. Streams therefore
+            // require already-normalized numeric values; wiring consensus in would only mis-type columns
+            // (e.g. as int) that the value path then can't store. See the roadmap follow-up to make the
+            // stream value path sqlize before separators can apply.
+
             // Infer schema from staging data
             const tPrepare = perf();
             const inferredMeta = await getMetaData(config, stagingRows, this.primaryKey);
@@ -189,7 +197,7 @@ export class AutoSQLStreamHandle {
             let affectedRows = mergeResult.affectedRows ?? 0;
 
             if (!mergeResult.success) {
-                // Fallback: per-row retry with schema widening
+                // Fallback: per-row retry with schema widening.
                 affectedRows = await this._perRowMerge(stagingRows, updatedMetaData, insertType as 'UPDATE' | 'INSERT', maxRetries);
             }
             phases.load = perf() - tLoad;
