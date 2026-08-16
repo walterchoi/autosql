@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+## [2.3.0] - 2026-08-16
+
+> **Locale-aware number ingestion.** Zero-config detection of the dataset's number format, an explicit
+> `numberFormat` preset, and a warning for the genuinely-ambiguous `"1,234"` shape — plus a fix so the
+> per-row degradation fallback (and therefore `openStream`) normalizes values like the bulk path. All
+> backward-compatible. Note: number-format **consensus is automatic** — a dataset that pairs an
+> ambiguous `"1,234"` with a decisive `"1,234,567"` now reads the ambiguous value as `1234` (previously
+> `1.234`); pass `numberFormat`/separators to override, or rely on the once-per-run detection log.
+
 ### ✨ New
 - **`DatabaseConfig.numberFormat` — regional number-format preset (`"US"` / `"EU"` / `"IN"`).** Sugar
   over `thousandsSeparator`/`decimalSeparator`: it resolves to those fields in `validateConfig`, so a
