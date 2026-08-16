@@ -19,7 +19,9 @@ export type {
     QueryResult,
     InsertResult,
     SSHKeys,
-    AutoSQLOptions
+    AutoSQLOptions,
+    AutoSQLPreview,
+    TablePreview
 } from "./config/types";
 
 export { getSchemaAt, detectSchemaDrift, computeChecksum } from "./helpers/schemaHistory";

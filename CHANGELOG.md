@@ -1,5 +1,20 @@
 ## [Unreleased]
 
+## [2.4.0] - 2026-08-16
+
+### ✨ New
+- **`db.preview(table, data, …)` — dry run.** Computes exactly what an `autoSQL(table, data, …)` call
+  **would** do — the inferred schema, the create/alter/noop decision, the exact `CREATE`/`ALTER` DDL,
+  and any changes that would be **blocked** without an opt-in (dropping a column, changing the primary
+  key, dropping a unique constraint) — **without writing anything**. It reads the current schema to
+  compute the diff; nothing is created, altered, or inserted (verified by live integrity tests: a new
+  table still doesn't exist and an existing table is byte-identical after a preview). Mirrors the
+  `autoSQL` signature and runs the same pipeline (surrogate keys, timestamps, number-format detection,
+  splits), so the plan matches a real load. Returns an `AutoSQLPreview` (a per-table `tables` array,
+  the effective `numberFormat`, and `rowCount`); `AutoSQLPreview` / `TablePreview` are exported.
+  Distinct from `safeMode` (which runs a load but skips DDL) — `preview` runs no load and executes no
+  DDL.
+
 ## [2.3.1] - 2026-08-16
 
 ### 📝 Documentation
