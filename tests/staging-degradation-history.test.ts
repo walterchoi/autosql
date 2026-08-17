@@ -13,7 +13,9 @@ describe("atomic staging degradation + history — plumbing", () => {
     test("configureHistoryTables errors up-front for SQL Server (row-level history unverified, D-F)", async () => {
         const db: any = Database.create({ sqlDialect: "sqlserver", host: "h", user: "u", password: "p", database: "d", schema: "s" });
         await expect(
-            db.autoSQLHandler.configureHistoryTables([{ table: "t", data: [], metaData: meta, previousMetaData: null }])
+            // configureHistoryTables moved to the HistoryCoordinator collaborator (R1 Slice 2, PR 2a);
+            // same SQL-Server guard, now reached via handler.history.
+            db.autoSQLHandler.history.configureHistoryTables([{ table: "t", data: [], metaData: meta, previousMetaData: null }])
         ).rejects.toThrow(/not supported for SQL Server/i);
     });
 

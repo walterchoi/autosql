@@ -1,14 +1,15 @@
 import { Database } from "../src/db/database";
 import { InsertInput, MetadataHeader, AlterTableChanges } from "../src/config/types";
 
-// White-box unit tests for the derive-with-fallback gate (AutoSQLHandler.deriveConstraintStructure).
-// It may derive the constraint structure from metadata ONLY when doing so is provably identical to
-// the live catalog; otherwise it returns null and resolveConflicts introspects live. These lock in
-// each fallback trigger so a future change can't silently reintroduce the over-drop hazard.
+// White-box unit tests for the derive-with-fallback gate (deriveConstraintStructure). It may derive
+// the constraint structure from metadata ONLY when doing so is provably identical to the live catalog;
+// otherwise it returns null and resolveConflicts introspects live. These lock in each fallback trigger
+// so a future change can't silently reintroduce the over-drop hazard.
+// (deriveConstraintStructure moved to the StagingPipeline collaborator in R1 Slice 2, PR 2d.)
 
 function handler() {
     const db: any = Database.create({ sqlDialect: "pgsql", host: "localhost", user: "u", password: "p", database: "d" });
-    return db.autoSQLHandler as any;
+    return (db.autoSQLHandler as any).staging;
 }
 
 const noChanges = (): AlterTableChanges => ({
