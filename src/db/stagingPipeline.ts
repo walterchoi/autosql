@@ -2,6 +2,7 @@ import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
 import { InsertInput, QueryResult, QueryInput, AlterTableChanges } from "../config/types";
 import { getTempTableName, getInsertValues, throwIfFailedResults, normalizeResultKeys, getTrueTableName } from "../helpers/utilities";
+import { defaults } from "../config/defaults";
 
 /**
  * Staging pipeline collaborator (R1 Slice 2, PR 2d): create -> populate -> resolve-conflicts ->
@@ -191,7 +192,7 @@ export class StagingPipeline {
         });
 
         const allConflicts : QueryResult[] = await this.db.runTransactionsWithConcurrency(conflictsQuery);
-        let removeConstraintsQuery : QueryInput[][] = []
+        const dropsByTable: { table: string; queries: QueryInput[] }[] = [];
 
         for (let i = 0; i < allConflicts.length; i++) {
           const result = allConflicts[i];
@@ -215,14 +216,36 @@ export class StagingPipeline {
           if (violatingIndexes.length) {
             if (dropUniques) {
               this.db.warn(`resolveConflicts: dropping UNIQUE constraint(s) [${violatingIndexes.join(", ")}] on '${table}' — staged data violates them and dropUniqueConstraints is on.`);
-              removeConstraintsQuery.push(tableConstraintsQueries)
+              dropsByTable.push({ table, queries: tableConstraintsQueries });
             } else {
               this.db.warn(`resolveConflicts: staged data for '${table}' violates UNIQUE constraint(s) [${violatingIndexes.join(", ")}], but dropUniqueConstraints is off — the constraint(s) are KEPT and the merge will fail (or divert to rejectedRowsTable if configured) on the colliding rows. Set dropUniqueConstraints: true to auto-drop them instead.`);
             }
           }
         }
 
-        const removeConstraints : QueryResult[] = await this.db.runTransactionsWithConcurrency(removeConstraintsQuery);
+        // Serialize each table's unique-constraint DROP under that table's schema lock when locking is
+        // on (R1 Slice 2, PR 2f). This DROP runs AFTER the entry point released the load's advisory lock
+        // (it is held only through inference + DDL, then released before inserts begin), so without
+        // re-acquiring, two concurrent loads that both drop the same constraint would race — an
+        // unserialized DDL on a live table. acquireSchemaLock pins a dedicated connection and the
+        // advisory lock blocks any concurrent acquirer until releaseSchemaLock. When useSchemaLock is off
+        // there is no lock to serialize on, so the drops run as one concurrent batch (unchanged).
+        const config = this.db.getConfig();
+        const useSchemaLock = config.useSchemaLock;
+        const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
+        const removeConstraints: QueryResult[] = [];
+        if (useSchemaLock) {
+            for (const { table, queries } of dropsByTable) {
+                await this.db.acquireSchemaLock(table, lockTimeout);
+                try {
+                    removeConstraints.push(...await this.db.runTransactionsWithConcurrency([queries]));
+                } finally {
+                    await this.db.releaseSchemaLock(table);
+                }
+            }
+        } else {
+            removeConstraints.push(...await this.db.runTransactionsWithConcurrency(dropsByTable.map(d => d.queries)));
+        }
         throwIfFailedResults(removeConstraints, 'unique constraint removal queries')
         return;
     }
