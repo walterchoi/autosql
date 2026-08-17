@@ -321,16 +321,20 @@ export class StagingPipeline {
     }
 
     /**
-     * Zero-window staging merge WITH row-level history (case 3: rejectedRowsTable + addHistory). The
-     * before-image capture and the merge run in ONE transaction, so history and data commit — or roll
-     * back — together, with no crash window between them. Per table: attempt the whole-table
-     * [before-image, merge] transaction; if it fails, fall back to a per-PK loop where each PK's
-     * [before-image, single-PK merge] is its own transaction — a PK whose merge violates a constraint
-     * rolls back (no history, no data) and is diverted to `rejectedRowsTable`. `historyByTable` maps a
-     * real table to its (already-created) history input; a table not in `historyTables` merges with no
-     * before-image.
+     * Zero-window staging merge WITH row-level history. The before-image capture and the merge run in
+     * ONE transaction, so history and data commit — or roll back — together, with no crash window
+     * between them. Per table: attempt the whole-table [before-image, merge] transaction. The
+     * merge-failure handling depends on `perRowFallback`:
+     *   - plain atomic history (no rejectedRowsTable): the failed table's whole transaction already
+     *     rolled back — surface it all-or-nothing (throwIfFailedResults), matching the non-atomic
+     *     plain path this replaces;
+     *   - degradation combo (rejectedRowsTable + addHistory): fall back to a per-PK loop where each
+     *     PK's [before-image, single-PK merge] is its own transaction — a PK whose merge violates a
+     *     constraint rolls back (no history, no data) and is diverted to `rejectedRowsTable`.
+     * `historyByTable` maps a real table to its (already-created) history input; a table not in
+     * `historyTables` merges with no before-image.
      */
-    async insertFromStagingTablesAtomic(insertInput: InsertInput[], historyInputs: InsertInput[]): Promise<QueryResult[]> {
+    async insertFromStagingTablesAtomic(insertInput: InsertInput[], historyInputs: InsertInput[], options?: { perRowFallback?: boolean }): Promise<QueryResult[]> {
         const historyByTable = new Map<string, InsertInput>();
         for (const h of historyInputs) {
             historyByTable.set(getTrueTableName(h.table, h.stagingPrefix, h.historyTableSuffix), h);
@@ -346,6 +350,14 @@ export class StagingPipeline {
             return group;
         });
         const allResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(groups);
+
+        // Without the rejectedRowsTable opt-in there is nothing to divert to: a failed table's whole
+        // [before-image, merge] transaction already rolled back atomically, so surface it
+        // all-or-nothing (this is the plain-addHistory atomicity path, spec-1 §5.b / PR 2g).
+        if (!(options?.perRowFallback && this.db.getConfig().rejectedRowsTable)) {
+            throwIfFailedResults(allResults, 'insert from staging table queries');
+            return allResults;
+        }
 
         for (let i = 0; i < allResults.length; i++) {
             if (allResults[i]?.success) continue;

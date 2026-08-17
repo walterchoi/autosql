@@ -41,17 +41,22 @@ export class RowStoreLoadStrategy implements LoadStrategy {
         const config = this.db.getConfig();
         const input = ctx.insertInput;
         if (config.useStagingInsert) {
-            // Case 3 — opt-in per-row degradation (rejectedRowsTable) WITH row-level history — uses
-            // the zero-window atomic path (before-image + merge in one transaction). Every other
-            // staging load keeps the existing insertHistory-then-merge flow unchanged.
-            const historyDegradation = !!(config.rejectedRowsTable && config.addHistory && config.historyTables?.length);
+            // Row-level history uses the zero-window atomic path (before-image + merge in ONE
+            // transaction) so history and data commit — or roll back — together, with no crash window
+            // between them. This covers BOTH plain addHistory and the opt-in rejectedRowsTable
+            // degradation combo (rejectedRowsTable forces this branch since it requires addHistory to
+            // capture before-images... it's the merge-failure handling that differs, see the
+            // perRowFallback flag below). SQL Server keeps the non-atomic insertHistory-then-merge path:
+            // its row-level history is unverified (decisions.md D-F) and configureHistoryTables guards
+            // it off, so we don't extend the atomic guarantee to it (spec-1 §5.b: keep that guard).
+            const useAtomicHistory = !!(config.addHistory && config.historyTables?.length && config.sqlDialect !== 'sqlserver');
             try {
                 await this.staging.prepareStagingTables(input);
                 await this.staging.insertStagingTables(input);
                 await this.staging.resolveConflicts(input);
-                if (historyDegradation) {
+                if (useAtomicHistory) {
                     const historyInputs = await this.history.configureHistoryTables(input);
-                    return await this.staging.insertFromStagingTablesAtomic(input, historyInputs);
+                    return await this.staging.insertFromStagingTablesAtomic(input, historyInputs, { perRowFallback: !!config.rejectedRowsTable });
                 } else {
                     await this.history.insertHistory(input);
                     return await this.staging.insertFromStagingTables(input, { perRowFallback: !!config.rejectedRowsTable });
