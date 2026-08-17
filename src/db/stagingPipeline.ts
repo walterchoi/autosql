@@ -230,6 +230,10 @@ export class StagingPipeline {
         // unserialized DDL on a live table. acquireSchemaLock pins a dedicated connection and the
         // advisory lock blocks any concurrent acquirer until releaseSchemaLock. When useSchemaLock is off
         // there is no lock to serialize on, so the drops run as one concurrent batch (unchanged).
+        // Residual TOCTOU (acceptable): the conflict-count check above ran BEFORE this lock, so two loads
+        // can both decide to drop the same constraint; the loser then DROPs an already-dropped constraint
+        // and — the builders don't emit IF EXISTS — fails loud via throwIfFailedResults. That's strictly
+        // better than the prior unserialized race (which could corrupt the DDL), just surfaced as an error.
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
         const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;

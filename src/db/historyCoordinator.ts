@@ -116,6 +116,10 @@ export class HistoryCoordinator {
      */
     async configureHistoryTables(insertInput: InsertInput[]): Promise<InsertInput[]> {
         if (this.db.getConfig().sqlDialect === 'sqlserver') {
+            // Defense-in-depth only: the real enforcement point is validateConfig, which rejects
+            // rejectedRowsTable on SQL Server at construction (utilities.ts) — and the atomic path this
+            // guards is only routed for non-SQL-Server (loadStrategy). So a SQL Server load can't reach
+            // here through config; this survives against a caller mutating the live config object.
             throw new Error('Staging-path per-row degradation (rejectedRowsTable) with addHistory is not supported for SQL Server.');
         }
         const historyInputs = await this.buildHistoryInputs(insertInput);
