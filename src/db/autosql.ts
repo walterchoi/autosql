@@ -9,6 +9,7 @@ import { resolveDatasetSeparators } from "../helpers/numberFormat";
 import { HistoryCoordinator } from "./historyCoordinator";
 import { DegradationPolicy } from "./degradationPolicy";
 import { StagingPipeline } from "./stagingPipeline";
+import { RowStoreLoadStrategy } from "./loadStrategy";
 import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, throwIfFailedResults, sqlize } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
@@ -32,6 +33,7 @@ export class AutoSQLHandler {
     private history: HistoryCoordinator;
     private degradation: DegradationPolicy;
     private staging: StagingPipeline;
+    private strategy: RowStoreLoadStrategy;
     // Staging tables of streams that are currently open on this instance. Orphan cleanup must
     // never drop these — a concurrent stream to the same table would otherwise destroy a live
     // run's staging data (both share the `${prefix}${table}__` name pattern).
@@ -42,6 +44,7 @@ export class AutoSQLHandler {
         this.history = new HistoryCoordinator(this, dbInstance);
         this.degradation = new DegradationPolicy(this, dbInstance);
         this.staging = new StagingPipeline(this, dbInstance);
+        this.strategy = new RowStoreLoadStrategy(this, dbInstance, this.staging, this.history);
     }
 
     /**
@@ -896,30 +899,7 @@ export class AutoSQLHandler {
             }
 
             const tLoad = perf();
-            if (config.useStagingInsert) {
-                // Case 3 — opt-in per-row degradation (rejectedRowsTable) WITH row-level history — uses
-                // the zero-window atomic path (before-image + merge in one transaction). Every other
-                // staging load keeps the existing insertHistory-then-merge flow unchanged.
-                const historyDegradation = !!(config.rejectedRowsTable && config.addHistory && config.historyTables?.length);
-                try {
-                    await this.staging.prepareStagingTables(insertInput);
-                    await this.staging.insertStagingTables(insertInput);
-                    await this.staging.resolveConflicts(insertInput);
-                    if (historyDegradation) {
-                        const historyInputs = await this.history.configureHistoryTables(insertInput);
-                        insertResults = await this.staging.insertFromStagingTablesAtomic(insertInput, historyInputs);
-                    } else {
-                        await this.history.insertHistory(insertInput);
-                        insertResults = await this.staging.insertFromStagingTables(insertInput, { perRowFallback: !!config.rejectedRowsTable });
-                    }
-                } finally {
-                    // Always drop the staging table, even if a step above threw, so a failed load
-                    // doesn't leave an orphaned temp table behind (mirrors the streaming end() path).
-                    await this.staging.removeStagingTables(insertInput).catch(e => this.db.error(`autoSQL: failed to drop staging table(s) for '${table}': ${e instanceof Error ? e.message : String(e)}`));
-                }
-            } else {
-                insertResults = await this.insertData(insertInput, { perRowFallback: true });
-            }
+            insertResults = await this.strategy.load({ insertInput, table, label: 'autoSQL' });
             phases.load = perf() - tLoad;
 
             affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
@@ -1084,27 +1064,7 @@ export class AutoSQLHandler {
 
                 let insertResults: QueryResult[];
                 const tLoad = perf();
-                if (this.db.getConfig().useStagingInsert) {
-                    // See the non-chunked path: case 3 (rejectedRowsTable + addHistory) uses the atomic path.
-                    const historyDegradation = !!(config.rejectedRowsTable && config.addHistory && config.historyTables?.length);
-                    try {
-                        await this.staging.prepareStagingTables(chunkInsertInput);
-                        await this.staging.insertStagingTables(chunkInsertInput);
-                        await this.staging.resolveConflicts(chunkInsertInput);
-                        if (historyDegradation) {
-                            const historyInputs = await this.history.configureHistoryTables(chunkInsertInput);
-                            insertResults = await this.staging.insertFromStagingTablesAtomic(chunkInsertInput, historyInputs);
-                        } else {
-                            await this.history.insertHistory(chunkInsertInput);
-                            insertResults = await this.staging.insertFromStagingTables(chunkInsertInput, { perRowFallback: !!config.rejectedRowsTable });
-                        }
-                    } finally {
-                        // Drop staging even if a step above threw, so a failed chunk can't orphan a temp table.
-                        await this.staging.removeStagingTables(chunkInsertInput).catch(e => this.db.error(`autoSQLChunked: failed to drop staging table(s) for '${table}': ${e instanceof Error ? e.message : String(e)}`));
-                    }
-                } else {
-                    insertResults = await this.insertData(chunkInsertInput, { perRowFallback: true });
-                }
+                insertResults = await this.strategy.load({ insertInput: chunkInsertInput, table, label: 'autoSQLChunked' });
                 phases.load = (phases.load ?? 0) + (perf() - tLoad);
 
                 totalAffectedRows += insertResults.reduce((s, r) => s + (r.affectedRows || 0), 0);
