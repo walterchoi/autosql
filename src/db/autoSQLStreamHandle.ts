@@ -5,12 +5,6 @@ import { getMetaData, compareMetaData } from "../helpers/metadata";
 import { tableChangesExist } from "../helpers/utilities";
 import { defaults } from "../config/defaults";
 import {
-    bootstrapSchemaHistoryTable,
-    recordMigrationStart,
-    recordMigrationSuccess,
-    recordMigrationFailed,
-} from '../helpers/schemaHistory';
-import {
     buildCreateStreamStagingTableQuery,
     buildInsertIntoStreamStagingQuery,
     buildSelectFromStreamStagingQuery,
@@ -174,18 +168,18 @@ export class AutoSQLStreamHandle {
             if (useSchemaLock) await this.db.acquireSchemaLock(this.table, lockTimeout);
             try {
                 if (useHistory) {
-                    await bootstrapSchemaHistoryTable(this.db);
+                    await this.handler['history'].bootstrap();
                     if (tableChangesExist(changes)) {
-                        historyId = await recordMigrationStart(this.db, this.table, currentMetaData || {}, changes);
+                        historyId = await this.handler['history'].recordStart(this.table, currentMetaData || {}, changes);
                     }
                 }
                 try {
                     const tConfigure = perf();
                     await this.handler['configureTables'](insertInput);
                     phases.configure = perf() - tConfigure;
-                    if (historyId !== undefined) await recordMigrationSuccess(this.db, historyId, updatedMetaData);
+                    if (historyId !== undefined) await this.handler['history'].recordSuccess(historyId, updatedMetaData);
                 } catch (ddlErr) {
-                    if (historyId !== undefined) await recordMigrationFailed(this.db, historyId).catch(() => {});
+                    if (historyId !== undefined) await this.handler['history'].recordFailed(historyId).catch(() => {});
                     throw ddlErr;
                 }
             } finally {

@@ -13,14 +13,6 @@ import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
 import { buildCompensatingDDL } from "../helpers/compensatingDDL";
 import {
-    bootstrapSchemaHistoryTable,
-    recordMigrationStart,
-    recordMigrationSuccess,
-    recordMigrationRolledBack,
-    recordMigrationFailed,
-    detectSchemaDrift as _detectSchemaDrift,
-} from '../helpers/schemaHistory';
-import {
     generateRunId,
     buildStreamStagingTableName,
     isAutosqlStreamTable,
@@ -1368,13 +1360,13 @@ export class AutoSQLHandler {
                 // Schema history: drift detection + record start
                 if (useHistory) {
                     if (config.detectDrift ?? true) {
-                        await _detectSchemaDrift(this.db, table).catch(e => { throw e; });
+                        await this.history.detectDrift(table);
                     }
-                    await bootstrapSchemaHistoryTable(this.db);
+                    await this.history.bootstrap();
                     const primary = insertInput[0];
                     if (primary?.comparedMetaData && tableChangesExist(primary.comparedMetaData.changes)) {
-                        historyId = await recordMigrationStart(
-                            this.db, table,
+                        historyId = await this.history.recordStart(
+                            table,
                             (primary.previousMetaData && !Array.isArray(primary.previousMetaData) && 'addColumns' in primary.previousMetaData ? {} : primary.previousMetaData) as any || {},
                             primary.comparedMetaData.changes
                         );
@@ -1395,13 +1387,13 @@ export class AutoSQLHandler {
                             // point-in-time reconstruction; a null introspection stores a null checksum
                             // (treated as "no baseline"), which also covers the A19 couldn't-read case.
                             const liveMeta = await this.db.getTableMetaData(config.schema || config.database || "", table);
-                            await recordMigrationSuccess(this.db, historyId, updatedMeta, liveMeta);
+                            await this.history.recordSuccess(historyId, updatedMeta, liveMeta);
                         }
-                        else await recordMigrationRolledBack(this.db, historyId);
+                        else await this.history.recordRolledBack(historyId);
                     }
                 } catch (ddlErr) {
                     if (historyId !== undefined) {
-                        await recordMigrationFailed(this.db, historyId).catch(() => {});
+                        await this.history.recordFailed(historyId).catch(() => {});
                     }
                     throw ddlErr;
                 }

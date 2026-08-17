@@ -2,6 +2,14 @@ import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
 import { InsertInput, MetadataHeader, QueryResult } from "../config/types";
 import { getHistoryTableName, throwIfFailedResults } from "../helpers/utilities";
+import {
+    bootstrapSchemaHistoryTable,
+    recordMigrationStart,
+    recordMigrationSuccess,
+    recordMigrationRolledBack,
+    recordMigrationFailed,
+    detectSchemaDrift,
+} from "../helpers/schemaHistory";
 
 /**
  * Row-level history collaborator (R1 Slice 2, PR 2a). Owns building the per-table history inputs and
@@ -114,5 +122,34 @@ export class HistoryCoordinator {
         if (!historyInputs.length) return [];
         await this.handler['configureTables'](historyInputs);
         return historyInputs;
+    }
+
+    // --- Schema-history / drift (thin wrappers over helpers/schemaHistory) ---
+    // Behaviour-preserving: the `if (config.schemaHistory)` / `tableChangesExist` gates stay at each
+    // entry point, so which entry points record (autoSQL full, stream partial, chunked none) is
+    // unchanged — only the helper calls are centralized here.
+
+    async detectDrift(table: string): Promise<void> {
+        await detectSchemaDrift(this.db, table);
+    }
+
+    async bootstrap(): Promise<void> {
+        await bootstrapSchemaHistoryTable(this.db);
+    }
+
+    async recordStart(table: string, previousSchema: MetadataHeader, changes: object): Promise<number | undefined> {
+        return recordMigrationStart(this.db, table, previousSchema, changes);
+    }
+
+    async recordSuccess(historyId: number, newSchema: MetadataHeader, checksumSchema?: MetadataHeader | null): Promise<void> {
+        await recordMigrationSuccess(this.db, historyId, newSchema, checksumSchema);
+    }
+
+    async recordRolledBack(historyId: number): Promise<void> {
+        await recordMigrationRolledBack(this.db, historyId);
+    }
+
+    async recordFailed(historyId: number): Promise<void> {
+        await recordMigrationFailed(this.db, historyId);
     }
 }
