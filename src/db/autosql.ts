@@ -6,7 +6,8 @@ import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataI
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { resolveDatasetSeparators } from "../helpers/numberFormat";
-import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, getHistoryTableName, normalizeResultKeys, throwIfFailedResults, sqlize } from "../helpers/utilities";
+import { HistoryCoordinator } from "./historyCoordinator";
+import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, getTempTableName, getTrueTableName, normalizeResultKeys, throwIfFailedResults, sqlize } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
@@ -35,6 +36,8 @@ export { AutoSQLStreamHandle };
 
 export class AutoSQLHandler {
     private db: Database;
+    // R1 Slice 2 collaborators (behaviour-preserving extraction; each holds a back-ref to this handler).
+    private history: HistoryCoordinator;
     // Staging tables of streams that are currently open on this instance. Orphan cleanup must
     // never drop these — a concurrent stream to the same table would otherwise destroy a live
     // run's staging data (both share the `${prefix}${table}__` name pattern).
@@ -42,6 +45,7 @@ export class AutoSQLHandler {
 
     constructor(dbInstance: MySQLDatabase | PostgresDatabase | SqlServerDatabase) {
         this.db = dbInstance;
+        this.history = new HistoryCoordinator(this, dbInstance);
     }
 
     releaseStreamStaging(stagingTable: string): void {
@@ -1268,103 +1272,6 @@ export class AutoSQLHandler {
         return { start: now, end: now, duration: 0, success: true, affectedRows: inserted };
     }
 
-    private async insertToHistoryTables(insertInputs: InsertInput[]): Promise<QueryResult[]> {
-        const stagingInsertQueries = (insertInputs).map(insertInput => {
-            return [this.db.getInsertChangedRowsToHistoryQuery(insertInput)]
-        })
-        const allInsertResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingInsertQueries);
-        throwIfFailedResults(allInsertResults, 'insert from staging table queries')
-        return allInsertResults
-    }
-
-    /**
-     * Build the per-table history inputs (cleaned metadata + `dwh_as_at` PK) for the tables in
-     * `historyTables`. Shared by `insertHistory` (non-atomic path) and `configureHistoryTables`
-     * (atomic path). Returns [] when history is off or no eligible table is present.
-     */
-    private async buildHistoryInputs(insertInput: InsertInput[]): Promise<InsertInput[]> {
-        const config = this.db.getConfig();
-        if (!config.addHistory || !config.historyTables?.length) return [];
-        if (!config.useStagingInsert) { throw new Error('Cannot add history tables without using staging insert'); }
-
-        const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
-        const eligibleInputs = uniqueTables.filter(table => config.historyTables!.includes(table));
-        if (eligibleInputs.length == 0) { return []; }
-
-        return await Promise.all(
-            eligibleInputs.map(async (table) => {
-              const matchingInput = insertInput.find(i => i.table === table);
-              const historyName = getHistoryTableName(table, matchingInput?.historyTableSuffix);
-
-              // Run both metadata fetches in parallel
-              const [currentStatus, historyStatus] = await Promise.all([
-                this.fetchTableMetadata(table),
-                this.fetchTableMetadata(historyName),
-              ]);
-
-              const currentMetaData = currentStatus.currentMetaData;
-              const currentHistoryMetaData = historyStatus.currentMetaData;
-
-              if (!currentMetaData) {
-                throw new Error(`Could not find structure of ${table} for history table creation`);
-              }
-
-              // ✅ Clean up metaData for history table
-              const cleanedMeta: MetadataHeader = {};
-              for (const col in currentMetaData) {
-                const def = { ...currentMetaData[col] };
-                def.unique = false;
-                def.index = false
-                cleanedMeta[col] = def;
-              }
-
-              // ✅ Add as_at column
-              cleanedMeta["dwh_as_at"] = { type: "datetime", allowNull: false, primary: true };
-
-              const automatedColumns = ['dwh_created_at', 'dwh_modified_at', 'dwh_loaded_at']
-              // ✅ Ensure existing PKs are retained
-              for (const col in currentMetaData) {
-                if (currentMetaData[col].primary) { cleanedMeta[col].primary = true; }
-                if (automatedColumns.includes(col)) { cleanedMeta[col].calculated = true }
-              }
-
-              return {
-                table: historyName,
-                data: [],
-                metaData: cleanedMeta,
-                previousMetaData: currentHistoryMetaData,
-                // Carry the prefix/suffix so the history/temp/real table names resolve correctly (incl.
-                // custom prefixes) both in the before-image query and in the atomic path's table map.
-                stagingPrefix: matchingInput?.stagingPrefix,
-                historyTableSuffix: matchingInput?.historyTableSuffix,
-              };
-            })
-        );
-    }
-
-    private async insertHistory(insertInput: InsertInput[]): Promise<QueryResult[]> {
-        const historyInputs = await this.buildHistoryInputs(insertInput);
-        if (!historyInputs.length) return [];
-        await this.configureTables(historyInputs)
-        return await this.insertToHistoryTables(historyInputs)
-    }
-
-    /**
-     * Create the history tables (DDL only) and return their inputs, for the ATOMIC history path — the
-     * before-image INSERT itself is deferred into the merge transaction (see
-     * `insertFromStagingTablesAtomic`). Errors up-front on SQL Server, whose row-level history is
-     * unverified (D-F), so the opt-in combo fails before any partial work.
-     */
-    private async configureHistoryTables(insertInput: InsertInput[]): Promise<InsertInput[]> {
-        if (this.db.getConfig().sqlDialect === 'sqlserver') {
-            throw new Error('Staging-path per-row degradation (rejectedRowsTable) with addHistory is not supported for SQL Server.');
-        }
-        const historyInputs = await this.buildHistoryInputs(insertInput);
-        if (!historyInputs.length) return [];
-        await this.configureTables(historyInputs);
-        return historyInputs;
-    }
-
     private async extractNestedInputs(inputs: InsertInput[]): Promise<InsertInput[]> {
         if(!this.db.getConfig().addNested) { 
             return []
@@ -1513,10 +1420,10 @@ export class AutoSQLHandler {
                     await this.insertStagingTables(insertInput);
                     await this.resolveConflicts(insertInput);
                     if (historyDegradation) {
-                        const historyInputs = await this.configureHistoryTables(insertInput);
+                        const historyInputs = await this.history.configureHistoryTables(insertInput);
                         insertResults = await this.insertFromStagingTablesAtomic(insertInput, historyInputs);
                     } else {
-                        await this.insertHistory(insertInput);
+                        await this.history.insertHistory(insertInput);
                         insertResults = await this.insertFromStagingTables(insertInput, { perRowFallback: !!config.rejectedRowsTable });
                     }
                 } finally {
@@ -1699,10 +1606,10 @@ export class AutoSQLHandler {
                         await this.insertStagingTables(chunkInsertInput);
                         await this.resolveConflicts(chunkInsertInput);
                         if (historyDegradation) {
-                            const historyInputs = await this.configureHistoryTables(chunkInsertInput);
+                            const historyInputs = await this.history.configureHistoryTables(chunkInsertInput);
                             insertResults = await this.insertFromStagingTablesAtomic(chunkInsertInput, historyInputs);
                         } else {
-                            await this.insertHistory(chunkInsertInput);
+                            await this.history.insertHistory(chunkInsertInput);
                             insertResults = await this.insertFromStagingTables(chunkInsertInput, { perRowFallback: !!config.rejectedRowsTable });
                         }
                     } finally {
