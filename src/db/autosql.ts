@@ -10,7 +10,7 @@ import { HistoryCoordinator } from "./historyCoordinator";
 import { DegradationPolicy } from "./degradationPolicy";
 import { StagingPipeline } from "./stagingPipeline";
 import { RowStoreLoadStrategy } from "./loadStrategy";
-import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, throwIfFailedResults, sqlize } from "../helpers/utilities";
+import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, throwIfFailedResults } from "../helpers/utilities";
 import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";

@@ -1,6 +1,6 @@
 import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
-import { InsertInput, MetadataHeader, QueryResult } from "../config/types";
+import { InsertInput, MetadataHeader, QueryResult, AlterTableChanges } from "../config/types";
 import { getHistoryTableName, throwIfFailedResults } from "../helpers/utilities";
 import {
     bootstrapSchemaHistoryTable,
@@ -137,7 +137,7 @@ export class HistoryCoordinator {
         await bootstrapSchemaHistoryTable(this.db);
     }
 
-    async recordStart(table: string, previousSchema: MetadataHeader, changes: object): Promise<number | undefined> {
+    async recordStart(table: string, previousSchema: MetadataHeader, changes: AlterTableChanges): Promise<number | undefined> {
         return recordMigrationStart(this.db, table, previousSchema, changes);
     }
 
