@@ -15,6 +15,50 @@ import { SchemaLockTimeoutError } from "../errors";
 
 const dialectConfig = sqlServerConfig;
 
+// Map an autosql local column type to the mssql bulk-copy type object (used to build the typed sql.Table
+// for request.bulk). `sql` is the mssql module. Anything unrecognised → NVARCHAR(MAX) (staging is text).
+function sqlServerBulkType(sql: any, meta: ColumnDefinition): any {
+    const t = (meta.type || "").toLowerCase();
+    const len = typeof meta.length === "number" ? meta.length : undefined;
+    const dec = typeof meta.decimal === "number" ? meta.decimal : undefined;
+    switch (t) {
+        case "int": case "integer": case "mediumint": return sql.Int;
+        case "bigint": return sql.BigInt;
+        case "smallint": case "tinyint": return sql.SmallInt;
+        case "float": case "double": return sql.Float;
+        case "decimal": return sql.Decimal(len ?? 18, dec ?? 2);
+        case "boolean": return sql.Bit;
+        case "date": return sql.Date;
+        case "time": return sql.Time;
+        case "datetime": case "timestamp": case "datetimetz": case "datetimeoffset": return sql.DateTime2;
+        case "varchar": return (len && len <= 4000) ? sql.NVarChar(len) : sql.NVarChar(sql.MAX);
+        default: return sql.NVarChar(sql.MAX); // text / json / unknown
+    }
+}
+
+// Coerce a (possibly sqlized-string) value to the JS type the mssql bulk API expects for `meta`. On any
+// mismatch it returns null / a value the driver rejects → the whole bulk throws → INSERT fallback.
+function sqlServerBulkCoerce(v: any, meta: ColumnDefinition): any {
+    if (v === null || v === undefined) return null;
+    const t = (meta.type || "").toLowerCase();
+    if (["int", "integer", "mediumint", "bigint", "smallint", "tinyint", "float", "double", "decimal"].includes(t)) {
+        if (v === "") return null;
+        const n = Number(v);
+        return Number.isNaN(n) ? null : n;
+    }
+    if (t === "boolean") {
+        if (v === "") return null;
+        return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
+    }
+    if (["date", "time", "datetime", "timestamp", "datetimetz", "datetimeoffset"].includes(t)) {
+        if (v === "") return null;
+        if (v instanceof Date) return v;
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+    }
+    return String(v);
+}
+
 /**
  * SQL Server / Azure SQL adapter (Class A row-store, T-SQL). Uses the `mssql` driver.
  *
@@ -116,11 +160,31 @@ export class SqlServerDatabase extends Database {
         }
     }
 
-    public async bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult> {
-        // The mssql bulk-copy path needs a fully-typed sql.Table definition, not derived here yet.
-        // bulkLoadStaging catches this and falls back to parameterised INSERT, so opt-in `bulkLoad`
-        // still completes on SQL Server (just not via bulk-copy).
-        throw new Error("bulkLoadRows is not yet implemented for SQL Server; falling back to INSERT.");
+    public async bulkLoadRows(table: string, columns: string[], rows: any[][], header?: MetadataHeader): Promise<QueryResult> {
+        // TDS bulk-copy via the mssql `request.bulk` API — the same wire path as BULK INSERT, but with
+        // no server-side file. It needs a fully-typed sql.Table, derived from the column metadata. Any
+        // failure here (unsupported type/value, driver quirk) throws; bulkLoadStaging catches it and
+        // falls back to parameterised INSERT, so correctness never depends on this fast path (spec-4 §3.5).
+        const start = new Date();
+        if (!this.connection) await this.establishConnection();
+        if (rows.length === 0) return { start, end: new Date(), duration: 0, success: true, affectedRows: 0 };
+        if (!header) throw new Error("bulkLoadRows requires column metadata on SQL Server");
+
+        const sql = this.sql;
+        const schema = this.getConfig().schema;
+        const qualified = `${schema ? `${escapeIdentifier(schema, "sqlserver")}.` : ""}${escapeIdentifier(table, "sqlserver")}`;
+        const tvp = new sql.Table(qualified);
+        tvp.create = false;
+        for (const col of columns) {
+            const meta = header[col] || ({ type: "varchar" } as ColumnDefinition);
+            tvp.columns.add(col, sqlServerBulkType(sql, meta), { nullable: meta.allowNull !== false });
+        }
+        for (const row of rows) {
+            tvp.rows.add(...row.map((v, i) => sqlServerBulkCoerce(v, header[columns[i]] || ({ type: "varchar" } as ColumnDefinition))));
+        }
+        await new sql.Request(this.connection).bulk(tvp);
+        const end = new Date();
+        return { start, end, duration: end.getTime() - start.getTime(), success: true, affectedRows: rows.length };
     }
 
     // ---- Transaction hooks (mssql Transaction API) ----
