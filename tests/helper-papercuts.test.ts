@@ -30,10 +30,5 @@ describe("estimateRowSize counts varchar bytes per dialect (A25)", () => {
     });
 });
 
-// A20: openStream limped into Postgres-shaped SQL on SQL Server (streaming deferred, D-F). Fail loud.
-describe("openStream fails fast on SQL Server (A20)", () => {
-    test("rejects with a clear message, without connecting", async () => {
-        const db: any = Database.create({ sqlDialect: "sqlserver", host: "h", user: "u", password: "p", database: "d" });
-        await expect(db.openStream("t")).rejects.toThrow(/not yet supported on SQL Server/i);
-    });
-});
+// (A20 openStream-on-SQL-Server fail-fast guard removed in spec-4 slice B — streaming now emits T-SQL and
+// is supported; live coverage in sqlserver-streaming-live.test.ts.)

@@ -1118,12 +1118,7 @@ export class AutoSQLHandler {
         primaryKey?: string[]
     ): Promise<AutoSQLStreamHandle> {
       return this.db.runWithSchema(schema, async () => {
-        // Streaming is deferred on SQL Server (D-F): the stream staging/merge/cleanup builders emit
-        // Postgres placeholders/DDL, so limping in would fail with a confusing mid-stream error (and
-        // never clean up its staging table). Fail loud up front instead (A20).
-        if (this.db.getConfig().sqlDialect === 'sqlserver') {
-            throw new Error("openStream is not yet supported on SQL Server (streaming parity is deferred — see roadmap D-F). Use autoSQL/autoSQLChunked instead.");
-        }
+        // (openStream on SQL Server: guard removed in spec-4 slice B — the stream builders now emit T-SQL.)
         // Connectivity check — surfaces auth/connection errors before first write
         const ping = await this.db.runQuery({ query: 'SELECT 1', params: [] });
         if (!ping.success) {
@@ -1155,6 +1150,8 @@ export class AutoSQLHandler {
         const pattern = `${prefix}${table}__%`;
         const q = dialect === 'mysql'
             ? { query: `SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name LIKE ?`, params: [schema, pattern] }
+            : dialect === 'sqlserver'
+            ? { query: `SELECT table_name FROM information_schema.tables WHERE table_schema = @p0 AND table_name LIKE @p1`, params: [schema, pattern] }
             : { query: `SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name LIKE $2`, params: [schema, pattern] };
 
         const result = await this.db.runQuery(q);
