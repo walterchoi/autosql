@@ -16,6 +16,14 @@
 - **Row-level history (`addHistory`) and split tables (`autoSplit`) verified on SQL Server** — already
   implemented, now covered by live tests.
 
+### 🐛 Bug Fixes
+- **SQL Server `surrogateKey` re-ingest now appends (spec-4 §3.7).** A surrogate-key load re-ingested on
+  SQL Server was updating in place (row count stayed flat) instead of appending like MySQL/Postgres. The
+  insert-from-staging `MERGE` matched on the surrogate primary key, which is excluded from the insert and
+  regenerated in the staging clone, so it self-matched. It now merges only on primary keys that are
+  actually written; a surrogate (DB-generated) key falls through to a plain `INSERT`, so the real table
+  assigns fresh keys and rows append — matching the other dialects.
+
 ### 🔒 Guardrails
 - **`rejectedRowsTable` + `addHistory` together still fail loud on SQL Server.** That combination uses the
   zero-window atomic (before-image + merge in one transaction) path on MySQL/Postgres; the SQL Server

@@ -48,12 +48,16 @@ export class SqlServerInsertQueryBuilder {
         }).join(", ");
 
         const primaryKeys = primaryKeysOf(header);
-        // Plain append, OR an upsert with no key to merge on: plain INSERT (MERGE needs a key; no throw).
-        if (insertType !== "UPDATE" || primaryKeys.length === 0) {
+        // A surrogate/DB-generated PK is excluded from the insert columns (insertColumns), so it can't
+        // be a merge key — its value is generated on both sides, so ON target.pk=source.pk would
+        // self-match on values neither side controls. Merge only on PKs actually being written; if none
+        // remain (a surrogate-key table), plain append — a surrogate is unique per insert (spec-4 §3.7).
+        const mergeKeys = primaryKeys.filter(pk => columns.includes(pk));
+        if (insertType !== "UPDATE" || mergeKeys.length === 0) {
             return { query: `INSERT INTO ${target} (${quotedCols}) VALUES ${valueTuples};`, params };
         }
         const source = `USING (VALUES ${valueTuples}) AS source (${quotedCols})`;
-        return { query: buildMerge(target, source, columns, header, primaryKeys), params };
+        return { query: buildMerge(target, source, columns, header, mergeKeys), params };
     }
 
     static getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
@@ -67,11 +71,15 @@ export class SqlServerInsertQueryBuilder {
         const target = `${schemaPrefix}${q(table)}`;
         const source = `${schemaPrefix}${q(tempTable)}`;
         const primaryKeys = primaryKeysOf(header);
+        // Merge only on PKs actually written — a surrogate PK is excluded from the insert columns and its
+        // staging clone regenerates IDENTITY values, so merging on it self-matches. None left → plain
+        // append (surrogate is unique per insert; the real table generates fresh keys) (spec-4 §3.7).
+        const mergeKeys = primaryKeys.filter(pk => columns.includes(pk));
 
-        if (insertType !== "UPDATE" || primaryKeys.length === 0) {
+        if (insertType !== "UPDATE" || mergeKeys.length === 0) {
             return { query: `INSERT INTO ${target} (${escapedCols}) SELECT ${selectCols} FROM ${source};`, params: [] };
         }
-        return { query: buildMerge(target, `USING ${source} AS source`, columns, header, primaryKeys), params: [] };
+        return { query: buildMerge(target, `USING ${source} AS source`, columns, header, mergeKeys), params: [] };
     }
 
     static getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput {
