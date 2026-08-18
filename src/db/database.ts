@@ -571,7 +571,7 @@ export abstract class Database {
      * list each row's values align to. Returns a QueryResult; throws on failure so the caller can
      * fall back to parameterised INSERT.
      */
-    public abstract bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult>;
+    public abstract bulkLoadRows(table: string, columns: string[], rows: any[][], header?: MetadataHeader): Promise<QueryResult>;
 
     /**
      * Acquire a database-native advisory lock scoped to the given table.

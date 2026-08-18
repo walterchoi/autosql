@@ -20,6 +20,10 @@
   end-of-stream merge with `CAST(NULLIF(…))` text→typed casts. `write()` splits each chunk to stay under
   SQL Server's 2,100-parameter request cap. Orphaned-staging cleanup and `abort()` work on SQL Server too.
   The former fail-loud guard is removed.
+- **Bulk-copy (`bulkLoad`) on SQL Server (spec-4 slice C).** `bulkLoadRows` now uses the `mssql`
+  `request.bulk` TDS bulk-copy API — it derives a typed `sql.Table` from the column metadata and bulk-loads
+  the staging table, instead of always falling back to parameterised INSERT. Any failure still falls back
+  to INSERT, so correctness is unconditional; `bulkLoad` is now genuinely faster on SQL Server for large loads.
 
 ### 🐛 Bug Fixes
 - **SQL Server `surrogateKey` re-ingest now appends (spec-4 §3.7).** A surrogate-key load re-ingested on

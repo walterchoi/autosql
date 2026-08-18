@@ -82,7 +82,7 @@ export class StagingPipeline {
             const columns = Object.keys(header).filter(col => !(excludeAutoIncrement && header[col].autoIncrement === true));
             const valueRows = input.data.map(row => getInsertValues(header, row, dialectConfig, config, true));
             try {
-                results.push(await this.db.bulkLoadRows(input.table, columns, valueRows));
+                results.push(await this.db.bulkLoadRows(input.table, columns, valueRows, header));
             } catch (err) {
                 this.db.warn(`bulkLoad failed for '${input.table}', falling back to INSERT: ${(err as Error).message}`);
                 results.push(...await this.handler['insertData']([input]));
