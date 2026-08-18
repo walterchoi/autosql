@@ -57,31 +57,27 @@ describe("SQL Server IDENTITY introspection (live, spec-2 slice 1)", () => {
         expect(await count()).toBe(3);
     });
 
-    test("run 2 stays sticky to the surrogate — no PK thrash, no drift (the consequence)", async () => {
+    test("run 2 stays sticky to the surrogate AND appends — no PK thrash, no self-match (§3.7)", async () => {
         const before = await meta();
         const surrogate = Object.keys(before).find(c => before[c].autoIncrement === true && before[c].primary === true)!;
         expect(surrogate).toBeDefined();
 
         // A coincidentally-unique batch must NOT introduce a competing natural key: applySurrogateKey
-        // only recognises the existing surrogate when introspection reports autoIncrement:true.
+        // only recognises the existing surrogate when introspection reports autoIncrement:true (slice 1).
         expect((await db.autoSQL(TABLE, keyless())).success).toBe(true);
 
         const after = await meta();
         expect(after[surrogate].autoIncrement).toBe(true);
         expect(after[surrogate].primary).toBe(true);
-        // No other column was promoted to PK (surrogate stayed the sole key — no thrash, no drift).
-        const pkCols = Object.keys(after).filter(c => after[c].primary === true);
-        expect(pkCols).toEqual([surrogate]);
-        // Rows are preserved (no data loss / no error). NOTE: the exact row count is asserted by the
-        // append-gap todo below, not here — this test's subject is introspection, not merge semantics.
-        expect(await count()).toBeGreaterThanOrEqual(3);
-    });
+        // Surrogate stayed the sole key — no thrash, no drift.
+        expect(Object.keys(after).filter(c => after[c].primary === true)).toEqual([surrogate]);
 
-    // KNOWN GAP surfaced by slice 1 (documented, separate from the introspection fix): on mysql/pgsql a
-    // surrogate re-ingest APPENDS (surrogate is unique per insert → no upsert match → total 6, per
-    // surrogate-key-live.test.ts). On SQL Server it stays at 3: `SELECT * INTO <staging> … WHERE 1=0`
-    // COPIES the IDENTITY property, so the staging clone regenerates the same 1,2,3 surrogate values and
-    // the MERGE self-matches (UPDATE in place) instead of inserting. Fix belongs to a staging-clone slice
-    // (strip IDENTITY from the SELECT INTO, or force the surrogate merge to always-insert) — see spec-2.
-    test.todo("SQL Server surrogate re-ingest should APPEND like mysql/pgsql (staging SELECT INTO copies IDENTITY)");
+        // §3.7: the insert-from-staging no longer MERGEs on the surrogate PK (excluded from the insert
+        // columns → merging on it self-matched the staging clone's regenerated IDENTITY). It now plain-
+        // INSERTs, so run 2 APPENDS like mysql/pgsql (3 + 3 = 6, all keys distinct), matching
+        // surrogate-key-live.test.ts. Before the fix it stayed at 3 (UPDATE-in-place).
+        expect(await count()).toBe(6);
+        const distinct = await db.runQuery({ query: `SELECT COUNT(DISTINCT ${qi(surrogate)}) AS c FROM ${ref(TABLE)}`, params: [] });
+        expect(Number(Object.values(distinct.results![0])[0])).toBe(6);
+    });
 });
