@@ -6,6 +6,7 @@ import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataI
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { resolveDatasetSeparators } from "../helpers/numberFormat";
+import { writeRunAudit } from "../helpers/runAudit";
 import { HistoryCoordinator } from "./historyCoordinator";
 import { DegradationPolicy } from "./degradationPolicy";
 import { StagingPipeline } from "./stagingPipeline";
@@ -920,11 +921,14 @@ export class AutoSQLHandler {
                 bulkLoad: !!config.bulkLoad,
             };
             try { config.logger?.stats?.(stats); } catch { /* a metrics sink must never break a load */ }
+            await writeRunAudit(this.db, { table, success: true, rows: data.length, affectedRows, durationMs, rowsPerSecond: stats.rowsPerSecond, phases: stats.phases, staged: stats.staged, bulkLoad: stats.bulkLoad });
 
             return { start, end, success: true, duration: durationMs, affectedRows, results: allResults, table, metaData: resolvedMetaData, stats };
         } catch (error: any) {
             const end = new Date();
-            return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
+            const durationMs = end.getTime() - start.getTime();
+            await writeRunAudit(this.db, { table, success: false, rows: data.length, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!config.useStagingInsert, bulkLoad: !!config.bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined });
+            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
         }
       }));
     }
@@ -1080,6 +1084,7 @@ export class AutoSQLHandler {
                 bulkLoad: !!this.db.getConfig().bulkLoad,
             };
             try { this.db.getConfig().logger?.stats?.(stats); } catch { /* a metrics sink must never break a load */ }
+            await writeRunAudit(this.db, { table, success: true, rows: totalRows, affectedRows: totalAffectedRows, durationMs, rowsPerSecond: stats.rowsPerSecond, phases: stats.phases, staged: stats.staged, bulkLoad: stats.bulkLoad });
             return {
                 start,
                 end,
@@ -1091,10 +1096,12 @@ export class AutoSQLHandler {
             };
         } catch (error: any) {
             const end = new Date();
+            const durationMs = end.getTime() - start.getTime();
+            await writeRunAudit(this.db, { table, success: false, rows: totalRows, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!this.db.getConfig().useStagingInsert, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined });
             return {
                 start,
                 end,
-                duration: end.getTime() - start.getTime(),
+                duration: durationMs,
                 affectedRows: 0,
                 success: false,
                 error: error instanceof Error ? error.message : String(error)

@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+### ✨ New
+- **`runAudit` — persisted run-audit table (spec-3 / F1).** Opt-in (`runAudit: true`): the engine writes one
+  row per top-level load (`autoSQL` / `autoSQLChunked` / stream `end()`) to a managed table (`autosql_runs`,
+  configurable via `runAuditTable` / `runAuditSchema`) — timestamp, target, success/error, row counts,
+  affected rows, duration, rows/sec, per-phase timings, and staged/bulk flags — so a caller gets run history
+  without wiring a `logger.stats` sink or writing SQL. Works on MySQL / Postgres / SQL Server. Best-effort:
+  a failed audit write warns and never fails the load. One row per top-level call (not per chunk / per worker).
+
 ### ✨ New — SQL Server feature parity (spec-2 slices 1–4)
 - **IDENTITY introspection.** SQL Server table introspection now reports `IDENTITY` columns as
   auto-increment (via `COLUMNPROPERTY(... 'IsIdentity')`), matching MySQL `AUTO_INCREMENT` / Postgres

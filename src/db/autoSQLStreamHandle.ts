@@ -2,6 +2,7 @@ import type { Database } from "./database";
 import type { AutoSQLHandler } from "./autosql";
 import { MetadataHeader, QueryResult, QueryStats } from "../config/types";
 import { getMetaData, compareMetaData } from "../helpers/metadata";
+import { writeRunAudit } from "../helpers/runAudit";
 import { tableChangesExist } from "../helpers/utilities";
 import { defaults } from "../config/defaults";
 import {
@@ -224,10 +225,14 @@ export class AutoSQLStreamHandle {
                 bulkLoad: !!config.bulkLoad,
             };
             try { config.logger?.stats?.(stats); } catch { /* a metrics sink must never break a load */ }
+            await writeRunAudit(this.db, { table: this.table, success: true, rows: stagingRows.length, affectedRows, durationMs, rowsPerSecond: stats.rowsPerSecond, phases: stats.phases, staged: true, bulkLoad: !!config.bulkLoad });
             return { start, end, success: true, duration: durationMs, affectedRows, table: this.table, stats };
         } catch (error: any) {
             const end = new Date();
-            return { start, end, duration: end.getTime() - start.getTime(), affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
+            const durationMs = end.getTime() - start.getTime();
+            // rows/affected unknown here (the failure may precede the staging read) — record 0 with the error.
+            await writeRunAudit(this.db, { table: this.table, success: false, rows: 0, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: true, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined });
+            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
         } finally {
             // Always drop staging table
             if (this.stagingCreated) {

@@ -333,6 +333,16 @@ export interface DatabaseConfig {
       /** Run drift detection on every autoSQL call when schemaHistory: true. Default: true. */
       detectDrift?: boolean;
 
+      // --- Run audit ---
+      /** Persist one row per top-level load (autoSQL/autoSQLChunked/stream end) to a managed run-audit
+       *  table — run counts, durations, row counts, success/error — with no caller wiring. Best-effort:
+       *  a failed audit write never fails the load. Default: false. */
+      runAudit?: boolean;
+      /** Name of the run-audit table. Default: "autosql_runs". */
+      runAuditTable?: string;
+      /** Schema containing the run-audit table. Default: same as config.schema. */
+      runAuditSchema?: string;
+
       // --- Streaming ---
       /** Prefix for per-run stream staging tables. Default: "autosql_stream__". */
       streamingStagingPrefix?: string;
