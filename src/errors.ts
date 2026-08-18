@@ -1,9 +1,7 @@
 /**
- * Thrown when `useSchemaLock: true` and the per-table advisory lock could not
- * be acquired within the configured `schemaLockTimeout`.  Another writer is
- * currently running schema inference / DDL on the same table.
- *
- * Callers can catch this error and retry, or increase `schemaLockTimeout`.
+ * Thrown when `useSchemaLock: true` and the per-table advisory lock couldn't be acquired within
+ * `schemaLockTimeout` (another writer holds it for schema inference/DDL on the same table).
+ * Callers can retry or increase `schemaLockTimeout`.
  */
 export class SchemaLockTimeoutError extends Error {
     constructor(message: string) {

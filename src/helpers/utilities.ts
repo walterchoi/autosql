@@ -100,10 +100,8 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             throw new Error("thousandsSeparator and decimalSeparator must be provided together.");
         }
         if (merged.numberFormat !== undefined) {
-            // numberFormat is pure sugar: resolve it to thousandsSeparator/decimalSeparator here so it
-            // flows through the SAME fields the load path (sqlize) already reads — no new plumbing. IN
-            // shares US separators; Indian lakh/crore grouping is accepted by normalizeNumber's
-            // Western/Indian validation automatically.
+            // Sugar: resolve to thousandsSeparator/decimalSeparator so it flows through the SAME fields
+            // sqlize already reads. IN shares US separators (lakh/crore grouping accepted by normalizeNumber).
             const NUMBER_FORMATS: Record<string, { thousands: string; decimal: string }> = {
                 US: { thousands: ",", decimal: "." },
                 IN: { thousands: ",", decimal: "." },
@@ -113,17 +111,16 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             if (!preset) {
                 throw new Error(`Invalid numberFormat "${merged.numberFormat}": expected one of ${Object.keys(NUMBER_FORMATS).join(", ")}.`);
             }
-            // Explicit separators win. They must be supplied together (enforced above), so checking
-            // one is enough; only fill from the preset when the caller gave neither.
+            // Explicit separators win; supplied together (enforced above) so checking one suffices.
+            // Only fill from the preset when the caller gave neither.
             if (merged.thousandsSeparator === undefined) {
                 merged.thousandsSeparator = preset.thousands;
                 merged.decimalSeparator = preset.decimal;
             }
         }
         if (merged.sourceTimeZone !== undefined) {
-            // Validate the zone up front (fail loud). A bad zone would otherwise surface per-row inside
-            // sqlize's try/catch, which swallows and returns the raw value — a silent skip of the
-            // conversion the caller asked for.
+            // Validate up front (fail loud). A bad zone would otherwise surface per-row inside sqlize's
+            // try/catch, which swallows and returns the raw value — silently skipping the conversion.
             try {
                 new Intl.DateTimeFormat("en-US", { timeZone: merged.sourceTimeZone });
             } catch {
@@ -134,11 +131,10 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         // rejected-rows builders (streamHelpers.ts) and schema-history bootstrap (schemaHistory.ts) now
         // emit T-SQL. openStream stays guarded (autosql.ts) until the streaming builders are ported, slice 5.)
         if (merged.rejectedRowsTable && merged.addHistory && merged.sqlDialect === "sqlserver") {
-            // rejectedRowsTable + addHistory is atomic (before-image + merge in one transaction) on
-            // mysql/pgsql via loadStrategy's useAtomicHistory branch — but that branch is gated
-            // `!== 'sqlserver'` (2g), so SQL Server would silently take the NON-atomic insertHistory-then-
-            // merge path with a crash window between history and the divert. Rather than ship a weaker,
-            // untested combo, fail loud here; the atomic SQL Server combo is a future slice (spec-2 §3.8).
+            // rejectedRowsTable + addHistory is atomic on mysql/pgsql via loadStrategy's useAtomicHistory
+            // branch, but that branch is gated `!== 'sqlserver'` (2g). SQL Server would silently take the
+            // NON-atomic insertHistory-then-merge path (crash window between history and divert). Fail loud
+            // rather than ship a weaker untested combo; atomic SQL Server combo is a future slice (spec-2 §3.8).
             throw new Error("rejectedRowsTable combined with addHistory is not yet supported on SQL Server (the atomic history+divert path is not yet ported — see spec-2 §3.8). Use them separately on SQL Server for now.");
         }
         if (merged.surrogateKey) {
@@ -200,7 +196,7 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         inputStr = tempinputStr;
     }
 
-    // 🚨 Ensure `-` appears only at the start
+    // Ensure `-` appears only at the start
     if (inputStr.includes("-") && inputStr.indexOf("-") !== 0) return null;
 
     const isNegative = inputStr.startsWith("-");
@@ -211,9 +207,9 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
     const dotCount = (inputStr.match(/\./g) || []).length;
     let commaCount = (inputStr.match(/,/g) || []).length;
 
-    // 🔍 Detect and normalize Swiss format if no commas are present but apostrophes exist
+    // Swiss format: no commas but apostrophes present → treat apostrophes as thousands separators
     if (commaCount === 0 && inputStr.includes("'")) {
-        inputStr = inputStr.replace(/'/g, ","); // ✅ Convert apostrophes to commas
+        inputStr = inputStr.replace(/'/g, ",");
         commaCount = (inputStr.match(/,/g) || []).length;
     }
     if (commaCount === 0 && inputStr.includes("`")) {
@@ -223,7 +219,7 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
 
     inputStr = inputStr.replace(/ /g, "");
 
-    // 🚨 Reject cases
+    // Reject cases
     if (
         !/\d/.test(inputStr) || // No digits present
         (dotCount > 1 && commaCount > 1) || // Too many of both
@@ -233,7 +229,7 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         return null;
     }
 
-    // 🚨 Check incorrect ordering of separators
+    // Check incorrect ordering of separators
     const firstComma = inputStr.indexOf(",");
     const lastComma = inputStr.lastIndexOf(",")
     const firstDot = inputStr.indexOf(".");
@@ -271,12 +267,10 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         // Only one separator exists, assume it is the decimal separator
         thousandsIndicator = "";
         decimalIndicator = dotCount === 1 ? "." : ",";
-        // A24c: a lone separator followed by exactly three digits (with 1–3 leading digits) is the
-        // one shape that could equally be a Western/Indian thousands group (e.g. "1,234" -> 1234) —
-        // in BOTH formats the trailing group is 3 digits (Indian's 2-digit groups are only ever
-        // middle groups, never trailing). We still assume decimal, but signal the ambiguity so the
-        // caller can warn. Anything else (2 trailing digits, 4+, or >3 leading) is an unambiguous
-        // decimal in every locale and stays silent.
+        // A24c: a lone separator + exactly 3 trailing digits (1–3 leading) is the one shape that could
+        // equally be a Western/Indian thousands group ("1,234" -> 1234); in both, the trailing group is
+        // 3 digits (Indian 2-digit groups are only ever middle, never trailing). We assume decimal but
+        // signal the ambiguity so the caller can warn. Anything else is unambiguous decimal — stays silent.
         if (onAmbiguousSeparator) {
             const [before, after] = inputStr.split(decimalIndicator);
             if (after !== undefined && after.length === 3 && before.length >= 1 && before.length <= 3) {
@@ -302,18 +296,16 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
                 return null;
             }
         } else {
-            // 🔍 Detect if the format is Indian-style or Western-style
+            // Detect Indian-style vs Western-style grouping
             const isWesternFormat = thousandsSplit.length > 1 && thousandsSplit.every((part, i) =>
                 (i === 0 ? part.length <= 3 : part.length === 3)
             );
-        
+
             const isIndianFormat = thousandsSplit.length > 1 && thousandsSplit.every((part, i) =>
                 (i === 0 ? part.length <= 2 : i === thousandsSplit.length - 1 ? part.length === 3 : part.length === 2)
             );
-        
-            if (!isWesternFormat && !isIndianFormat) return null; // ❌ Reject if it fits neither format
-        
-            // ✅ If valid, remove thousands separators
+
+            if (!isWesternFormat && !isIndianFormat) return null; // Reject if it fits neither
         }
         preDecimal = thousandsSplit.join("");
     }
@@ -372,12 +364,10 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
 
         const lengthInfo = parseDatabaseLength(String(normalizedRow["length"]));
         const serverType = normalizedRow["data_type"].toLowerCase();
-        // MySQL has no native boolean: `tinyint(1)` is the boolean convention, while a plain
-        // `tinyint` is a small integer (autosql itself stores 0–255 values as `tinyint`). DATA_TYPE
-        // is just "tinyint" for both, so `serverToLocal` mapped every tinyint to boolean — on
-        // re-ingest that produced a spurious boolean→int conversion (`SET x = CASE WHEN x THEN 1
-        // ELSE 0 END`) that collapsed values to 0/1. Use COLUMN_TYPE (which carries the display
-        // width) to map only `tinyint(1)` to boolean; any other tinyint stays an integer.
+        // MySQL has no native boolean: `tinyint(1)` is the boolean convention, plain `tinyint` is a
+        // small integer (autosql stores 0–255 as `tinyint`). DATA_TYPE is "tinyint" for both, so
+        // serverToLocal mapped every tinyint to boolean — a spurious boolean→int conversion on re-ingest
+        // that collapsed values to 0/1. Use COLUMN_TYPE (display width) to map only `tinyint(1)` to boolean.
         const columnType = String(normalizedRow["column_type"] || "").toLowerCase();
         const isNonBooleanTinyint = serverType === "tinyint" && columnType !== "" && columnType !== "tinyint(1)";
         const dataType = isNonBooleanTinyint
@@ -403,9 +393,8 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
             metadata[tableName] = {};
         }
 
-        // Real DB name of a non-primary unique index the column belongs to (when the query
-        // supplies it) — sourced from the same catalog view as getUniqueIndexesQuery so it matches
-        // getDropUniqueConstraintQuery. Empty string → treat as absent.
+        // Real DB name of a non-primary unique index the column belongs to (when supplied) — from the
+        // same catalog view as getUniqueIndexesQuery so it matches getDropUniqueConstraintQuery. "" → absent.
         const uniqueIndexName = normalizedRow["unique_index_name"];
 
         metadata[tableName][normalizedRow.column_name] = {
@@ -419,9 +408,8 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
             autoIncrement: autoIncrement,
             decimal: lengthInfo.decimal ?? undefined,
             // Introspected DDL default expression → ddlDefault, NOT default. `default` feeds
-            // getInsertValues' missing-value substitution; an introspected expression string
-            // (`'active'::character varying`, `CURRENT_TIMESTAMP`) bound as a row value corrupts the
-            // stored data (A3). DDL builders that need the expression read ddlDefault instead.
+            // getInsertValues' missing-value substitution; an expression string bound as a row value
+            // corrupts stored data (A3). DDL builders read ddlDefault instead.
             ddlDefault: normalizedRow["column_default"],
         };
     });
@@ -448,7 +436,7 @@ export function isCombinationUnique(data: Record<string, any>[], columns: string
 
     for (const row of data) {
         // JSON-encode the tuple (A24) so the composite key is unambiguous: a plain "|" join collides on
-        // an embedded "|", coerces null to "" (conflating null vs empty), and reads 1 the same as "1".
+        // an embedded "|", conflates null with "", and reads 1 the same as "1".
         const key = JSON.stringify(columns.map(col => row[col] ?? null));
         if (seenValues.has(key)) return false;
         seenValues.add(key);
@@ -475,22 +463,22 @@ export function tableChangesExist(alterTableChanges: AlterTableChanges): boolean
 
 export function isMetadataHeader(input: any): input is MetadataHeader {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
-        return false; // ❌ Must be a non-null object
+        return false; // Must be a non-null object
     }
 
     for (const key in input) {
-        if (typeof key !== "string") return false; // ❌ Keys must be strings
+        if (typeof key !== "string") return false; // Keys must be strings
 
         const column = input[key];
 
         if (
             typeof column !== "object" || column === null ||
-            (!("type" in column) || typeof column.type !== "string") // ✅ "type" is required and must be a string
+            (!("type" in column) || typeof column.type !== "string") // "type" required, must be a string
         ) {
             return false;
         }
 
-        // ✅ Optional fields must match expected types
+        // Optional fields must match expected types
         if (
             ("length" in column && column.length != null && typeof column.length !== "number") ||
             ("allowNull" in column && column.allowNull != null && typeof column.allowNull !== "boolean") ||
@@ -505,14 +493,13 @@ export function isMetadataHeader(input: any): input is MetadataHeader {
         }
     }
 
-    return true; // ✅ Passed all checks
+    return true; // Passed all checks
 }
 
 export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supportedDialects): { rowSize: number; exceedsLimit: boolean, nearlyExceedsLimit: boolean } {
     let totalSize = 0;
-    // Row-size limits are counted in BYTES, but a varchar char can be multi-byte: utf8mb4 (MySQL) up to
-    // 4, SQL Server NVARCHAR is UTF-16 = 2. Scale the declared CHAR length by the dialect's max bytes per
-    // char so a wide table is measured against the byte limit correctly — otherwise autoSplit
+    // Row-size limits are in BYTES but a varchar char can be multi-byte (utf8mb4 MySQL up to 4, SQL
+    // Server NVARCHAR UTF-16 = 2). Scale declared CHAR length by max bytes/char, else autoSplit
     // under-triggers on multibyte-capable columns (A25).
     const varcharBytesPerChar = dbType === "mysql" ? 4 : dbType === "sqlserver" ? 2 : 1;
 
@@ -583,24 +570,24 @@ export const normalizeKeysArray = (data: Record<string, any>[]): Record<string, 
 export function organizeSplitTable(table: string, newMetaData: MetadataHeader, currentMetaData: Record<string, any>[] | MetadataHeader | Record<string, MetadataHeader>, dialectConfig: DialectConfig) : Record<string, MetadataHeader> {
     let normalizedMetaData: Record<string, MetadataHeader>;
 
-    // ✅ Check if currentMetaData is already in structured format
+    // Check if currentMetaData is already in structured format
     if (typeof currentMetaData === "object" && !Array.isArray(currentMetaData)) {
         if (Object.values(currentMetaData).some(value => typeof value === "object" && !Array.isArray(value))) {
-            // ✅ Already `Record<string, MetadataHeader>`, use it directly
+            // Already `Record<string, MetadataHeader>`, use it directly
             normalizedMetaData = currentMetaData as Record<string, MetadataHeader>;
         } else {
-            // ✅ If it's `MetadataHeader`, wrap it in `{ table: MetadataHeader }`
+            // If it's `MetadataHeader`, wrap it in `{ table: MetadataHeader }`
             normalizedMetaData = { [table]: currentMetaData as MetadataHeader };
         }
     } else {
-        // ✅ Otherwise, assume it's raw DB results and parse
+        // Otherwise assume raw DB results and parse
         const parsedMetadata = parseDatabaseMetaData(currentMetaData as Record<string, any>[], dialectConfig);
         if (!parsedMetadata) {
-            normalizedMetaData = { [table]: {} }; // ✅ Ensure it has a valid structure
+            normalizedMetaData = { [table]: {} }; // Ensure valid structure
         } else if (Object.values(parsedMetadata).some(value => typeof value === "object" && !Array.isArray(value))) {
-            normalizedMetaData = parsedMetadata as Record<string, MetadataHeader>; // ✅ Multiple tables
+            normalizedMetaData = parsedMetadata as Record<string, MetadataHeader>; // Multiple tables
         } else {
-            normalizedMetaData = { [table]: parsedMetadata as MetadataHeader }; // ✅ Single table
+            normalizedMetaData = { [table]: parsedMetadata as MetadataHeader }; // Single table
         }
     }
 
@@ -641,7 +628,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
     const unallocatedColumns = { ...newColumns };
 
     while (Object.keys(unallocatedColumns).length > 0) {
-        // ✅ Check the row size before adding new columns
+        // Check the row size before adding new columns
         for (var i = 0; i < Object.keys(unallocatedColumns).length; i++) {
             const currentTableData = newGroupedByTable[tableName] || { ...primaryKeys };
             const columnName = Object.keys(unallocatedColumns)[i]
@@ -652,12 +639,12 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 
             const { exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
             if (!nearlyExceedsLimit && !exceedsColumnLimit) {
-                // ✅ Add the column if within limits
+                // Add the column if within limits
                 if (!newGroupedByTable[tableName]) {
                     newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table
                 }
                 newGroupedByTable[tableName][columnName] = columnDef;
-                delete unallocatedColumns[columnName]; // ✅ Remove from unallocated list
+                delete unallocatedColumns[columnName]; // Remove from unallocated list
                 i--
             } else {
                 tableName = getNextTableName(tableName);
@@ -672,11 +659,10 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 export function organizeSplitData(data: Record<string, any>[], splitMetaData: Record<string, MetadataHeader>): Record<string, Record<string, any>[]> {
     const groupedData: Record<string, Record<string, any>[]> = {};
     data.forEach((row) => {
-        // ✅ Initialize an object for each table's row data
         const rowDataByTable: Record<string, Record<string, any>> = {};
 
         Object.entries(splitMetaData).forEach(([tableName, columns]) => {
-            rowDataByTable[tableName] = {}; // ✅ Ensure each table has a row initialized
+            rowDataByTable[tableName] = {};
 
             Object.keys(columns).forEach((columnName) => {
                 if (row.hasOwnProperty(columnName)) {
@@ -684,7 +670,7 @@ export function organizeSplitData(data: Record<string, any>[], splitMetaData: Re
                 }
             });
 
-            // ✅ Only add to groupedData if it has at least one column
+            // Only add to groupedData if it has at least one column
             if (Object.keys(rowDataByTable[tableName]).length > 0) {
                 if (!groupedData[tableName]) {
                     groupedData[tableName] = [];
@@ -711,12 +697,10 @@ export function splitInsertData(data: Record<string, any>[], config: DatabaseCon
 }  
 
 /**
- * Remove characters that a SQL text column cannot store, so free-text values with
- * pasted/garbage bytes do not hard-fail the insert. Strips NUL (U+0000) - illegal in
- * Postgres text and a statement-truncation risk elsewhere - and replaces unpaired UTF-16
- * surrogates (a lone high or low surrogate, which cannot encode to valid UTF-8) with the
- * Unicode replacement character U+FFFD. Well-formed text (including emoji, whose surrogates
- * are paired) is returned unchanged. Opt-in via `databaseConfig.sanitizeInvalidChars`.
+ * Remove characters a SQL text column cannot store, so garbage-byte free text doesn't hard-fail the
+ * insert. Strips NUL (U+0000, illegal in Postgres text + truncation risk elsewhere) and replaces
+ * unpaired UTF-16 surrogates (can't encode to valid UTF-8) with U+FFFD. Well-formed text (incl. emoji,
+ * whose surrogates are paired) is unchanged. Opt-in via `databaseConfig.sanitizeInvalidChars`.
  */
 export function sanitizeString(value: string): string {
     return value
@@ -726,12 +710,11 @@ export function sanitizeString(value: string): string {
 
 export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig?: DialectConfig, databaseConfig?: DatabaseConfig, sqlizeValues: boolean = false): any[] {
     const sanitize = databaseConfig?.sanitizeInvalidChars === true;
-    // In surrogate-key mode the auto-increment column is database-generated and carries no data
-    // value, so it must be omitted from the value list (Postgres would reject a NULL into a
-    // BIGSERIAL NOT NULL column). This is gated on `surrogateKey`: a genuine AUTO_INCREMENT /
-    // SERIAL primary key on an ordinary table is introspected as autoIncrement:true too, and
-    // callers legitimately supply values for it to upsert — those must NOT be dropped. The insert
-    // builders apply the same gate to the column list, keeping columns and params aligned.
+    // In surrogate-key mode the auto-increment column is DB-generated with no data value, so omit it
+    // from the value list (Postgres rejects NULL into a BIGSERIAL NOT NULL). Gated on `surrogateKey`:
+    // a genuine AUTO_INCREMENT/SERIAL PK on an ordinary table is also autoIncrement:true and callers
+    // legitimately upsert values for it — those must NOT be dropped. Insert builders gate the column
+    // list the same way, keeping columns and params aligned.
     const excludeAutoIncrement = databaseConfig?.surrogateKey === true;
     const newRow = Object.entries(metaData)
       .filter(([, meta]) => !(excludeAutoIncrement && meta.autoIncrement === true))
@@ -754,9 +737,8 @@ export function getInsertValues(metaData: MetadataHeader, row: Record<string, an
       } else {
         out = value;
       }
-      // Applied after value resolution so it covers both the raw and sqlized paths, and only
-      // to strings — the driver still parameter-binds the result, so this is purely about
-      // storability, not escaping.
+      // After value resolution so it covers both raw and sqlized paths; strings only. The driver still
+      // parameter-binds, so this is about storability, not escaping.
       if (sanitize && typeof out === "string") {
         out = sanitizeString(out);
       }
@@ -765,9 +747,8 @@ export function getInsertValues(metaData: MetadataHeader, row: Record<string, an
     return newRow
 }
 
-// One Intl.DateTimeFormat per zone. Constructing it is ~100× the cost of a formatToParts call, and
-// this only runs when `sourceTimeZone` is set (never on the default path). Cached module-level so the
-// per-value insert hot path pays construction once per zone, not once per value.
+// One Intl.DateTimeFormat per zone, cached module-level. Construction is ~100× a formatToParts call,
+// so the per-value insert hot path pays it once per zone, not per value. Only runs when sourceTimeZone set.
 const tzFormatterCache = new Map<string, Intl.DateTimeFormat>();
 function tzFormatter(timeZone: string): Intl.DateTimeFormat {
     let f = tzFormatterCache.get(timeZone);
@@ -806,15 +787,14 @@ function zonedWallClockToUtcIso(Y: string, Mo: string, D: string, h: string, mi:
 }
 
 /**
- * Normalise a date/time string for `sqlize` into an ISO-ish form the per-dialect sqlize regex rules
- * then reduce to the final literal (`T`→space, strip trailing `Z`).
+ * Normalise a date/time string for `sqlize` into an ISO-ish form the per-dialect regex rules reduce to
+ * the final literal (`T`→space, strip trailing `Z`).
  *
- * CRITICAL (A1): never route a ZONELESS value through `new Date()`. `new Date("2024-01-15 12:00:00")`
- * parses it in the Node process's LOCAL zone, and `toISOString()` re-emits UTC — silently shifting the
- * wall-clock by the host's UTC offset on any non-UTC machine (a corruption UTC-only CI cannot see).
- * Only a zone-qualified value (`Z` or `±HH:MM`) denotes an absolute instant and may be converted to
- * UTC. `date`/`time` columns keep the wall-clock portion regardless of any zone — converting a zoned
- * value to UTC can shift the stored day/time (`2024-01-15T02:00:00+05:00` into a `date` → 2024-01-14).
+ * CRITICAL (A1): never route a ZONELESS value through `new Date()` — it parses in the process LOCAL
+ * zone and toISOString() re-emits UTC, silently shifting the wall-clock by the host offset on non-UTC
+ * machines (a corruption UTC-only CI can't see). Only a zone-qualified value (`Z`/`±HH:MM`) is an
+ * absolute instant convertible to UTC. `date`/`time` columns keep the wall-clock regardless of zone —
+ * converting a zoned value can shift the stored day (`2024-01-15T02:00:00+05:00` into `date` → 2024-01-14).
  */
 function normalizeDateValue(strValue: string, columnType: string, sourceTimeZone?: string): string {
     const s = strValue.trim();
@@ -877,41 +857,37 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
             try {
                 if (typeof value === "string") {
                     try {
-                        // Try parsing it first (in case it's a JSON string)
+                        // Parse first (in case it's a JSON string), store re-stringified
                         const parsed = JSON.parse(value);
-                        return JSON.stringify(parsed); // ✅ Store re-stringified version
+                        return JSON.stringify(parsed);
                     } catch {
-                        // ❌ Failed to parse: just return original string
-                        return value;
+                        return value; // Not parseable: return original string
                     }
                 } else if (typeof value === "object") {
-                    // ✅ Valid object → stringify
                     return JSON.stringify(value);
                 } else {
-                    // ⚠️ Unexpected type (number, boolean, etc.)
+                    // Unexpected type (number, boolean, etc.)
                     return JSON.stringify({ value });
                 }
             } catch (err: any) {
                 databaseConfig?.logger?.warn?.(`[sqlize] Failed to handle JSON value for column: ${JSON.stringify({ value, error: err.message || String(err) })}`);
-                return null; // ❌ Fallback to NULL if completely unusable
+                return null; // Fallback to NULL if unusable
             }
         }
         
         let strValue = typeof value === "string" ? value : String(value);
 
-        // Boolean columns store a canonical 0/1. Without this, a string flag ("true"/"false",
-        // as CSV and most text sources deliver them) reaches the driver unchanged: MySQL rejects
-        // it against a TINYINT(1) (`Incorrect integer value: 'true'`) and the raw distinct strings
-        // ("true"/"TRUE"/1) also inflate the sampled cardinality into a spurious UNIQUE. Normalise
-        // the boolean domain to "1"/"0" — both dialects accept it (MySQL tinyint, PG boolean input).
+        // Boolean columns store a canonical 0/1. Without this, a string flag ("true"/"false" as CSV/text
+        // sources deliver) reaches the driver unchanged: MySQL rejects it against TINYINT(1) (`Incorrect
+        // integer value: 'true'`) and distinct strings ("true"/"TRUE"/1) inflate sampled cardinality into
+        // a spurious UNIQUE. Normalise to "1"/"0" — both dialects accept it (MySQL tinyint, PG boolean).
         if (columnType === "boolean") {
             const b = strValue.trim().toLowerCase();
-            // Absence stays null (matches the inference layer, which treats ""/"null" as nullish) —
-            // a missing flag must not silently become false.
+            // Absence stays null (matches inference layer's ""/"null" nullish) — a missing flag must not become false.
             if (b === "" || b === "null") return null;
             if (b === "1" || b === "true" || b === "t" || b === "yes") return "1";
             if (b === "0" || b === "false" || b === "f" || b === "no") return "0";
-            // Out of domain: leave unchanged so the DB surfaces it rather than silently coercing.
+            // Out of domain: leave unchanged so the DB surfaces it rather than coercing.
             return strValue;
         }
 
@@ -923,8 +899,7 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
         const isNumberLike = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
         if (isNumberLike) {
             const normalised = normalizeNumber(value, databaseConfig?.thousandsSeparator, databaseConfig?.decimalSeparator) || strValue;
-            // Round the value to the same scale the column is sized to: the configured cap, else the
-            // dialect's numeric limit (so we don't silently round to an arbitrary low default).
+            // Round to the column's scale: configured cap, else dialect numeric limit (not an arbitrary low default).
             const precision = databaseConfig?.decimalMaxLength ?? dialectConfig.maxDecimalScale;
             strValue = roundStringDecimal(normalised, precision);
         }
@@ -986,13 +961,11 @@ export async function wait_x_mseconds (x: number) {
     })
 }
 
-// Round a numeric string to `precision` decimal places, half-up (away from zero), using digit-string
-// arithmetic only — never float (A4). The previous float path (`Math.round(Number(...))`) had two
-// defects: it fed digits already sliced to `precision` back through Math.round, so the carry digit was
-// gone and it ALWAYS truncated downward (2.675 → 2.67, currency bias); and above ~15 significant
-// digits Number()/Math.pow lose precision. String carry is exact at any magnitude, so the former
-// `precision > 15` truncation compromise (D-G) is no longer needed. Round-half-away-from-zero matches
-// MySQL/Postgres numeric rounding.
+// Round a numeric string to `precision` decimals, half-up (away from zero), using digit-string
+// arithmetic only — never float (A4). The old float path (`Math.round(Number(...))`) always truncated
+// downward (currency bias) and lost precision above ~15 significant digits. String carry is exact at
+// any magnitude, so the former `precision > 15` truncation compromise (D-G) is gone. Half-away-from-zero
+// matches MySQL/Postgres numeric rounding.
 function roundStringDecimal(valueStr: string, precision: number): string {
     if (!valueStr.includes('.')) return valueStr;
 
@@ -1013,8 +986,8 @@ function roundStringDecimal(valueStr: string, precision: number): string {
         return sign + (precision > 0 && kept.length > 0 ? `${intPart}.${kept}` : intPart);
     }
 
-    // Half-up: add 1 in the last kept place by incrementing the concatenated integer+kept digits, then
-    // re-split. A carry can grow the integer part (999 → 1000) or ripple across the decimal point.
+    // Half-up: add 1 in the last kept place by incrementing concatenated integer+kept digits, then
+    // re-split. A carry can grow the integer part or ripple across the decimal point.
     const incremented = incrementDigits(intPart + kept);
     if (precision === 0) return sign + incremented;
     const splitAt = incremented.length - precision;
@@ -1036,10 +1009,9 @@ function incrementDigits(digits: string): string {
 export function generateSafeConstraintName(table: string, column: string, type: 'unique' | 'index' = 'unique'): string {
     const base = `${table}_${column}_${type}`;
 
-    // Keep the generated name within the TIGHTEST dialect identifier limit (Postgres, 63 BYTES) so its
-    // output always passes escapeIdentifier for every dialect. Measure AND truncate by UTF-8 bytes: a
-    // character count can return a name ≤63 chars but >63 bytes for a multibyte (é / CJK) source
-    // column, which escapeIdentifier then rejects (the very name this helper produced to stay legal).
+    // Keep within the TIGHTEST dialect identifier limit (Postgres, 63 BYTES) so output always passes
+    // escapeIdentifier for every dialect. Measure AND truncate by UTF-8 bytes: a char count can yield
+    // ≤63 chars but >63 bytes for a multibyte (é/CJK) source column, which escapeIdentifier then rejects.
     if (Buffer.byteLength(base, "utf8") <= 63) return base;
 
     // Truncate on whole-character boundaries until the byte budget, then append a hash for uniqueness.
@@ -1072,8 +1044,8 @@ export function throwIfFailedResults(results: QueryResult[], action = "operation
           .map(r => `- ${r.table || "Unknown Table"}: ${r.error || "Unknown Error"}`)
           .join("\n");
 
-      // Carry the first failed query's driver error code on the thrown Error so a top-level
-      // catch (autoSQL / autoSQLChunked / stream end) can surface it as QueryResult.errorCode.
+      // Carry the first failed query's driver error code on the thrown Error so a top-level catch
+      // (autoSQL / autoSQLChunked / stream end) can surface it as QueryResult.errorCode.
       const err = new Error(message) as Error & { code?: string };
       const withCode = failed.find(r => r.errorCode);
       if (withCode?.errorCode) err.code = withCode.errorCode;

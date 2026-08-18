@@ -2,11 +2,10 @@
 // which are parameter-bound and identifier-escaped, and NOT runTransaction, which intentionally runs
 // multi-statement DDL/DML). Returns true when the string is a single statement.
 //
-// A left-to-right tokenizer, not layered regexes (A23): the previous version stripped comments before
-// strings, so a `/*` inside one string literal and `*/` in a later one could make it swallow an
-// intervening `; DROP …`; it also mishandled doubled quotes ('') and Postgres dollar-quoting. This
-// walks the string once, skipping over string/identifier literals, comments and dollar-quoted bodies,
-// and only counts semicolons that actually separate statements.
+// A left-to-right tokenizer, not layered regexes (A23): stripping comments before strings let a `/*`
+// in one string literal and `*/` in a later one swallow an intervening `; DROP …`, and mishandled
+// doubled quotes ('') and Postgres dollar-quoting. This walks the string once, skipping string/
+// identifier literals, comments and dollar-quoted bodies, counting only separating semicolons.
 export function isValidSingleQuery(query: string): boolean {
     const n = query.length;
     let i = 0;

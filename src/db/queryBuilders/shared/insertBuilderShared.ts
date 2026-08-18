@@ -1,10 +1,10 @@
 import { MetadataHeader, DatabaseConfig, InsertInput, QueryInput } from "../../../config/types";
 import { getInsertValues, getTempTableName, getHistoryTableName, getTrueTableName } from "../../../helpers/utilities";
 
-// Shared, dialect-agnostic logic for the three insert builders (R2). The SQL *assembly* diverges too
-// much to unify (INSERT…ON CONFLICT / ON DUPLICATE KEY / MERGE), but the input resolution, column
-// derivation, updatable-column rule and the row-level history query are identical — and were copy-pasted
-// three times (so e.g. the A2 history fix had to be made in triplicate). These live here once.
+// Shared, dialect-agnostic logic for the three insert builders (R2). SQL assembly diverges too much to
+// unify (ON CONFLICT / ON DUPLICATE KEY / MERGE), but input resolution, column derivation, the
+// updatable-column rule and the row-level history query are identical (previously copy-pasted 3x, so
+// e.g. the A2 history fix had to be made in triplicate). Centralised here.
 
 export interface ResolvedStatement { table: string; rows: Record<string, any>[]; header: MetadataHeader; insertType: "UPDATE" | "INSERT"; }
 export interface ResolvedStaging { table: string; header: MetadataHeader; insertType: "UPDATE" | "INSERT"; stagingPrefix?: string; }

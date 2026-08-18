@@ -43,15 +43,13 @@ export class AutoSQLStreamHandle {
     /**
      * Append a chunk of rows to this run's staging table.
      *
-     * Contract: returns a promise that **rejects** on failure and MUST be awaited (or
-     * `.catch`ed). It is NOT fire-and-forget — an un-awaited write() that fails becomes an
-     * unhandled promise rejection and its error is lost.
-     *
-     * A rejected write() leaves the staging table in an indeterminate state (the chunk may be
-     * partly applied or absent). On rejection, either **retry the same chunk** (write() is
-     * append-only, so re-sending after a transient failure is safe) or call {@link abort} to
-     * discard the run. Do NOT call {@link end} after a failed/un-awaited write() expecting the
-     * gap to be ignored: end() merges whatever is staged, so a lost chunk becomes missing rows.
+     * Contract: returns a promise that **rejects** on failure and MUST be awaited (or `.catch`ed) —
+     * NOT fire-and-forget; an un-awaited failing write() becomes an unhandled rejection and its error
+     * is lost. A rejected write() leaves staging indeterminate (chunk partly applied or absent); on
+     * rejection either **retry the same chunk** (write() is append-only, so re-sending after a
+     * transient failure is safe) or call {@link abort} to discard the run. Do NOT call {@link end}
+     * after a failed/un-awaited write() expecting the gap to be ignored: end() merges whatever is
+     * staged, so a lost chunk becomes missing rows.
      */
     async write(chunk: Record<string, any>[]): Promise<void> {
         if (this.ended) throw new Error(`autoSQLStream: write() called after end()/abort()`);
@@ -60,8 +58,8 @@ export class AutoSQLStreamHandle {
             const config = this.db.getConfig();
 
             if (!this.stagingCreated) {
-                // Derive columns from the UNION of the first chunk's rows — not just chunk[0], which
-                // would silently drop any key that first appears in a later row of the same chunk (A18).
+                // Columns from the UNION of the first chunk's rows — not just chunk[0], which would
+                // silently drop a key first appearing in a later row of the same chunk (A18).
                 const cols = new Set<string>();
                 for (const row of chunk) for (const k of Object.keys(row)) cols.add(k);
                 this.columns = [...cols];
@@ -74,9 +72,9 @@ export class AutoSQLStreamHandle {
                 this.stagingCreated = true;
             }
 
-            // The staging table's columns are fixed at creation. A key that first appears in a LATER
-            // row/chunk has no column to land in and would be silently dropped (data loss) — fail loud
-            // instead so the caller keeps a stable column set or starts a separate load (A18).
+            // Staging columns are fixed at creation. A key first appearing in a LATER row/chunk has no
+            // column to land in and would be silently dropped (data loss) — fail loud so the caller
+            // keeps a stable column set or starts a separate load (A18).
             for (const row of chunk) {
                 for (const k of Object.keys(row)) {
                     if (!this.columnSet!.has(k)) {
@@ -94,13 +92,13 @@ export class AutoSQLStreamHandle {
     }
 
     /**
-     * Merge all staged rows into the target table (infer schema, apply DDL, bulk INSERT…SELECT
-     * with a per-row retry fallback), then drop the staging table.
+     * Merge all staged rows into the target table (infer schema, apply DDL, bulk INSERT…SELECT with a
+     * per-row retry fallback), then drop the staging table.
      *
      * Contract: returns a promise that **rejects** on failure and must be awaited. end() merges
-     * whatever is currently staged — it does not know about {@link write} calls that failed or
-     * were never awaited, so ensure every chunk resolved (or was retried) before calling this, or
-     * a lost chunk will silently become missing rows. To discard instead of merge, use {@link abort}.
+     * whatever is currently staged — it doesn't know about {@link write} calls that failed or were
+     * never awaited, so ensure every chunk resolved (or was retried) first, or a lost chunk silently
+     * becomes missing rows. To discard instead of merge, use {@link abort}.
      */
     async end(): Promise<QueryResult> {
       return this.db.runWithSchema(this.schema, async () => {
@@ -131,12 +129,12 @@ export class AutoSQLStreamHandle {
                 return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
             }
 
-            // Dataset-level number-format consensus from the staged rows (self-contained). Overlay the
-            // resolved separators on inference (flushConfig) AND the per-row fallback below. The bulk
-            // merge casts via the DB (so a grouped value like "1,234" is rejected there and lands via
-            // the per-row path); now that the per-row fallback sqlizes, that path normalizes the value
-            // under these separators. numberFormat needs no overlay — it is already on this.config, so
-            // resolveSeparatorConsensus returns undefined and inference/per-row read it directly.
+            // Dataset-level number-format consensus from the staged rows. Overlay the resolved
+            // separators on inference (flushConfig) AND the per-row fallback below: the bulk merge
+            // casts via the DB (so a grouped value like "1,234" is rejected there and lands per-row),
+            // and the per-row fallback now sqlizes, normalizing under these separators. numberFormat
+            // needs no overlay — already on this.config, so resolveSeparatorConsensus returns undefined
+            // and inference/per-row read it directly.
             const separators = this.handler['resolveSeparatorConsensus'](stagingRows);
             const flushConfig = separators
                 ? { ...config, thousandsSeparator: separators.thousands, decimalSeparator: separators.decimal }
@@ -194,8 +192,8 @@ export class AutoSQLStreamHandle {
             let affectedRows = mergeResult.affectedRows ?? 0;
 
             if (!mergeResult.success) {
-                // Fallback: per-row retry with schema widening. Run under the resolved separators so
-                // the per-row sqlize (via getConfig()) normalizes values with the detected format.
+                // Fallback: per-row retry with schema widening, under the resolved separators so the
+                // per-row sqlize (via getConfig()) normalizes values with the detected format.
                 affectedRows = await this.db.runWithSeparators(separators, () =>
                     this._perRowMerge(stagingRows, updatedMetaData, insertType as 'UPDATE' | 'INSERT', maxRetries));
             }

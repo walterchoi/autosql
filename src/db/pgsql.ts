@@ -33,7 +33,7 @@ export class PostgresDatabase extends Database {
         }
 
         // TLS passthrough. pg accepts `ssl: true` and an `ssl` object (ca/cert/key/rejectUnauthorized/
-        // servername) directly, so pass it through unchanged. Omitted → no `ssl` key (back-compat).
+        // servername) directly, so pass through unchanged. Omitted → no `ssl` key (back-compat).
         const ssl = this.config.ssl;
         if (ssl && typeof ssl === "object" && ssl.rejectUnauthorized === false) {
             this.config.logger?.warn?.("autosql: ssl.rejectUnauthorized is false — TLS certificate verification is DISABLED (use only for dev/self-signed).");
@@ -48,10 +48,9 @@ export class PostgresDatabase extends Database {
             database: this.config.database,
             port: this.config.port || 5432,
             max: this.config.connectionLimit || 5,
-            // Pin the client encoding to UTF8 so multibyte text is transferred intact
-            // regardless of the client's locale-derived default (e.g. WIN1252 on Windows).
-            // Defense-in-depth only: a UTF8 database already stores valid emoji fine — this
-            // does NOT rescue malformed source bytes (see sanitizeInvalidChars for those).
+            // Pin client encoding to UTF8 so multibyte text transfers intact regardless of the
+            // client's locale-derived default (e.g. WIN1252 on Windows). Defense-in-depth only: does
+            // NOT rescue malformed source bytes (see sanitizeInvalidChars for those).
             client_encoding: this.config.encoding || dialectConfig.encoding || "UTF8",
             // `ssl: false` is treated the same as omitting it (plaintext) — only a truthy `ssl` is threaded.
             ...(ssl ? { ssl } : {}),
@@ -124,9 +123,8 @@ export class PostgresDatabase extends Database {
                 await new Promise(r => setTimeout(r, 500));
             }
             if (!acquired) {
-                // Do not release here — the catch below releases exactly once (the map was
-                // never set for this table, so its guard fires). Releasing here too would
-                // double-release the connection on the timeout path.
+                // Don't release here — the catch below releases exactly once (map not set for this
+                // table, so its guard fires); releasing here too would double-release on timeout.
                 throw new SchemaLockTimeoutError(
                     `Could not acquire schema lock for table '${table}' within ${timeoutSeconds}s. ` +
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
@@ -155,9 +153,8 @@ export class PostgresDatabase extends Database {
             client.release();
         } catch (error) {
             // Unlock failed: destroy the connection instead of returning a lock-holding one to the
-            // pool. Postgres releases session advisory locks when the connection/session ends, so
-            // release(true) (destroy) guarantees the lock is dropped. Releasing a lock is cleanup,
-            // so a failure here is logged, not thrown.
+            // pool. Postgres releases session advisory locks on session end, so release(true)
+            // (destroy) guarantees the lock is dropped. Cleanup, so logged not thrown.
             this.warn(`releaseSchemaLock: failed to release schema lock for '${table}'; destroying the connection so a lock-holding connection is not returned to the pool — ${error instanceof Error ? error.message : String(error)}`);
             try { client.release(true); } catch { /* connection already broken */ }
         }
@@ -250,9 +247,8 @@ export class PostgresDatabase extends Database {
 
             return { rows, affectedRows };
         } catch (error) {
-            // Standalone query: roll back its throwaway connection. Pinned (transaction)
-            // connection: leave the ROLLBACK to runTransaction so the whole transaction aborts
-            // on this same connection.
+            // Standalone query: roll back its throwaway connection. Pinned (transaction) connection:
+            // leave the ROLLBACK to runTransaction so the whole transaction aborts on this connection.
             if (!pinned && conn) { try { await conn.query("ROLLBACK;"); } catch { /* autocommit: nothing to roll back */ } }
             throw error;
         } finally {
@@ -283,10 +279,9 @@ export class PostgresDatabase extends Database {
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
         let updatedMetaData: MetadataHeader
-        // Staging temp tables are throwaway bulk-load intermediaries created via CREATE TABLE
-        // AS SELECT (columns only, no keys). They need no primary key — reconciling one would
-        // emit DROP/ADD PRIMARY KEY against a keyless table, which errors. Skip PK reconciliation
-        // for staging tables (keyed off the staging-name prefix; the real target is untouched).
+        // Staging temp tables are throwaway CREATE TABLE AS SELECT intermediaries (columns only, no
+        // keys). Reconciling a PK would emit DROP/ADD PRIMARY KEY against a keyless table, which
+        // errors — so skip PK reconciliation for them (keyed off the staging-name prefix).
         const stagingPrefix = this.getConfig().stagingPrefix ?? "temp_staging__";
         const isStagingTable = table.startsWith(stagingPrefix);
         const alterPrimaryKey = (this.config.updatePrimaryKey ?? false) && !isStagingTable;
@@ -308,19 +303,18 @@ export class PostgresDatabase extends Database {
         if (!isStagingTable) this.warnBlockedSchemaChanges(table, alterTableChanges);
 
         // A9: no embedded COMMIT;/BEGIN; around the PK change. Postgres DDL is fully transactional, so
-        // drop-PK + column alters + add-PK all run in the ONE transaction runTransaction provides —
-        // committing mid-way split the migration into three transactions, so a failure after the first
-        // COMMIT left the table with NO primary key (durably) while the caller got success:false.
+        // drop-PK + column alters + add-PK all run in the ONE transaction runTransaction provides.
+        // Committing mid-way split it into three, so a failure after the first COMMIT durably left the
+        // table with NO primary key while the caller got success:false.
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 
-        // ✅ Only fetch unique indexes if there are columns to remove uniqueness from
+        // Only fetch unique indexes if there are columns to remove uniqueness from
         let indexesToDrop: string[] = [];
-        // Only drop the unique when the caller opted in (A10). Off (default) → keep it; the load fails
-        // loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
+        // Only drop the unique when the caller opted in (A10); off (default) keeps it and the load
+        // fails loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
         if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {
-            // Extract the results from the QueryResult response
             const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
         
             if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {
@@ -342,11 +336,10 @@ export class PostgresDatabase extends Database {
                     });
                 }
         }
-        // Get actual ALTER TABLE queries
         const alterQueries = PostgresTableQueryBuilder.getAlterTableQuery(table, alterTableChanges, this.getConfig().schema, this.getConfig());
         queries.push(...alterQueries);
 
-        // Add New Primary Key (if changed and allowed) — same transaction (A9).
+        // Add new PK (if changed and allowed) — same transaction (A9).
         if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
             queries.push(this.getAddPrimaryKeyQuery(table, alterTableChanges.primaryKeyChanges));
         }

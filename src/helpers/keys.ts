@@ -9,8 +9,7 @@ function surrogateColumnDefinition(): ColumnDefinition {
         type: "bigint",
         length: 0,
         allowNull: false,
-        // A PRIMARY KEY is implicitly unique; leaving `unique` false avoids emitting a redundant
-        // UNIQUE constraint alongside the PK.
+        // A PRIMARY KEY is implicitly unique; `unique` false avoids a redundant UNIQUE constraint.
         unique: false,
         index: false,
         pseudounique: false,
@@ -22,21 +21,17 @@ function surrogateColumnDefinition(): ColumnDefinition {
 }
 
 /**
- * Apply the opt-in surrogate primary key. A surrogate is an auto-increment column added when a
- * dataset has no natural key, so a table can still be created (and Postgres upserts have a
- * conflict target). This is deliberately *sticky* to the existing table so re-ingestion is
- * idempotent — `compareMetaData` must see no key change on run 2, otherwise it would try to
- * drop the surrogate or thrash the primary key:
+ * Apply the opt-in surrogate primary key — an auto-increment column added when a dataset has no
+ * natural key, so a table can still be created (and Postgres upserts have a conflict target).
+ * Deliberately *sticky* to the existing table so re-ingestion is idempotent: compareMetaData must see
+ * no key change on run 2, else it drops the surrogate or thrashes the PK.
  *
- *  - **Existing table with a surrogate** → keep that exact column as the sole primary key,
- *    regardless of what this batch happened to infer (a coincidentally-unique batch must not
- *    introduce a competing natural key).
- *  - **Existing table without a surrogate** → never introduce one now; respect the schema that
- *    was chosen when the table was created.
- *  - **New table (no existing metadata)** → inject a surrogate only when no natural primary key
- *    was found by `predictIndexes`.
+ *  - Existing table WITH a surrogate → keep that exact column as sole PK, regardless of what this
+ *    batch inferred (a coincidentally-unique batch must not introduce a competing natural key).
+ *  - Existing table WITHOUT a surrogate → never introduce one; respect the schema at creation time.
+ *  - New table (no existing metadata) → inject a surrogate only when predictIndexes found no natural PK.
  *
- * No-op unless `config.surrogateKey` is enabled. Never mutates the input.
+ * No-op unless `config.surrogateKey`. Never mutates the input.
  */
 export function applySurrogateKey(
     metaData: MetadataHeader,
@@ -89,10 +84,9 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         let potentialCompositeKeys: string[] = [];
         let NullablePseudoUniqueColumns: string[] = [];
 
-        // Key limits are enforced in bytes, so a ~200-char multibyte (CJK/emoji) value can be
-        // ~600 bytes and exceed the key limit even though its char length looks fine. When the
-        // sample data is available, capture each column's max byte length in one pass so the
-        // index/key checks below can gate on it (falls back to char length otherwise).
+        // Key limits are in bytes, so a multibyte (CJK/emoji) value can exceed the limit even when its
+        // char length looks fine. When sample data is available, capture each column's max byte length
+        // in one pass so the index/key checks below gate on it (falls back to char length otherwise).
         const maxByteLenByColumn: Record<string, number> = {};
         if (data && data.length) {
             for (const row of data) {
@@ -105,7 +99,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             }
         }
 
-        // ✅ Step 1: Predict indexes for date-related, unique, and pseudo-unique columns
+        // Step 1: Predict indexes for date-related, unique, and pseudo-unique columns
         for (const [columnName, column] of Object.entries(headers)) {
             const columnType = column.type ?? "varchar";
             const columnLength = Math.max(column.length ?? 0, maxByteLenByColumn[columnName] ?? 0) || 255
@@ -114,9 +108,9 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             const isText = groupings.textGroup.includes(columnType) && columnType !== "varchar";
             const isDate = groupings.dateGroup.includes(columnType);
 
-            // An explicitly requested primary key must be honored even if it is long/text/
-            // decimal — otherwise it is silently dropped and a different key (or none) is
-            // chosen. The auto-index exclusions below apply only to non-explicit columns.
+            // An explicitly requested primary key must be honored even if long/text/decimal — else it
+            // is silently dropped and a different key (or none) chosen. Auto-index exclusions below
+            // apply only to non-explicit columns.
             const isExplicitPrimaryKey = !!(primaryKey && primaryKey.includes(columnName));
 
             // Exclude long text fields from indexing
@@ -141,7 +135,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                 } else {
                     requiredPrimaryKeys.push(columnName);
                 }
-            } else if (column.unique && !column.allowNull) { // ✅ Only consider unique columns that do NOT allow nulls as a primary key candidate
+            } else if (column.unique && !column.allowNull) { // Only NOT-NULL unique columns are primary key candidates
                 potentialPrimaryKeys.push(columnName);
             } else if ((column.pseudounique || column.categorical) && !column.allowNull) {
                 potentialCompositeKeys.push(columnName)
@@ -160,9 +154,8 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                 for (const key of potentialPrimaryKeys) {
                   const type = headers[key]?.type ?? "";
               
-                  // Prefer a key that is exactly "id" or ends in "_id". Anchored so ordinary
-                  // words ending in "id" (paid, void, valid, grid, rapid) are not mistaken for
-                  // identifier columns and wrongly preferred as the primary key.
+                  // Prefer a key exactly "id" or ending in "_id". Anchored so words ending in "id"
+                  // (paid, void, valid, grid, rapid) aren't mistaken for identifier columns.
                   if (!idLikeKey && /(^id$|_id$)/i.test(key)) {
                     idLikeKey = key;
                   }
@@ -188,7 +181,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                   : null;
             }      
             
-            // ✅ If no unique column exists, try pseudo-unique combinations using data
+            // If no unique column exists, try pseudo-unique combinations using data
             let foundUniqueCombination = false;
             const dateColumns = Object.keys(headers).filter(
                 col => groupings.dateGroup.includes(headers[col].type ?? "") && headers[col].allowNull !== true
@@ -222,7 +215,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                     for (const combo of combinations) {
                         const fullCombo = Array.from(new Set([...requiredPrimaryKeys, ...combo]));
                         if (isCombinationUnique(data, fullCombo)) {
-                            selectedPrimaryKey = fullCombo; // ✅ Assign combo with date column
+                            selectedPrimaryKey = fullCombo; // Assign combo with date column
                             foundUniqueCombination = true;
                             break;
                         }

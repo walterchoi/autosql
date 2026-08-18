@@ -2,12 +2,11 @@ import { MetadataHeader, ColumnDefinition } from "../config/types";
 import { isNumeric, isDate, isBoolean } from "../config/groupings";
 
 /**
- * Physical "column profile" — the input a semantic-layer generator (the platform / Roots, see
+ * Physical "column profile" — input a semantic-layer generator (the platform / Roots, see
  * `prompt/autosql-improvements/06-semantic-layer-osi-placement.md`) uses to *suggest* measures,
- * dimensions and relationships. It is derived purely from AutoSQL's resolved metadata (which already
- * carries type, key and cardinality signals) — it describes the *data*, not its business meaning, and
- * does no DB access. AutoSQL deliberately stops here: turning these physical signals into a semantic
- * model is the platform's job.
+ * dimensions and relationships. Derived purely from AutoSQL's resolved metadata (type/key/cardinality
+ * signals); describes the *data*, not business meaning, and does no DB access. AutoSQL stops here —
+ * turning these physical signals into a semantic model is the platform's job.
  */
 
 export type ColumnRole = "primary" | "unique" | "index" | "none";
@@ -58,9 +57,8 @@ function semanticHintOf(name: string, col: ColumnDefinition, role: ColumnRole, c
 }
 
 /**
- * Build the physical profile for a resolved schema. `otherTables` (optional) lets an `<entity>_id`
- * column be matched to a sibling table named like `<entity>` (name-based FK candidacy only —
- * value-based matching is left to the caller / future work).
+ * Build the physical profile for a resolved schema. `otherTables` (optional) matches an `<entity>_id`
+ * column to a sibling table named like `<entity>` (name-based FK candidacy only — value-based is future work).
  */
 export function buildColumnProfile(
     metaData: MetadataHeader,

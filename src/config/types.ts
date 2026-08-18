@@ -6,13 +6,12 @@ export interface ColumnDefinition {
   allowNull?: boolean;
   unique?: boolean;
   /**
-   * The real database name of a NON-PRIMARY unique index this column participates in, captured
-   * during introspection (`getTableMetaDataQuery`). Composite unique members share one name;
-   * `undefined` for inferred (not-yet-created) uniques and for columns in no unique index. Lets
-   * `resolveConflicts` derive the drop-target constraint structure from already-known metadata
-   * instead of re-querying the catalog — but ONLY when every unique carries a real name (see the
-   * derive-with-fallback gate in autosql.ts). Never reconstructed/guessed: MySQL auto-names a
-   * unique after its column, so a synthesised name would not match `DROP INDEX`.
+   * Real DB name of a NON-PRIMARY unique index this column participates in, from introspection
+   * (`getTableMetaDataQuery`). Composite members share one name; `undefined` for inferred uniques
+   * and columns in no unique index. Lets `resolveConflicts` derive the drop-target constraint from
+   * known metadata instead of re-querying — but ONLY when every unique carries a real name (see the
+   * derive-with-fallback gate in autosql.ts). Never guessed: MySQL auto-names a unique after its
+   * column, so a synthesised name wouldn't match `DROP INDEX`.
    */
   uniqueName?: string;
   index?: boolean;
@@ -23,11 +22,10 @@ export interface ColumnDefinition {
   autoIncrement?: boolean;
   default?: any;
   /**
-   * DDL default EXPRESSION introspected from the live catalog (e.g. Postgres `'active'::character
-   * varying`, `CURRENT_TIMESTAMP`, `nextval('…'::regclass)`). Kept SEPARATE from `default` because
-   * `default` doubles as the literal value `getInsertValues` substitutes for a missing cell — binding
-   * an introspected DDL expression as a row value would store the expression string verbatim (A3).
-   * This field is informational: DDL builders may read it, but the insert path never binds it.
+   * DDL default EXPRESSION introspected from the catalog (e.g. `CURRENT_TIMESTAMP`,
+   * `nextval('…'::regclass)`). Kept SEPARATE from `default` because `default` doubles as the literal
+   * `getInsertValues` substitutes for a missing cell — binding a DDL expression as a row value would
+   * store the expression string verbatim (A3). Informational: DDL builders may read it, insert never binds it.
    */
   ddlDefault?: any;
   decimal?: number;
@@ -43,18 +41,15 @@ export type MetadataHeader = Record<string, ColumnDefinition>;
 /**
  * Per-call options for `autoSQL`.
  *
- * - `assumeSchema` (A-4): the caller already knows the schema (e.g. a SproutSpec `columns` block
- *   mapped to a `MetadataHeader`). AutoSQL skips per-value type inference for declared columns
- *   (which also side-steps inference footguns such as small integers being mis-typed as boolean);
- *   any data column not declared is still inferred as a fallback.
+ * - `assumeSchema` (A-4): caller-known schema (e.g. a SproutSpec `columns` block as a
+ *   `MetadataHeader`). Skips per-value inference for declared columns (also side-steps footguns like
+ *   small integers mis-typed as boolean); undeclared data columns are still inferred as a fallback.
  *
- * - `existingSchema` (N1 / v1b): the caller already knows the CURRENT table's schema and passes it
- *   so AutoSQL skips live introspection (`getTableMetaData`) of the target table. It must be
- *   AutoSQL's own **last resolved schema** — i.e. a previous run's `QueryResult.metaData`, which
- *   already includes managed columns (`dwh_*` timestamps, an auto-increment surrogate) — NOT a bare
- *   spec: a baseline missing the managed columns would make the timestamp step re-`ADD` them. Only
- *   pass it in steady state (the table exists and hasn't drifted); on a load error or a detected
- *   drift, drop it so AutoSQL re-introspects.
+ * - `existingSchema` (N1 / v1b): caller-known CURRENT table schema, so AutoSQL skips live
+ *   introspection (`getTableMetaData`). Must be AutoSQL's own **last resolved schema** (a previous
+ *   run's `QueryResult.metaData`, which includes managed columns like `dwh_*` timestamps + surrogate),
+ *   NOT a bare spec — a baseline missing managed columns would make the timestamp step re-`ADD` them.
+ *   Only pass in steady state; on load error or detected drift, drop it so AutoSQL re-introspects.
  */
 export interface AutoSQLOptions {
   assumeSchema?: MetadataHeader;
@@ -115,9 +110,9 @@ export interface DatabaseConfig {
       schema?: string;
       table?: string;
       /**
-       * Max connections in the driver pool (MySQL `connectionLimit` / Postgres `max`). Defaults to 5.
-       * Raise it for parallel/worker loads so pool acquisition doesn't serialise; keep it under the
-       * server's own connection limit and size it against `maxWorkers`.
+       * Max connections in the driver pool (MySQL `connectionLimit` / Postgres `max`). Default 5.
+       * Raise for parallel/worker loads so pool acquisition doesn't serialise; keep under the server's
+       * own connection limit and size against `maxWorkers`.
        */
       connectionLimit?: number;
 
@@ -132,11 +127,10 @@ export interface DatabaseConfig {
 
       /**
        * When a dataset has no natural primary key, add an auto-increment surrogate key
-       * (`BIGINT AUTO_INCREMENT` / `BIGSERIAL`) so the table can still be created and Postgres
-       * upserts have a conflict target. A natural key always takes precedence; the surrogate is
-       * only a fallback. It is sticky to the existing table (idempotent on re-ingestion).
-       * Note: because the surrogate is unique per physical insert, every ingest is an append —
-       * upsert (`insertType: "UPDATE"`) never matches an existing row. Off by default.
+       * (`BIGINT AUTO_INCREMENT` / `BIGSERIAL`) so the table can be created and Postgres upserts have a
+       * conflict target. A natural key takes precedence; surrogate is a fallback, sticky to the existing
+       * table (idempotent on re-ingestion). Because it's unique per physical insert, every ingest is an
+       * append — upsert (`insertType: "UPDATE"`) never matches an existing row. Off by default.
        * Not compatible with `addHistory`, `addNested`, or `autoSplit`.
        */
       surrogateKey?: boolean;
@@ -148,14 +142,13 @@ export interface DatabaseConfig {
       encoding?: string;
 
       /**
-       * Opt-in (default `false`, MySQL only): when configuring a **pre-existing** table, convert its
-       * text columns to the target charset (`charset`, default `utf8mb4`) so externally-created 3-byte
-       * `utf8`/`utf8mb3` columns accept 4-byte characters (emoji, some CJK). Connection-charset pinning
-       * and defaulting new tables to utf8mb4 do NOT fix an already-existing utf8 column — this does, via
-       * a one-time `ALTER TABLE ... CONVERT TO CHARACTER SET`. Detect-and-convert is convergent (once
-       * every text column matches, it is a no-op) and best-effort — a `CONVERT` that fails (e.g. an
-       * over-long index: 4 bytes/char can exceed the key-length limit) is logged and skipped, not fatal.
-       * No-op on Postgres (its `UTF8` already stores 4-byte characters).
+       * Opt-in (default `false`, MySQL only): on a **pre-existing** table, convert text columns to the
+       * target charset (`charset`, default `utf8mb4`) so externally-created 3-byte `utf8`/`utf8mb3`
+       * columns accept 4-byte characters (emoji, some CJK). Connection-charset pinning and defaulting
+       * new tables to utf8mb4 do NOT fix an existing utf8 column — this does, via a one-time
+       * `ALTER TABLE ... CONVERT TO CHARACTER SET`. Convergent (a no-op once every column matches) and
+       * best-effort — a failed `CONVERT` (e.g. over-long index: 4 bytes/char can exceed key-length
+       * limit) is logged and skipped, not fatal. No-op on Postgres (`UTF8` already stores 4-byte chars).
        */
       upgradeCharset?: boolean;
 
@@ -163,27 +156,25 @@ export interface DatabaseConfig {
       categorical?: number;
       autoIndexing?: boolean;
       /**
-       * Maximum fractional-digit scale for inferred `decimal` columns. When unset (the default), a
-       * decimal is stored at the full scale the data needs, up to the dialect's numeric limit (MySQL
-       * 30, SQL Server 38, Postgres 16383) — so a standard user never silently loses precision. Set
-       * a lower value to deliberately cap scale (e.g. `2` for currency). When a value's true scale
-       * exceeds the cap it is ROUNDED and a warning is logged — unless `decimalToVarchar` is on.
+       * Max fractional-digit scale for inferred `decimal` columns. Unset (default): stored at the full
+       * scale the data needs, up to the dialect limit (MySQL 30, SQL Server 38, Postgres 16383) — no
+       * silent precision loss. Set lower to cap scale (e.g. `2` for currency). A value whose true scale
+       * exceeds the cap is ROUNDED with a warning — unless `decimalToVarchar` is on.
        */
       decimalMaxLength?: number;
       /**
-       * When a decimal value's true scale exceeds the cap (`decimalMaxLength` / the dialect limit),
-       * store the whole column as text (`varchar`) to preserve the exact value instead of rounding it.
-       * Off by default (the column stays numeric and is rounded, with a warning). Turn on when exact
-       * high-precision values matter more than being able to do SQL arithmetic on the column.
+       * When a decimal value's true scale exceeds the cap (`decimalMaxLength` / dialect limit), store
+       * the column as text (`varchar`) to preserve the exact value instead of rounding. Off by default
+       * (column stays numeric, rounded with a warning). On when exact high-precision values matter more
+       * than SQL arithmetic on the column.
        */
       decimalToVarchar?: boolean;
       maxKeyLength?: number;
       /**
-       * Cap the auto-detected composite primary key at this many columns (default 4). The key search
-       * tries combinations of pseudo-unique columns and scans the data for uniqueness; without a cap
-       * it is O(2^N) in the number of candidate columns — a real hang risk on a wide table with no
-       * natural key. 4 covers effectively every real composite key; raise it only to auto-detect a
-       * genuine 5+ column natural key.
+       * Cap the auto-detected composite primary key at this many columns (default 4). The search tries
+       * combinations of pseudo-unique columns; without a cap it is O(2^N) in candidate columns — a hang
+       * risk on a wide table with no natural key. 4 covers effectively every real composite key; raise
+       * only to auto-detect a genuine 5+ column natural key.
        */
       maxCompositeKeyColumns?: number;
       maxVarcharLength?: number,
@@ -195,11 +186,11 @@ export interface DatabaseConfig {
       insertStack?: number;
       /**
        * Load rows with the dialect's bulk-copy mechanism (Postgres `COPY` / MySQL
-       * `LOAD DATA LOCAL INFILE`) instead of parameterised multi-row `INSERT` — much faster and
-       * cheaper for large loads. Applies to the staging-table population (so upsert semantics are
-       * preserved by the unchanged merge step) and requires `useStagingInsert`. On a bulk-load error
-       * the batch falls back to parameterised `INSERT` so a single bad row can still surface a clear
-       * error. Off by default. Postgres `COPY` needs the optional `pg-copy-streams` dependency.
+       * `LOAD DATA LOCAL INFILE`) instead of parameterised multi-row `INSERT` — faster/cheaper for large
+       * loads. Applies to staging-table population (upsert preserved by the unchanged merge step) and
+       * requires `useStagingInsert`. On a bulk-load error the batch falls back to parameterised `INSERT`
+       * so a bad row surfaces a clear error. Off by default. Postgres `COPY` needs optional
+       * `pg-copy-streams`.
        */
       bulkLoad?: boolean;
 
@@ -207,13 +198,13 @@ export interface DatabaseConfig {
       deleteColumns?: boolean;
 
       /**
-       * Allow autosql to DROP a UNIQUE constraint when incoming data would violate it — either staged
-       * data colliding with an existing unique (resolveConflicts) or a batch containing duplicates in
-       * a previously-unique column. Default false (safe): the constraint is KEPT and the load fails
-       * loud (or diverts to `rejectedRowsTable`) on the colliding rows, rather than silently and
-       * permanently removing a uniqueness guarantee — including a user-defined one — based on one
-       * batch's data. Set true to auto-drop (a warning naming the constraint is logged either way).
-       * Mirrors `deleteColumns` / `updatePrimaryKey`.
+       * Allow autosql to DROP a UNIQUE constraint when incoming data would violate it — staged data
+       * colliding with an existing unique (resolveConflicts) or a batch with duplicates in a
+       * previously-unique column. Default false (safe): the constraint is KEPT and the load fails loud
+       * (or diverts to `rejectedRowsTable`) on colliding rows, rather than permanently removing a
+       * uniqueness guarantee — including a user-defined one — based on one batch's data. Set true to
+       * auto-drop (a warning naming the constraint is logged either way). Mirrors `deleteColumns` /
+       * `updatePrimaryKey`.
        */
       dropUniqueConstraints?: boolean;
 
@@ -221,15 +212,14 @@ export interface DatabaseConfig {
 
       addTimestamps?: boolean;
       /**
-       * Load via a staging temp table (default `true`): CTAS an empty clone → populate it → merge
-       * into the real table (upsert via `ON CONFLICT`/`ON DUPLICATE`/`MERGE`) → drop it. This gives an
-       * atomic all-or-nothing merge, is the target for `bulkLoad`, and runs conflict resolution.
+       * Load via a staging temp table (default `true`): CTAS empty clone → populate → merge into the
+       * real table (upsert via `ON CONFLICT`/`ON DUPLICATE`/`MERGE`) → drop. Gives an atomic
+       * all-or-nothing merge, is the target for `bulkLoad`, and runs conflict resolution.
        *
-       * Set to `false` for a **direct load** — rows go straight to the target with
-       * `INSERT … ON CONFLICT/ON DUPLICATE` (upsert still works), skipping the temp-table create /
-       * populate / merge / drop round-trips and the extra write. Faster and cheaper for append-only or
-       * small/frequent loads where the staging atomicity isn't needed. Required (`true`) for
-       * `addHistory` (history diffs the staging table against the target).
+       * `false` = **direct load**: rows go straight to the target with `INSERT … ON CONFLICT/ON
+       * DUPLICATE` (upsert still works), skipping the temp-table round-trips and extra write —
+       * faster/cheaper for append-only or small/frequent loads not needing staging atomicity. Required
+       * (`true`) for `addHistory` (history diffs the staging table against the target).
        */
       useStagingInsert?: boolean;
       addHistory?: boolean;
@@ -239,12 +229,11 @@ export interface DatabaseConfig {
       excludeBlankColumns?: boolean;
 
       /**
-       * Strip characters that the target database cannot store from string values before
-       * insert: NUL bytes (``) and unpaired UTF-16 surrogates (replaced with U+FFFD).
-       * These otherwise hard-fail Postgres (`invalid byte sequence for encoding UTF8`,
-       * `unsupported Unicode escape sequence`) and can corrupt MySQL. Off by default because
-       * it mutates data; enable it when ingesting free-text that may contain pasted/garbage
-       * bytes. Connection charset pinning does NOT address these — this does.
+       * Strip unstorable characters from string values before insert: NUL bytes (``) and unpaired
+       * UTF-16 surrogates (replaced with U+FFFD). These otherwise hard-fail Postgres (`invalid byte
+       * sequence for encoding UTF8`, `unsupported Unicode escape sequence`) and can corrupt MySQL. Off
+       * by default (it mutates data); enable when ingesting free-text with pasted/garbage bytes.
+       * Connection charset pinning does NOT address these — this does.
        */
       sanitizeInvalidChars?: boolean;
 
@@ -252,96 +241,84 @@ export interface DatabaseConfig {
       maxWorkers?: number;
 
       /**
-       * Per-worker-task timeout in SECONDS. `0` (the default) disables it.
-       *
-       * A worker that dies mid-task (terminate/OOM/native crash) is always caught by
-       * the pool's exit/error handlers and surfaced as a failed task — this timeout is
-       * NOT required for that. It only guards an alive-but-wedged worker (e.g. a DB call
-       * that never returns). Off by default so a legitimately long-running batch is not
-       * spuriously failed; set it when you need a hard per-task upper bound.
+       * Per-worker-task timeout in SECONDS. `0` (default) disables it. A worker that dies mid-task
+       * (terminate/OOM/native crash) is always caught by the pool's exit/error handlers — this timeout
+       * is NOT required for that; it only guards an alive-but-wedged worker (e.g. a DB call that never
+       * returns). Off by default so a legitimately long batch isn't spuriously failed; set for a hard
+       * per-task upper bound.
        */
       workerTaskTimeout?: number;
 
       /**
-       * Column names that should always be stored as varchar regardless of their
-       * content. Use this for string-encoded identifiers (phone numbers, zip codes,
-       * padded codes) that would otherwise be inferred as numeric types.
+       * Column names always stored as varchar regardless of content. For string-encoded identifiers
+       * (phone numbers, zip codes, padded codes) that would otherwise be inferred as numeric.
        */
       forceStringColumns?: string[];
 
       /**
-       * Column names that should always be stored as a boolean flag. By default AutoSQL
-       * only infers boolean from the literals `true`/`false` — a bare `0`/`1` is treated
-       * as an integer. Use this hint for columns that encode a real flag as `0`/`1` (or
-       * `true`/`false`) so they are created as a boolean column. Values outside the
-       * boolean domain (`0`, `1`, `true`, `false`, case-insensitive, plus null/blank) are
-       * rejected with an error rather than silently coerced — forcing a column to boolean
-       * is lossy, so an unexpected value is surfaced, not hidden.
+       * Column names always stored as a boolean flag. By default AutoSQL infers boolean only from the
+       * literals `true`/`false` — a bare `0`/`1` is an integer. Use this hint for columns encoding a
+       * flag as `0`/`1` or `true`/`false`. Values outside the boolean domain (`0`, `1`, `true`, `false`,
+       * case-insensitive, plus null/blank) are rejected with an error, not silently coerced — forcing to
+       * boolean is lossy, so an unexpected value is surfaced.
        */
       booleanColumns?: string[];
 
       /**
-       * Explicit number-format separators for locale-aware ingestion. Set BOTH to
-       * disambiguate single-separator values (e.g. with `thousandsSeparator: "."` and
-       * `decimalSeparator: ","`, "1.000" is parsed as 1000, not 1). Omit both to use the
-       * auto-detection heuristic (a lone separator is treated as decimal).
+       * Explicit number-format separators for locale-aware ingestion. Set BOTH to disambiguate
+       * single-separator values (e.g. `thousandsSeparator: "."` + `decimalSeparator: ","` parses
+       * "1.000" as 1000, not 1). Omit both to use the auto-detection heuristic (lone separator = decimal).
        */
       thousandsSeparator?: string;
       decimalSeparator?: string;
 
       /**
-       * Regional number-format preset — sugar over `thousandsSeparator`/`decimalSeparator`
-       * that resolves to those fields in `validateConfig`, so it flows to BOTH type inference
-       * and value storage. Use it when you know the source locale and want lone-separator
-       * values disambiguated (e.g. `"US"` reads "1,234" as 1234; `"EU"` reads "1.234" as 1234).
+       * Regional number-format preset — sugar over `thousandsSeparator`/`decimalSeparator`, resolved to
+       * those fields in `validateConfig` so it flows to BOTH inference and storage. For a known source
+       * locale wanting lone-separator values disambiguated (`"US"` reads "1,234" as 1234; `"EU"` reads
+       * "1.234" as 1234).
        *
-       *  - `"US"` / `"IN"` — thousands `","`, decimal `"."` (Indian lakh/crore grouping is
-       *    accepted automatically; it shares US separators).
+       *  - `"US"` / `"IN"` — thousands `","`, decimal `"."` (Indian lakh/crore grouping accepted
+       *    automatically; shares US separators).
        *  - `"EU"` — thousands `"."`, decimal `","`.
        *
-       * Explicit `thousandsSeparator`/`decimalSeparator` take precedence when both are supplied.
-       * Omit to use the auto-detection heuristic (a lone separator is treated as decimal, with a
-       * one-per-run warning for the genuinely ambiguous "1,234"-style case).
+       * Explicit `thousandsSeparator`/`decimalSeparator` take precedence when both supplied. Omit for
+       * the auto-detection heuristic (lone separator = decimal, with a one-per-run warning for the
+       * ambiguous "1,234" case).
        */
       numberFormat?: "US" | "EU" | "IN";
 
       /**
-       * When neither explicit separators nor `numberFormat` are given, autosql infers the number
-       * format from **structural evidence in the data itself** (dataset-level: one layout for the
-       * whole load, since a single source doesn't mix US and EU). A value that can only be one layout
-       * — e.g. `"1,234,567"` (comma = thousands) or `"12.5"` (dot = decimal) — is a vote; the lone
-       * ambiguous `"1,234"` shape abstains. If both layouts appear (contradictory, ~never happens for
+       * When neither explicit separators nor `numberFormat` are given, autosql infers the format from
+       * **structural evidence in the data** (dataset-level: one layout for the whole load). A value that
+       * can only be one layout — `"1,234,567"` (comma = thousands) or `"12.5"` (dot = decimal) — is a
+       * vote; the ambiguous `"1,234"` shape abstains. If both layouts appear (contradictory, ~never for
        * real data) it falls back to assume-decimal + a warning.
        *
-       * `numberFormatMinEvidence` is the number of votes a layout needs before it's trusted (and
-       * before an opposing minority counts as a genuine conflict). Default **1** — one structural
-       * value is certainty, not a guess. Raise it to tolerate a few stray/mis-parsed values.
+       * `numberFormatMinEvidence` = votes a layout needs before it's trusted (and before an opposing
+       * minority counts as a real conflict). Default **1** — one structural value is certainty, not a
+       * guess. Raise to tolerate a few stray/mis-parsed values.
        */
       numberFormatMinEvidence?: number;
 
       /**
-       * IANA time zone (e.g. "America/New_York", "Australia/Sydney", "UTC") that ZONELESS datetime
-       * inputs should be interpreted as. When set, a value with no offset (e.g. "2024-01-15 12:00:00")
-       * is treated as local time in this zone and converted to a UTC instant before storage. Inputs
-       * that ALREADY carry a zone ("…Z" / "+05:00") are unaffected — they are already absolute — and
-       * `date`/`time` columns are never shifted. Omit (the default) to store zoneless values exactly
-       * as given (wall-clock preserved, no zone assumed). autosql NEVER infers this from the host
-       * process timezone. Note: this normalises the stored INSTANT; it does not by itself make a
-       * `datetimetz`/`timestamptz` column round-trip a source offset (a separate concern).
+       * IANA time zone (e.g. "America/New_York", "UTC") that ZONELESS datetime inputs are interpreted
+       * as. When set, a value with no offset (e.g. "2024-01-15 12:00:00") is treated as local time in
+       * this zone and converted to a UTC instant before storage. Inputs that ALREADY carry a zone ("…Z"
+       * / "+05:00") are unaffected (already absolute); `date`/`time` columns are never shifted. Omit
+       * (default) to store zoneless values as given (wall-clock preserved, no zone assumed). autosql
+       * NEVER infers this from the host process timezone. Normalises the stored INSTANT; does not by
+       * itself make a `datetimetz`/`timestamptz` column round-trip a source offset (separate concern).
        */
       sourceTimeZone?: string;
 
       /**
-       * Acquire a per-table advisory lock before running schema inference and
-       * ALTER TABLE.  Set to `true` when the same table may be written by multiple
-       * concurrent processes to prevent race conditions in compareMetaData.
-       * Defaults to `false`.
+       * Acquire a per-table advisory lock before schema inference and ALTER TABLE. Set `true` when the
+       * same table may be written by concurrent processes, to prevent races in compareMetaData.
+       * Default `false`.
        */
       useSchemaLock?: boolean;
-      /**
-       * How long (in seconds) to wait for the advisory lock before throwing
-       * `SchemaLockTimeoutError`.  Defaults to 30.
-       */
+      /** Seconds to wait for the advisory lock before throwing `SchemaLockTimeoutError`. Default 30. */
       schemaLockTimeout?: number;
 
       // --- Schema history ---
@@ -365,10 +342,10 @@ export interface DatabaseConfig {
        */
       streamMaxRetries?: number;
       /**
-       * Opt-in rejected-rows table name. When set, rows that still fail after per-row retries are
-       * written here instead of throwing — enabling graceful degradation on the streaming flush and
-       * the non-streaming direct-insert path (`useStagingInsert: false`). Has no effect on the default
-       * staging path, which stays atomic (all-or-nothing) by design.
+       * Opt-in rejected-rows table name. Rows still failing after per-row retries are written here
+       * instead of throwing — graceful degradation on the streaming flush and the non-streaming
+       * direct-insert path (`useStagingInsert: false`). No effect on the default staging path, which
+       * stays atomic (all-or-nothing) by design.
        */
       rejectedRowsTable?: string;
       /** Schema for the rejected rows table. Default: same as config.schema. */
@@ -397,26 +374,24 @@ export interface DatabaseConfig {
           error?: (msg: string) => void;
           /**
            * Structured per-run metrics sink (see `QueryStats`). Called once per `autoSQL` load with
-           * the phase timings and throughput, so a pipeline can forward them to its observability /
-           * stats store without parsing log strings. Optional; omit to not collect metrics.
+           * phase timings + throughput, so a pipeline can forward them to observability without parsing
+           * log strings. Optional; omit to not collect metrics.
            */
           stats?: (stats: QueryStats) => void;
       };
 
       /**
        * TLS for the driver connection. Omit **or `false`** (default) → no change: plaintext / driver
-       * default, so existing configs are byte-for-byte unaffected. `true` → enable TLS with default
-       * verification. An object configures TLS:
-       *   - `ca`: PEM CA bundle to verify the server certificate against (e.g. the AWS RDS bundle, or
-       *     a BYOD host's CA).
-       *   - `rejectUnauthorized`: verify the certificate chain. Defaults to the driver's default (true)
-       *     when a `ca` is supplied; set `false` ONLY for dev/self-signed (verification is then off).
+       * default (existing configs byte-for-byte unaffected). `true` → TLS with default verification. An
+       * object configures TLS:
+       *   - `ca`: PEM CA bundle to verify the server cert against (e.g. AWS RDS bundle, or a BYOD CA).
+       *   - `rejectUnauthorized`: verify the cert chain. Defaults to driver default (true) when a `ca`
+       *     is supplied; set `false` ONLY for dev/self-signed (verification then off).
        *   - `cert` / `key`: client certificate + key for mutual TLS (optional).
-       *   - `servername`: SNI override when the host differs from the certificate CN/SAN.
-       * Works on **all three dialects**: MySQL/Postgres receive it as the driver `ssl` object; SQL
-       * Server maps it onto the mssql driver's `encrypt` / `trustServerCertificate` /
-       * `cryptoCredentialsDetails` options automatically. Not composed with `sshConfig` — pick one path
-       * (SSH tunnel OR direct TLS).
+       *   - `servername`: SNI override when the host differs from the cert CN/SAN.
+       * Works on **all three dialects**: MySQL/Postgres get it as the driver `ssl` object; SQL Server
+       * maps it onto mssql's `encrypt` / `trustServerCertificate` / `cryptoCredentialsDetails`
+       * automatically. Not composed with `sshConfig` — pick one path (SSH tunnel OR direct TLS).
        */
       ssl?: boolean | {
         ca?: string;
@@ -439,11 +414,10 @@ export interface SSHKeys {
   private_key_path?: string;
   private_key?: string;
   /**
-   * Expected OpenSSH host-key fingerprint of the SSH server, e.g. "SHA256:abc123…" (obtain via
-   * `ssh-keyscan -t ed25519 <host> | ssh-keygen -lf -`). When set, the tunnel VERIFIES the bastion's
-   * host key against it and refuses a mismatch — closing the MITM window (ssh2 does NO verification by
-   * default). When omitted, the tunnel still connects but logs a loud warning that its identity is
-   * unverified. The "SHA256:" prefix and trailing base64 padding are optional.
+   * Expected OpenSSH host-key fingerprint, e.g. "SHA256:abc123…" (obtain via `ssh-keyscan -t ed25519
+   * <host> | ssh-keygen -lf -`). When set, the tunnel VERIFIES the bastion's host key and refuses a
+   * mismatch — closing the MITM window (ssh2 does NO verification by default). Omitted: still connects
+   * but logs a loud warning that identity is unverified. "SHA256:" prefix and base64 padding optional.
    */
   hostFingerprint?: string;
   timeout?: number;
@@ -476,9 +450,9 @@ export interface DialectConfig {
     collate: string;
     encoding: string;
     maxIndexCount?: number;
-    /** Maximum fractional-digit scale the dialect's decimal/numeric type can hold (MySQL 30,
-     *  SQL Server 38, Postgres 16383). Used as the default decimal scale ceiling so a decimal is
-     *  stored at full precision up to what the DB supports, rather than an arbitrary low cap. */
+    /** Max fractional-digit scale the dialect's decimal type holds (MySQL 30, SQL Server 38, Postgres
+     *  16383). Default decimal scale ceiling — stored at full precision up to the DB limit, not an
+     *  arbitrary low cap. */
     maxDecimalScale: number;
 }
 
@@ -510,17 +484,17 @@ export interface QueryResult {
     results?: any[];
     error?: string;
     /**
-     * The driver's structured error code, when the failure came from the database driver — mysql2's
-     * `code` (e.g. `"ER_TABLEACCESS_DENIED_ERROR"`), Postgres's SQLSTATE (e.g. `"42501"`), or SQL
-     * Server's error number. Lets a caller branch on the exact failure (e.g. tell a user which GRANT
-     * is missing) without string-matching `error`. Omitted for non-driver errors.
+     * The driver's structured error code, when the failure came from the DB driver — mysql2's `code`
+     * (e.g. `"ER_TABLEACCESS_DENIED_ERROR"`), Postgres SQLSTATE (e.g. `"42501"`), or SQL Server error
+     * number. Lets a caller branch on the exact failure without string-matching `error`. Omitted for
+     * non-driver errors.
      */
     errorCode?: string;
     table?: string;
     /**
-     * The resolved schema AutoSQL used for the load — the final `MetadataHeader` including any
-     * managed columns (`dwh_*` timestamps, an auto-increment surrogate). Callers can cache this and
-     * pass it back to skip re-introspection on the next load (see the `existingSchema` fast path).
+     * The resolved schema AutoSQL used for the load — final `MetadataHeader` including managed columns
+     * (`dwh_*` timestamps, an auto-increment surrogate). Cache and pass back to skip re-introspection
+     * on the next load (see the `existingSchema` fast path).
      */
     metaData?: MetadataHeader;
     /** Per-run performance metrics (phase timings + throughput). Populated on a successful `autoSQL`
@@ -529,9 +503,8 @@ export interface QueryResult {
 }
 
 /**
- * Per-run performance metrics for one `autoSQL` load — for production observability and for building
- * a stats history (e.g. to size batches, spot drift in load times, or bill by throughput). Durations
- * are milliseconds of wall-clock time for that phase.
+ * Per-run performance metrics for one `autoSQL` load — for observability and a stats history (size
+ * batches, spot load-time drift, bill by throughput). Durations are wall-clock milliseconds per phase.
  */
 export interface QueryStats {
     table: string;
@@ -569,9 +542,9 @@ export interface metaDataInterim {
     byteLength: number;
     decimal: number;
     trueMaxDecimal: number;
-    // Running max of integer-part digits for a numeric column. Precision must be
-    // maxIntegerDigits + maxScale; tracking the integer part separately avoids under-counting
-    // when the widest-integer value and the widest-scale value are different rows.
+    // Running max of integer-part digits. Precision = maxIntegerDigits + maxScale; tracking the
+    // integer part separately avoids under-counting when the widest-integer and widest-scale values
+    // are different rows.
     intLen?: number;
   }
 }

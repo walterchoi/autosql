@@ -1,13 +1,12 @@
 import { regexPatterns } from "../config/regex";
 
-// Dataset-level number-format consensus (self-contained: reads ONLY the in-memory batch — no catalog
-// or data queries). A single dataset is assumed to use one locale, so structural evidence in ANY
-// column resolves ambiguity in every column. We resolve ONE {thousands, decimal} pair for the whole
-// load; the caller then feeds it through the same config fields inference and sqlize already read.
+// Dataset-level number-format consensus (self-contained: reads ONLY the in-memory batch). A dataset is
+// assumed to use one locale, so structural evidence in ANY column resolves ambiguity in every column.
+// Resolves ONE {thousands, decimal} pair for the whole load, fed through the same config fields
+// inference and sqlize already read.
 //
-// "Structural" evidence is a value that can only be one layout — so a single one is certainty, not a
-// guess. Version strings ("1.2.3") and IPs ("192.168.1.1") fail the 3-digit-group numeric regex and
-// never vote, so false positives are well-insulated.
+// "Structural" evidence is a value that can only be one layout — a single one is certainty, not a guess.
+// Version strings ("1.2.3") and IPs ("192.168.1.1") fail the 3-digit-group numeric regex and never vote.
 
 export type SeparatorDecision =
     | { thousands: string; decimal: string } // resolved
@@ -50,9 +49,9 @@ export function classifySeparatorFormat(value: any): "us" | "eu" | null {
 
 // Resolve one separator pair for the whole dataset from pooled structural evidence.
 //   minEvidence — a layout only "counts" once it has ≥ this many votes (default 1). Raising it
-//     tolerates a few stray/mis-parsed values before a format is trusted, AND before an opposing
-//     minority is treated as a genuine conflict.
-// Returns the pair, `{conflict:true}` (both layouts present → let the caller warn + default), or null.
+//     tolerates stray/mis-parsed values before a format is trusted AND before an opposing minority
+//     is treated as a genuine conflict.
+// Returns the pair, `{conflict:true}` (both layouts present → caller warns + defaults), or null.
 export function resolveDatasetSeparators(data: Record<string, any>[], minEvidence = 1): SeparatorDecision {
     let us = 0;
     let eu = 0;

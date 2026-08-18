@@ -19,12 +19,9 @@ const dialectConfig = sqlServerConfig;
  * SQL Server / Azure SQL adapter (Class A row-store, T-SQL). Uses the `mssql` driver.
  *
  * Transaction model: unlike pg/mysql (a pinned pool connection running BEGIN/COMMIT as SQL), mssql
- * pins a `sql.Transaction`. `startTransaction/commit/rollback` are overridden to drive the transaction
- * API; `executeQuery(query, client)` runs on `new sql.Request(client)` when a transaction is pinned,
- * else on `pool.request()`.
- *
- * Parameters are named `@p0, @p1, ...` (zero-indexed, params-array order) — the SQL Server query
- * builders emit that placeholder style.
+ * pins a `sql.Transaction`; `startTransaction/commit/rollback` drive that API and
+ * `executeQuery(query, client)` runs on `new sql.Request(client)` when pinned, else `pool.request()`.
+ * Parameters are named `@p0, @p1, ...` (zero-indexed, params-array order), matching the builders.
  */
 export class SqlServerDatabase extends Database {
     private sql: any;
@@ -41,11 +38,10 @@ export class SqlServerDatabase extends Database {
         } catch (err) {
             throw new Error("Missing required dependency 'mssql'. Please install it to use SqlServerDatabase.");
         }
-        // Map the driver-agnostic `ssl` option onto tedious/mssql's TLS options. mssql doesn't take the
-        // mysql2/pg `ssl` object — it uses options.encrypt (do TLS), options.trustServerCertificate
-        // (skip verification), and options.cryptoCredentialsDetails (a Node tls context: ca/cert/key/
-        // servername). When `ssl` is omitted/false we keep the local-container default (no forced TLS,
-        // trust the self-signed cert) so existing behaviour and the test harness are unchanged.
+        // Map the driver-agnostic `ssl` option onto tedious/mssql TLS options (options.encrypt,
+        // options.trustServerCertificate, options.cryptoCredentialsDetails); see sqlServerTlsOptions.
+        // Omitted/false keeps the local-container default (no forced TLS, trust the self-signed cert)
+        // so existing behaviour and the test harness are unchanged.
         const sslOptions = this.sqlServerTlsOptions();
         const pool = new this.sql.ConnectionPool({
             server: this.config.host || "localhost",
@@ -121,9 +117,9 @@ export class SqlServerDatabase extends Database {
     }
 
     public async bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult> {
-        // The mssql bulk (TDS bulk-copy) path needs a fully-typed sql.Table definition, which we
-        // don't derive here yet. bulkLoadStaging catches this and falls back to parameterised INSERT,
-        // so opt-in `bulkLoad` still completes on SQL Server (just not via bulk-copy).
+        // The mssql bulk-copy path needs a fully-typed sql.Table definition, not derived here yet.
+        // bulkLoadStaging catches this and falls back to parameterised INSERT, so opt-in `bulkLoad`
+        // still completes on SQL Server (just not via bulk-copy).
         throw new Error("bulkLoadRows is not yet implemented for SQL Server; falling back to INSERT.");
     }
 

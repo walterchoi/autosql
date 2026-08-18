@@ -13,13 +13,9 @@ const lit = (value: string | number | boolean) => escapeLiteral(value, "sqlserve
 const DEFAULT_SCHEMA = "dbo";
 
 /**
- * Render the SQL Server column type token (without NOT NULL / DEFAULT / IDENTITY). The type
- * is translated local→server via the dialect config, then lengths are appended separately so
- * `assertSafeTypeToken` only ever sees the bare token (it rejects parentheses).
- *
- * Text-like local types (text/mediumtext/longtext/json) and any varchar whose length exceeds
- * 4000 render as `NVARCHAR(MAX)`; varchar/text within range render as `nvarchar(n)`. Integer
- * types take no length; decimal renders as `decimal(p,s)`.
+ * Render the SQL Server column type token (no NOT NULL/DEFAULT/IDENTITY). Lengths are appended
+ * after asserting the bare token so `assertSafeTypeToken` never sees parentheses.
+ * Unbounded text (text/mediumtext/longtext/json) and varchar>4000 → NVARCHAR(MAX).
  */
 function renderColumnType(column: ColumnDefinition, cfg: DialectConfig): string {
     const localType = (column.type || "").toLowerCase();
@@ -28,10 +24,9 @@ function renderColumnType(column: ColumnDefinition, cfg: DialectConfig): string 
         serverType = cfg.translate.localToServer[localType];
     }
 
-    // Unbounded text local types always map to NVARCHAR(MAX) — the "(max)" token can't pass
-    // through assertSafeTypeToken, so it is appended after asserting the bare token.
+    // Unbounded text → NVARCHAR(MAX); "(max)" can't pass assertSafeTypeToken so it's appended after.
     const isUnboundedText = ["text", "mediumtext", "longtext", "json"].includes(localType);
-    // A varchar wider than SQL Server's 4000 NVARCHAR limit must also spill to NVARCHAR(MAX).
+    // varchar wider than SQL Server's 4000 NVARCHAR limit also spills to NVARCHAR(MAX).
     const isOverlongVarchar =
         (localType === "varchar" || serverType === "nvarchar") &&
         typeof column.length === "number" &&
@@ -70,8 +65,7 @@ export class SqlServerTableQueryBuilder {
 
             let columnDef = `${q(columnName)} ${renderColumnType(column, dialectConfig)}`;
 
-            // Auto-increment uses IDENTITY(1,1) in SQL Server (there is no SERIAL family). It
-            // is appended to the rendered type; SQL Server accepts IDENTITY on int/bigint/etc.
+            // Auto-increment uses IDENTITY(1,1) (SQL Server has no SERIAL family).
             if (column.autoIncrement) {
                 columnDef += ` IDENTITY(1,1)`;
             }
@@ -90,7 +84,7 @@ export class SqlServerTableQueryBuilder {
 
         if (primaryKeys.length) {
             columnDefs += `PRIMARY KEY (${primaryKeys.map(q).join(", ")}),\n`;
-            remainingIndexSlots--; // 🔢 count primary key toward the limit
+            remainingIndexSlots--; // count primary key toward the limit
         }
         const includedUniqueKeys = uniqueKeys.slice(0, remainingIndexSlots);
         if (includedUniqueKeys.length) {
@@ -135,9 +129,8 @@ export class SqlServerTableQueryBuilder {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const qualified = `${schemaPrefix}${q(table)}`;
 
-        // ✅ Handle `RENAME COLUMN` — SQL Server renames via sp_rename. The NEW name is passed
-        // WITHOUT brackets/qualification; the OLD name is the fully-qualified column. Emit each
-        // rename first, one QueryInput per rename (sp_rename cannot be batched).
+        // RENAME COLUMN via sp_rename: NEW name unqualified/unbracketed, OLD name fully qualified.
+        // One QueryInput per rename (sp_rename can't be batched).
         changes.renameColumns.forEach(({ oldName, newName }) => {
             const oldQualified = schema
                 ? `${q(schema)}.${q(table)}.${q(oldName)}`
@@ -148,8 +141,7 @@ export class SqlServerTableQueryBuilder {
             });
         });
 
-        // ✅ Handle `ADD COLUMN` — SQL Server uses `ADD` (not `ADD COLUMN`) and multiple adds
-        // can be comma-separated under a single `ALTER TABLE ... ADD`.
+        // ADD COLUMN: SQL Server uses `ADD` (not `ADD COLUMN`); multiple adds comma-separated.
         const addClauses: string[] = [];
         for (const [columnName, column] of Object.entries(changes.addColumns)) {
             if (!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`); }
@@ -159,9 +151,8 @@ export class SqlServerTableQueryBuilder {
             if (column.default !== undefined) {
                 columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
             } else if (!column.allowNull && column.calculated) {
-                // A NOT NULL calculated timestamp added to a table that may already contain rows
-                // needs a DEFAULT, or ADD fails the NOT NULL constraint on those pre-existing
-                // rows. Backfill with CURRENT_TIMESTAMP (every calculated column is a timestamp).
+                // NOT NULL calculated timestamp on a possibly-populated table needs a DEFAULT or ADD
+                // fails on pre-existing rows. Backfill with CURRENT_TIMESTAMP (calculated cols are timestamps).
                 columnDef += ` DEFAULT CURRENT_TIMESTAMP`;
             }
             addClauses.push(columnDef);
@@ -170,11 +161,8 @@ export class SqlServerTableQueryBuilder {
             queries.push({ query: `ALTER TABLE ${qualified} ADD ${addClauses.join(", ")};`, params: [] });
         }
 
-        // ✅ Handle `MODIFY` (type / nullability) — SQL Server can't batch multiple ALTER COLUMN
-        // in one statement, so each column is its own `ALTER TABLE ... ALTER COLUMN` statement.
-        // There is no per-column `SET DEFAULT` in ALTER COLUMN: changing a default means
-        // dropping and re-adding a default constraint, which is deferred here — a default change
-        // is skipped rather than emitting an invalid statement (see note below).
+        // MODIFY (type/nullability): SQL Server can't batch ALTER COLUMN, so one statement per column.
+        // ALTER COLUMN has no SET DEFAULT — a default change is deferred/skipped (see note below).
         const handledNullable = new Set<string>();
         for (const [columnName, column] of Object.entries(changes.modifyColumns)) {
             handledNullable.add(columnName);
@@ -184,22 +172,19 @@ export class SqlServerTableQueryBuilder {
             if (column.type) {
                 serverType = renderColumnType(column, dialectConfig);
             } else {
-                // No type change requested: SQL Server ALTER COLUMN still requires a type, so
-                // this branch only applies when previousType is known. Fall back to the current
-                // type token if available, otherwise skip (nothing safe to emit).
+                // No type change requested, but ALTER COLUMN still requires a type. Fall back to
+                // previousType; without it there's nothing valid to emit (even for nullability) — skip.
                 if (!column.previousType) {
                     if (wantsNull) {
-                        // Can't ALTER COLUMN without a type; nothing valid to emit for a bare
-                        // nullability change without a known type — skip.
+                        // Can't ALTER COLUMN without a type; nothing valid to emit — skip.
                     }
                     continue;
                 }
                 serverType = renderColumnType({ ...column, type: column.previousType }, dialectConfig);
             }
 
-            // NOTE: SQL Server default-constraint handling (drop + re-add a DEFAULT constraint)
-            // is deferred — a default change in a modify is intentionally NOT emitted here to
-            // avoid an invalid `ALTER COLUMN ... SET DEFAULT` statement.
+            // NOTE: default-constraint handling (drop + re-add) is deferred — a default change in a
+            // modify is intentionally NOT emitted to avoid an invalid `ALTER COLUMN ... SET DEFAULT`.
             const nullability = wantsNull ? "NULL" : "NOT NULL";
             queries.push({
                 query: `ALTER TABLE ${qualified} ALTER COLUMN ${q(columnName)} ${serverType} ${nullability};`,
@@ -207,9 +192,8 @@ export class SqlServerTableQueryBuilder {
             });
         }
 
-        // ✅ Handle `NULLABLE COLUMNS` separately (if not already modified). Without a type we
-        // cannot emit a valid SQL Server ALTER COLUMN, and a modify above already handled any
-        // column present in modifyColumns, so these are left to the modify path when typed.
+        // NULLABLE COLUMNS not already handled by modify above. Without a type we can't emit a
+        // valid ALTER COLUMN, so untyped ones are skipped.
         changes.nullableColumns.forEach(columnName => {
             if (handledNullable.has(columnName)) return;
             const meta = changes.modifyColumns[columnName];
@@ -222,8 +206,7 @@ export class SqlServerTableQueryBuilder {
             });
         });
 
-        // ✅ Handle `DROP COLUMN` — gate on databaseConfig.deleteColumns exactly like pg. SQL
-        // Server allows comma-separated columns under a single `DROP COLUMN`.
+        // DROP COLUMN — gated on databaseConfig.deleteColumns like pg; columns comma-separated.
         if (databaseConfig?.deleteColumns && changes.dropColumns.length > 0) {
             const dropCols = changes.dropColumns.map(c => q(c)).join(", ");
             queries.push({ query: `ALTER TABLE ${qualified} DROP COLUMN ${dropCols};`, params: [] });
@@ -245,8 +228,7 @@ export class SqlServerTableQueryBuilder {
         const tempTableName = getTempTableName(table, stagingPrefix);
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const stagingQualified = `${schemaPrefix}${q(tempTableName)}`;
-        // Clone the source table structure empty. `SELECT * INTO ... WHERE 1=0` creates the
-        // staging table with matching columns but no rows; guard so it is only created once.
+        // Clone source structure empty (`SELECT * INTO ... WHERE 1=0`); guard so it's created once.
         return {
             query: `IF OBJECT_ID(${lit(stagingQualified)}, 'U') IS NULL ` +
                 `SELECT * INTO ${stagingQualified} FROM ${schemaPrefix}${q(table)} WHERE 1=0;`,
@@ -262,10 +244,9 @@ export class SqlServerTableQueryBuilder {
     }
 
     static getTableMetaDataQuery(schema: string, table: string): QueryInput {
-        // Columns come from INFORMATION_SCHEMA.COLUMNS; COLUMN_KEY is derived from sys.* per
-        // column. LENGTH mirrors the pg CONCAT/precision rules; nvarchar(max) reports -1 for
-        // CHARACTER_MAXIMUM_LENGTH, so -1 is mapped to NULL (no length). Deduplicated to one
-        // row per column via GROUP BY (SQL Server has no DISTINCT ON).
+        // COLUMN_KEY derived from sys.* per column. LENGTH mirrors pg CONCAT/precision rules;
+        // nvarchar(max) reports CHARACTER_MAXIMUM_LENGTH -1, mapped to NULL. Deduped via GROUP BY
+        // (SQL Server has no DISTINCT ON).
         return {
             query: `SELECT
                     c.COLUMN_NAME,
@@ -333,11 +314,9 @@ export class SqlServerTableQueryBuilder {
     }
 
     static getSplitTablesQuery(table: string, schema?: string): QueryInput {
-        // Match the `<table>__part_<digits>` partition tables. SQL Server has no SIMILAR TO, so
-        // the "suffix is all digits" test is emulated: LIKE '...__part_%' to require the prefix,
-        // and NOT LIKE '...__part_%[^0-9]%' to reject any non-digit after the prefix. @p1 carries
-        // the base table name (escaped for LIKE wildcards would over-complicate; the base names
-        // here are autosql-generated identifiers).
+        // Match `<table>__part_<digits>` partition tables. No SIMILAR TO in SQL Server, so the
+        // "all digits" test is emulated: LIKE '...__part_%' requires the prefix, NOT LIKE
+        // '...__part_%[^0-9]%' rejects any non-digit after it. @p1 is the (autosql-generated) base name.
         return {
             query: `SELECT
                     c.COLUMN_NAME,

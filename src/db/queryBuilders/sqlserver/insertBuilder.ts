@@ -17,8 +17,8 @@ const HISTORY_HOOKS: HistoryHooks = {
     placeholder: (n) => `@p${n}`, // unused on SQL Server (no pkFilter path), provided for completeness
 };
 
-// The MERGE tail shared by the direct and staging upserts. WITH (HOLDLOCK) serialises match+insert so
-// two concurrent upserts of the same key can't both fall to WHEN NOT MATCHED and double-insert (A11).
+// MERGE tail shared by direct and staging upserts. WITH (HOLDLOCK) serialises match+insert so two
+// concurrent upserts of the same key can't both hit WHEN NOT MATCHED and double-insert (A11).
 function buildMerge(target: string, sourceClause: string, columns: string[], header: MetadataHeader, primaryKeys: string[]): string {
     const updateCols = updatableColumns(columns, header, primaryKeys);
     const onMatch = primaryKeys.map(pk => `target.${q(pk)} = source.${q(pk)}`).join(" AND ");

@@ -4,7 +4,7 @@ import { AutoSQLHandler } from "../db/autosql";
 
 (async () => {
   try {
-    // ✅ Ensure workerData is received properly
+    // Ensure workerData is received properly
     if (!workerData || !workerData.dbConfig) {
       throw new Error("workerData is missing or invalid! Ensure it's passed correctly.");
     }
@@ -20,9 +20,8 @@ import { AutoSQLHandler } from "../db/autosql";
             const { method, params } = task;
 
             if (method === "__closeConnection__") {
-                // Graceful shutdown (A14): close this worker's DB connections before the pool
-                // terminates the thread, so pooled server-side connections aren't leaked on every
-                // worker-backed load. The pool waits (bounded) for the ack, then terminates.
+                // Graceful shutdown (A14): close DB connections before the pool terminates the thread
+                // so pooled server-side connections aren't leaked. Pool waits (bounded) for the ack.
                 try { await db.closeConnection(); } catch { /* best effort */ }
                 parentPort?.postMessage({ __closed__: true });
                 return;

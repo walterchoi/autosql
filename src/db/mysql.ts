@@ -31,8 +31,8 @@ export class MySQLDatabase extends Database {
         } catch (err) {
             throw new Error("Missing required dependency 'mysql2'. Please install it to use MySQLDatabase.");
         }
-        // TLS passthrough. mysql2 does NOT accept `ssl: true` (it wants an object or a named profile),
-        // so normalise `true` → `{}` (enable TLS, default verification); an object is passed as-is.
+        // TLS passthrough. mysql2 rejects `ssl: true` (wants an object/named profile), so normalise
+        // `true` → `{}` (enable TLS, default verification); an object is passed as-is.
         const ssl = this.config.ssl;
         if (ssl && typeof ssl === "object" && ssl.rejectUnauthorized === false) {
             this.config.logger?.warn?.("autosql: ssl.rejectUnauthorized is false — TLS certificate verification is DISABLED (use only for dev/self-signed).");
@@ -47,31 +47,29 @@ export class MySQLDatabase extends Database {
             database: this.config.database || this.config.schema,
             port: this.config.port || 3306,
             connectionLimit: this.config.connectionLimit || 5,
-            // Pin the connection charset to a 4-byte-capable encoding. Without this mysql2
-            // negotiates its default (historically 3-byte utf8_general_ci), so a 4-byte
-            // character (emoji, some CJK) throws `Incorrect string value: '\xF0\x9F...'` on
-            // INSERT even when the target table is utf8mb4 — the bytes can't cross the wire.
+            // Pin the connection charset to a 4-byte-capable encoding. Without this mysql2 negotiates
+            // its default (historically 3-byte utf8_general_ci), so a 4-byte char (emoji, some CJK)
+            // throws `Incorrect string value` on INSERT even when the table is utf8mb4.
             charset: this.config.charset || dialectConfig.charset,
-            // `ssl: false` is treated the same as omitting it (plaintext / driver default) — only a
-            // truthy `ssl` is threaded. mysql2 rejects `ssl: true`, so normalise it to `{}`.
+            // `ssl: false` == omitting it (plaintext/driver default); only truthy `ssl` is threaded.
+            // mysql2 rejects `ssl: true`, so normalise it to `{}`.
             ...(ssl ? { ssl: ssl === true ? {} : ssl } : {}),
             ...(this.config.sshStream ? { stream: this.config.sshStream } : {})
         });
     }
 
     /**
-     * Stable, ≤64-character key for MySQL's `GET_LOCK`/`RELEASE_LOCK` (a per-table advisory lock).
-     * The `autosql_schema__` prefix (16 chars) plus a long BYOD table name can exceed MySQL's 64-char
-     * lock-name limit, which makes `GET_LOCK` fail obscurely — so a too-long key is deterministically
-     * hash-truncated (same table → same key, so lock and release still match). NOTE: a table long
-     * enough to trigger truncation gets a DIFFERENT key than the raw form, so two processes on
-     * different autosql versions would not mutually exclude on it (see decisions.md).
+     * Stable, ≤64-char key for MySQL's `GET_LOCK`/`RELEASE_LOCK` (per-table advisory lock).
+     * `autosql_schema__` prefix + a long table name can exceed MySQL's 64-char lock-name limit, making
+     * `GET_LOCK` fail obscurely — so a too-long key is deterministically hash-truncated (same table →
+     * same key, so lock/release still match). NOTE: a truncated key differs from the raw form, so two
+     * processes on different autosql versions would not mutually exclude on it (see decisions.md).
      */
     private static schemaLockKey(table: string): string {
         const prefix = "autosql_schema__"; // 16 chars
         const key = `${prefix}${table}`;
-        // Measure and truncate by Unicode CODE POINTS (MySQL counts characters, not UTF-16 units), and
-        // slice on character boundaries so a truncation can't split a surrogate pair.
+        // Measure/truncate by Unicode CODE POINTS (MySQL counts characters) on character boundaries so
+        // truncation can't split a surrogate pair.
         if ([...key].length <= 64) return key;
         const hash = crypto.createHash("md5").update(key).digest("hex").slice(0, 8);
         const budget = 64 - prefix.length - 1 - hash.length; // 39 code points
@@ -121,9 +119,8 @@ export class MySQLDatabase extends Database {
             const [rows] = await client.query('SELECT GET_LOCK(?, ?) AS acquired', [lockKey, timeoutSeconds]) as [any[], any];
             const acquired = (rows as any[])[0]?.acquired;
             if (!acquired) {
-                // Do not release here — the catch below releases exactly once (the map was
-                // never set for this table, so its guard fires). Releasing here too would
-                // double-release the connection on the timeout path.
+                // Don't release here — the catch below releases exactly once (map not set for this
+                // table, so its guard fires); releasing here too would double-release on timeout.
                 throw new SchemaLockTimeoutError(
                     `Could not acquire schema lock for table '${table}' within ${timeoutSeconds}s. ` +
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
@@ -151,11 +148,10 @@ export class MySQLDatabase extends Database {
             await client.query('SELECT RELEASE_LOCK(?)', [lockKey]);
             client.release();
         } catch (error) {
-            // RELEASE_LOCK failed: the advisory lock may still be held on this connection, so
-            // returning it to the pool would hand the next caller a lock-holding connection.
-            // Destroy it instead — MySQL releases session locks when the connection closes, and
-            // the pool replaces the destroyed connection with a fresh one. Releasing a lock is
-            // cleanup, so a failure here is logged, not thrown.
+            // RELEASE_LOCK failed: the lock may still be held on this connection, so returning it to
+            // the pool would hand the next caller a lock-holding connection. Destroy it instead —
+            // MySQL releases session locks on connection close, and the pool replaces it. Releasing a
+            // lock is cleanup, so a failure here is logged, not thrown.
             this.warn(`releaseSchemaLock: failed to release schema lock for '${table}'; destroying the connection so a lock-holding connection is not returned to the pool — ${error instanceof Error ? error.message : String(error)}`);
             try { client.destroy(); } catch { /* connection already broken */ }
         }
@@ -246,9 +242,8 @@ export class MySQLDatabase extends Database {
 
             return { rows, affectedRows };
         } catch (error) {
-            // Standalone query: roll back its throwaway connection. Pinned (transaction)
-            // connection: leave the ROLLBACK to runTransaction so the whole transaction aborts
-            // on this same connection.
+            // Standalone query: roll back its throwaway connection. Pinned (transaction) connection:
+            // leave the ROLLBACK to runTransaction so the whole transaction aborts on this connection.
             if (!pinned && conn) { try { await conn.query("ROLLBACK;"); } catch { /* autocommit: nothing to roll back */ } }
             throw error;
         } finally {
@@ -279,10 +274,9 @@ export class MySQLDatabase extends Database {
     async getAlterTableQuery(table: string, alterTableChangesOrOldHeaders: AlterTableChanges | MetadataHeader, newHeaders?: MetadataHeader): Promise<QueryInput[]> {
         let alterTableChanges: AlterTableChanges;
         let updatedMetaData: MetadataHeader
-        // Staging temp tables are throwaway bulk-load intermediaries created via CREATE TABLE
-        // AS SELECT (columns only, no keys). They need no primary key — reconciling one would
-        // emit DROP/ADD PRIMARY KEY against a keyless table, which errors. Skip PK reconciliation
-        // for staging tables (keyed off the staging-name prefix; the real target is untouched).
+        // Staging temp tables are throwaway CREATE TABLE AS SELECT intermediaries (columns only, no
+        // keys). Reconciling a PK would emit DROP/ADD PRIMARY KEY against a keyless table, which
+        // errors — so skip PK reconciliation for them (keyed off the staging-name prefix).
         const stagingPrefix = this.getConfig().stagingPrefix ?? "temp_staging__";
         const isStagingTable = table.startsWith(stagingPrefix);
         const alterPrimaryKey = (this.config.updatePrimaryKey ?? false) && !isStagingTable;
@@ -307,11 +301,11 @@ export class MySQLDatabase extends Database {
         }
 
         let indexesToDrop: string[] = [];
-        // Only drop the unique when the caller opted in (A10). Off (default) → keep it; the load fails
-        // loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
+        // Only drop the unique when the caller opted in (A10); off (default) keeps it and the load
+        // fails loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
         if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {
             const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
-        
+
             if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {
                 throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error}`);
             }
@@ -341,10 +335,9 @@ export class MySQLDatabase extends Database {
     }
 
     /**
-     * R8: detect text columns on a pre-existing table whose charset differs from the target
-     * (`charset`, default utf8mb4) and, if any, return one `CONVERT TO CHARACTER SET` statement.
-     * Numeric/date columns have a NULL `CHARACTER_SET_NAME` and are ignored. Convergent: once every
-     * text column is the target charset the detect finds nothing and this returns `[]`.
+     * R8: detect text columns whose charset differs from the target (`charset`, default utf8mb4) and,
+     * if any, return one `CONVERT TO CHARACTER SET` statement. Numeric/date columns have a NULL
+     * `CHARACTER_SET_NAME` and are ignored. Convergent: once all text columns match, returns `[]`.
      */
     public async getCharsetUpgradeQueries(table: string): Promise<QueryInput[]> {
         const targetCharset = this.config.charset || dialectConfig.charset;

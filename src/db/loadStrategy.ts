@@ -25,9 +25,9 @@ export interface LoadStrategy {
 
 /**
  * The default row-store load strategy (R1 Slice 2, PR 2e): the staging-vs-direct load routine that
- * `autoSQL` and `autoSQLChunked` previously duplicated inline. Extracting it behind the LoadStrategy
- * seam lets a future columnar `StageCopyLoad` implement the same contract. Behaviour-preserving — the
- * block is verbatim, parameterized only by the LoadContext (input, and the cleanup error table/label).
+ * `autoSQL`/`autoSQLChunked` previously duplicated inline. The LoadStrategy seam lets a future
+ * columnar `StageCopyLoad` implement the same contract. Behaviour-preserving — verbatim block,
+ * parameterized only by the LoadContext (input, and the cleanup error table/label).
  */
 export class RowStoreLoadStrategy implements LoadStrategy {
     constructor(
@@ -42,13 +42,13 @@ export class RowStoreLoadStrategy implements LoadStrategy {
         const input = ctx.insertInput;
         if (config.useStagingInsert) {
             // Row-level history uses the zero-window atomic path (before-image + merge in ONE
-            // transaction) so history and data commit — or roll back — together, with no crash window
-            // between them. This covers BOTH plain addHistory and the opt-in rejectedRowsTable
-            // degradation combo (rejectedRowsTable forces this branch since it requires addHistory to
-            // capture before-images... it's the merge-failure handling that differs, see the
-            // perRowFallback flag below). SQL Server keeps the non-atomic insertHistory-then-merge path:
-            // its row-level history is unverified (decisions.md D-F) and configureHistoryTables guards
-            // it off, so we don't extend the atomic guarantee to it (spec-1 §5.b: keep that guard).
+            // transaction) so history and data commit — or roll back — together, no crash window
+            // between them. Covers BOTH plain addHistory and the opt-in rejectedRowsTable combo
+            // (rejectedRowsTable forces this branch since it needs addHistory for before-images; only
+            // the merge-failure handling differs, see perRowFallback below). SQL Server keeps the
+            // non-atomic insertHistory-then-merge path: its row-level history is unverified
+            // (decisions.md D-F) and configureHistoryTables guards it off, so we don't extend the
+            // atomic guarantee to it (spec-1 §5.b: keep that guard).
             const useAtomicHistory = !!(config.addHistory && config.historyTables?.length && config.sqlDialect !== 'sqlserver');
             try {
                 await this.staging.prepareStagingTables(input);

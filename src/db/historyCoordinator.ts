@@ -12,9 +12,9 @@ import {
 } from "../helpers/schemaHistory";
 
 /**
- * Row-level history collaborator (R1 Slice 2, PR 2a). Owns building the per-table history inputs and
- * populating the history tables. Extracted from `AutoSQLHandler` as a behaviour-preserving move — it
- * holds a back-ref to the handler (like `AutoSQLStreamHandle`) because table configuration is
+ * Row-level history collaborator (R1 Slice 2, PR 2a). Builds the per-table history inputs and
+ * populates the history tables. Behaviour-preserving extraction from `AutoSQLHandler`; holds a
+ * back-ref to the handler (like `AutoSQLStreamHandle`) because table configuration is
  * worker-dispatched and `configureTables`/`fetchTableMetadata` stay on the handler. `AutoSQLHandler`
  * imported type-only to avoid a runtime import cycle.
  */
@@ -68,7 +68,7 @@ export class HistoryCoordinator {
                 throw new Error(`Could not find structure of ${table} for history table creation`);
               }
 
-              // ✅ Clean up metaData for history table
+              // Clean up metaData for history table
               const cleanedMeta: MetadataHeader = {};
               for (const col in currentMetaData) {
                 const def = { ...currentMetaData[col] };
@@ -77,11 +77,11 @@ export class HistoryCoordinator {
                 cleanedMeta[col] = def;
               }
 
-              // ✅ Add as_at column
+              // Add as_at column
               cleanedMeta["dwh_as_at"] = { type: "datetime", allowNull: false, primary: true };
 
               const automatedColumns = ['dwh_created_at', 'dwh_modified_at', 'dwh_loaded_at']
-              // ✅ Ensure existing PKs are retained
+              // Ensure existing PKs are retained
               for (const col in currentMetaData) {
                 if (currentMetaData[col].primary) { cleanedMeta[col].primary = true; }
                 if (automatedColumns.includes(col)) { cleanedMeta[col].calculated = true }
@@ -116,10 +116,9 @@ export class HistoryCoordinator {
      */
     async configureHistoryTables(insertInput: InsertInput[]): Promise<InsertInput[]> {
         if (this.db.getConfig().sqlDialect === 'sqlserver') {
-            // Defense-in-depth only: the real enforcement point is validateConfig, which rejects
-            // rejectedRowsTable on SQL Server at construction (utilities.ts) — and the atomic path this
-            // guards is only routed for non-SQL-Server (loadStrategy). So a SQL Server load can't reach
-            // here through config; this survives against a caller mutating the live config object.
+            // Defense-in-depth: validateConfig already rejects rejectedRowsTable on SQL Server at
+            // construction (utilities.ts), and the atomic path this guards is only routed for
+            // non-SQL-Server (loadStrategy). Only reachable if a caller mutates the live config.
             throw new Error('Staging-path per-row degradation (rejectedRowsTable) with addHistory is not supported for SQL Server.');
         }
         const historyInputs = await this.buildHistoryInputs(insertInput);

@@ -5,16 +5,14 @@ import { escapeIdentifier, assertSafeTypeToken, assertSafeLength } from '../db/u
 /**
  * Builds best-effort compensating DDL to reverse a failed ALTER TABLE.
  *
- * PostgreSQL: DDL is transactional — `runTransaction` already issued a ROLLBACK.
- * No schema changes were applied, so no compensating queries are emitted. Warnings
- * are still returned for irreversible changes (e.g. dropped columns) so callers
- * can inform the user.
+ * PostgreSQL: DDL is transactional — `runTransaction` already ROLLED BACK, so no schema changes
+ * applied and no compensating queries are emitted. Warnings are still returned for irreversible
+ * changes (e.g. dropped columns) so callers can inform the user.
  *
- * MySQL: the single `ALTER TABLE` statement is atomic — if it fails the schema is
- * unchanged. Pre-UPDATE data transformations may have committed (MySQL's implicit
- * COMMIT on DDL), but the schema is still consistent. Compensating queries are
- * emitted as a safety net; `IF EXISTS` / `IF NOT EXISTS` guards make them no-ops
- * when no partial changes were applied.
+ * MySQL: the single `ALTER TABLE` is atomic — if it fails the schema is unchanged (pre-UPDATE data
+ * transforms may have committed via MySQL's implicit COMMIT on DDL, but the schema stays consistent).
+ * Compensating queries are emitted as a safety net; `IF EXISTS` / `IF NOT EXISTS` guards make them
+ * no-ops when no partial changes were applied.
  */
 export function buildCompensatingDDL(
     table: string,
@@ -41,16 +39,15 @@ export function buildCompensatingDDL(
         );
     }
 
-    // PostgreSQL: transactional DDL means the DB already rolled back everything.
-    // Emitting compensating queries would be redundant and could cause errors
-    // (e.g. ALTER COLUMN TYPE when the column is already the old type).
+    // PostgreSQL: transactional DDL already rolled everything back. Compensating queries would be
+    // redundant and could error (e.g. ALTER COLUMN TYPE when the column is already the old type).
     if (dialectConfig.dialect === 'pgsql') {
         return { queries: [], warnings };
     }
 
-    // MySQL: emit compensating queries as a best-effort safety net. Column names originate
-    // from AlterTableChanges (inferred from arbitrary caller JSON keys), so every identifier
-    // is quote-escaped and every type/length validated — same discipline as the main builders.
+    // MySQL: emit compensating queries as a best-effort safety net. Column names come from
+    // AlterTableChanges (inferred from arbitrary caller JSON keys), so every identifier is
+    // quote-escaped and every type/length validated — same discipline as the main builders.
     const queries: QueryInput[] = [];
     const qi = (name: string) => escapeIdentifier(name, 'mysql');
     const schemaPrefix = schema ? `${qi(schema)}.` : '';
@@ -92,8 +89,8 @@ export function buildCompensatingDDL(
         if (dialectConfig.translate.localToServer[colType]) {
             colType = dialectConfig.translate.localToServer[colType];
         }
-        // Use the merged length — it is >= the original length, so it safely holds
-        // all pre-migration values while we restore the old type.
+        // Use the merged length (>= the original), so it safely holds all pre-migration values
+        // while we restore the old type.
         const typeDef = buildTypeDef(colType, column.length, column.decimal);
         const nullability = column.allowNull ? 'NULL' : 'NOT NULL';
         queries.push({

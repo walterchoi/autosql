@@ -14,20 +14,18 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         let strData : string | null = null;
         let json : boolean = false;
 
-        // Fast path for native JS scalars. JSON sources deliver most values as native numbers and
-        // booleans, yet the string path below stringifies every value and runs a `JSON.parse` + the
-        // full regex chain + `normalizeNumber` on it — the dominant per-value inference cost. A native
-        // boolean/finite-number is unambiguous, so short-circuit to the same result and fall straight
-        // into the shared numeric-differentiation / length logic. (Non-finite numbers, Dates, objects
-        // and strings still take the full string path.)
+        // Fast path for native JS scalars. JSON sources deliver most values as native numbers/booleans,
+        // yet the string path stringifies every value and runs JSON.parse + the full regex chain +
+        // normalizeNumber — the dominant per-value inference cost. A native boolean/finite-number is
+        // unambiguous, so short-circuit into the shared numeric-differentiation/length logic. (Non-finite
+        // numbers, Dates, objects and strings still take the full string path.)
         if (typeof data === "boolean") {
             return "boolean";
         }
         if (typeof data === "number" && Number.isFinite(data)) {
             strData = String(data);
-            // Check exponential form first: a huge integer can stringify as "1e+21" (which the string
-            // path types as `exponent`, not `int`). Leading-zero identifiers and locale separators
-            // never apply to a native number.
+            // Check exponential form first: a huge integer can stringify as "1e+21" (typed `exponent`,
+            // not `int`). Leading-zero identifiers and locale separators never apply to a native number.
             if (/[eE]/.test(strData)) {
                 currentType = "exponent";
             } else if (Number.isInteger(data)) {
@@ -43,12 +41,11 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         } else {
             strData = String(data); // For non-objects, just convert to string
         }
-        // `json` only affects the result in the final fallback (a value matching no other type).
-        // The only inputs that reach it AND parse as JSON are arrays/objects/quoted-strings — i.e.
-        // strData starts with `[`, `{`, or `"`. Numbers/booleans/dates are matched by the regex chain
-        // first, so `json` is unused for them. Gating the parse on that first char is behaviour-
-        // identical but skips a JSON.parse on every plain string/number/date — and crucially avoids
-        // the try/catch EXCEPTION THROW (very slow in V8) that a non-JSON string triggered every time.
+        // `json` only affects the final fallback (a value matching no other type). Inputs that reach it
+        // AND parse as JSON are arrays/objects/quoted-strings — strData starts with `[`, `{`, or `"`;
+        // numbers/booleans/dates match the regex chain first. Gating the parse on that first char is
+        // behaviour-identical but skips JSON.parse on plain string/number/date and, crucially, the
+        // try/catch EXCEPTION THROW (very slow in V8) a non-JSON string triggered every time.
         if (/^\s*[[{"]/.test(strData)) {
             try {
                 JSON.parse(strData);
@@ -56,14 +53,13 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             } catch (e) {}
         }
 
-        // Fidelity: a digit string with a leading zero (e.g. "007", "07030", phone numbers)
-        // is an identifier, not a number — coercing it to an integer would silently drop the
-        // leading zeros. Preserve the original representation as text.
+        // Fidelity: a digit string with a leading zero ("007", "07030", phone numbers) is an
+        // identifier, not a number — coercing to int would drop the leading zeros. Keep as text.
         if (/^-?0[0-9]+$/.test(strData)) {
             return "varchar";
         }
 
-        // ✅ Detect and normalize numbers
+        // Detect and normalize numbers
         if (regexPatterns.number.test(strData) || regexPatterns.decimal.test(strData)) {
             strData = normalizeNumber(strData, thousandsSeparator, decimalSeparator, onAmbiguousSeparator);
 
@@ -132,7 +128,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             if (strData.length > 4294967295) {
                 throw new Error("data_too_long: Data is too long for JSON field");
             }
-            return "json"; // ✅ Always keep JSON if detected
+            return "json"; // Always keep JSON if detected
         }
         if (currentType === "varchar") {
             const length = strData.length;
@@ -217,19 +213,19 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
 
             let collatedType: string | null = null;
 
-            // ✅ Handle boolean + binary → binary
+            // boolean + binary → binary
             if ((currentType === "boolean" && overallType === "binary") || (currentType === "binary" && overallType === "boolean")) {
                 overallType = "binary";
                 continue;
             }
 
-            // ✅ Handle decimal + exponent → exponent
+            // decimal + exponent → exponent
             if ((currentType === "decimal" && overallType === "exponent") || (overallType === "decimal" && currentType === "exponent")) {
                 overallType = "exponent";
                 continue;
             }
 
-            // ✅ Handle datetimetz + datetime → datetimetz
+            // datetimetz + datetime → datetimetz
             if ((currentType === "datetimetz" && overallType === "datetime") || (overallType === "datetimetz" && currentType === "datetime")) {
                 overallType = "datetimetz";
                 continue;
@@ -261,11 +257,10 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
             // Handle similar groupings
             if (overallTypeGroup === currentTypeGroup) {
                 if (overallTypeGroup === "specialInt") {
-                    // Widen toward the later group entry (decimal < double < exponent). This
-                    // deliberately resolves decimal+double -> double: "double" only enters via a
-                    // pre-existing DOUBLE column, and narrowing it back to decimal would be a
-                    // lossy/erroring ALTER. Pure inference never yields "double" (it yields
-                    // decimal/exponent), so exact decimals are not silently floated here.
+                    // Widen toward the later group entry (decimal < double < exponent). Resolves
+                    // decimal+double -> double deliberately: "double" only enters via a pre-existing
+                    // DOUBLE column, and narrowing back to decimal would be a lossy/erroring ALTER. Pure
+                    // inference never yields "double", so exact decimals aren't silently floated here.
                     for (let i = groupings.specialIntGroup.length - 1; i >= 0; i--) {
                         if (groupings.specialIntGroup[i] === currentType || groupings.specialIntGroup[i] === overallType) {
                             overallType = groupings.specialIntGroup[i];

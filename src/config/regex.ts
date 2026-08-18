@@ -28,11 +28,9 @@ const time = new RegExp(/^([01]?[0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$/);
 // Matches binary values (0s and 1s)
 const binary = new RegExp(/^[01]+$/i);
 
-// Matches boolean values — only the literals `true`/`false`. `0`/`1` are deliberately
-// NOT matched: a bare 0/1 is far more often a small integer (a key, a count, a coded
-// category) than a real flag, and mis-typing it as boolean is a data-modelling error
-// (breaks integer comparisons, wrong storage type). Columns that store flags as 0/1 opt
-// in explicitly via the `booleanColumns` config hint. See predictType / R3.
+// Matches only the literals `true`/`false`. `0`/`1` are deliberately NOT matched: a bare 0/1 is
+// far more often a small integer than a flag, and mis-typing it as boolean breaks integer
+// comparisons/storage. Flags stored as 0/1 opt in via the `booleanColumns` hint. See predictType / R3.
 const boolean = new RegExp(/^(?:true|false)$/i);
 
 export const regexPatterns = {
