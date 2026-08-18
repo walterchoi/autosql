@@ -4,10 +4,9 @@ import { pgsqlConfig } from "../../config/pgsqlConfig";
 
 const q = (name: string) => escapeIdentifier(name, "pgsql");
 
-// Translate a LOCAL inference type to its Postgres SERVER type for a `::cast` (A12): the branch logic
-// below keys off local types (isNumeric/isDate/…), but the emitted cast must name a real Postgres type
-// — `::double` / `::exponent` / `::datetime` / `::tinyint` don't exist and the ALTER fails at run time.
-// Mirrors what SET DATA TYPE already does. The map is a fixed set of trusted tokens.
+// Translate a LOCAL inference type to its Postgres SERVER type for a `::cast` (A12): branches key off
+// local types but the emitted cast must name a real Postgres type (`::double`/`::datetime`/`::tinyint`
+// don't exist, ALTER fails at run time). Mirrors SET DATA TYPE; map is a fixed set of trusted tokens.
 const toServer = (t: string): string => pgsqlConfig.translate.localToServer[t] ?? t;
 
 // Generates a `USING` clause for ALTER COLUMN to safely convert data types.
@@ -15,22 +14,22 @@ export function getUsingClause(columnName: string, oldType: string, newType: str
     if (oldType === newType) return q(columnName);
     assertSafeTypeToken(newType);
 
-    // ✅ BOOLEAN → NUMERIC (1 for TRUE, 0 for FALSE)
+    // BOOLEAN → NUMERIC (1 for TRUE, 0 for FALSE)
     if (isBoolean(oldType) && isNumeric(newType)) {
         return `CASE WHEN ${q(columnName)} IS NULL THEN NULL WHEN ${q(columnName)} THEN 1 ELSE 0 END`;
     }
 
-    // ✅ NUMERIC → BOOLEAN (1 = TRUE, everything else = FALSE)
+    // NUMERIC → BOOLEAN (1 = TRUE, else FALSE)
     if (isNumeric(oldType) && isBoolean(newType)) {
         return `CASE WHEN ${q(columnName)} IS NULL THEN NULL WHEN ${q(columnName)} = 1 THEN TRUE ELSE FALSE END`;
     }
 
-    // ✅ BOOLEAN → TEXT
+    // BOOLEAN → TEXT
     if (isBoolean(oldType) && isText(newType)) {
         return `CASE WHEN ${q(columnName)} IS NULL THEN NULL WHEN ${q(columnName)} THEN 'true' ELSE 'false' END`;
     }
 
-    // ✅ TEXT → BOOLEAN (Handles common boolean text values)
+    // TEXT → BOOLEAN (common boolean text values)
     if (isText(oldType) && isBoolean(newType)) {
         return `CASE 
                     WHEN ${q(columnName)} IS NULL THEN NULL 
@@ -40,40 +39,39 @@ export function getUsingClause(columnName: string, oldType: string, newType: str
                 END`;
     }
 
-    // ✅ INTEGER → FLOATING POINT
+    // INTEGER → FLOATING POINT
     if (isInteger(oldType) && isFloating(newType)) {
         return `${q(columnName)}::DECIMAL`;
     }
 
-    // ✅ FLOATING POINT → INTEGER (ROUND to prevent precision loss)
+    // FLOATING POINT → INTEGER (ROUND to prevent precision loss)
     if (isFloating(oldType) && isInteger(newType)) {
         return `ROUND(${q(columnName)})::${toServer(newType)}`;
     }
 
-    // ✅ NUMERIC → NUMERIC widening (e.g. smallint → int → bigint, int → decimal): a plain cast.
-    //    The default `NULLIF(col, '')::type` below is only correct for a TEXT source (empty string →
-    //    NULL); on a numeric source Postgres errors (`invalid input syntax for type … : ""`). This is
-    //    what a later chunk hits when autoSQLChunked widens a key column (e.g. tinyint → smallint).
+    // NUMERIC → NUMERIC widening: plain cast. The default `NULLIF(col, '')::type` below is only
+    // correct for a TEXT source; on a numeric source Postgres errors (`invalid input syntax … : ""`),
+    // which a later chunk hits when autoSQLChunked widens a key column (e.g. tinyint → smallint).
     if (isNumeric(oldType) && isNumeric(newType)) {
         return `${q(columnName)}::${toServer(newType)}`;
     }
 
-    // ✅ TEXT → NUMERIC (Handle empty strings safely)
+    // TEXT → NUMERIC (empty strings → NULL)
     if (isText(oldType) && isNumeric(newType)) {
         return `NULLIF(${q(columnName)}, '')::${toServer(newType)}`;
     }
 
-    // ✅ JSON → TEXT (Convert JSON to String)
+    // JSON → TEXT
     if (oldType === "json" && isText(newType)) {
         return `${q(columnName)}::TEXT`;
     }
 
-    // ✅ TEXT → JSON (Convert valid JSON strings)
+    // TEXT → JSON
     if (isText(oldType) && newType === "json") {
         return `${q(columnName)}::JSONB`;
     }
 
-    // ✅ TEXT → DATE/TIME (Use TO_TIMESTAMP for Datetime conversions)
+    // TEXT → DATE/TIME (TO_TIMESTAMP for datetime conversions)
     if (isText(oldType) && newType === "datetime") {
         return `TO_TIMESTAMP(NULLIF(${q(columnName)}, ''), 'YYYY-MM-DD HH24:MI:SS')`;
     }
@@ -87,16 +85,16 @@ export function getUsingClause(columnName: string, oldType: string, newType: str
         return `TO_TIME(NULLIF(${q(columnName)}, ''), 'HH24:MI:SS')`;
     }
 
-    // ✅ DATE → TEXT (Format Date as String)
+    // DATE → TEXT
     if (isDate(oldType) && isText(newType)) {
         return `TO_CHAR(${q(columnName)}, 'YYYY-MM-DD HH24:MI:SS')`;
     }
 
-    // ✅ TIME → TEXT (Format Time as String)
+    // TIME → TEXT
     if (isTime(oldType) && isText(newType)) {
         return `TO_CHAR(${q(columnName)}, 'HH24:MI:SS')`;
     }
 
-    // ✅ Default: Simple Cast (with NULL handling)
+    // Default: simple cast (with NULL handling)
     return `NULLIF(${q(columnName)}, '')::${toServer(newType)}`;
 }

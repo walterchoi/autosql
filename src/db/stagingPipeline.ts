@@ -6,9 +6,9 @@ import { defaults } from "../config/defaults";
 
 /**
  * Staging pipeline collaborator (R1 Slice 2, PR 2d): create -> populate -> resolve-conflicts ->
- * merge -> cleanup. Behaviour-preserving move out of AutoSQLHandler; holds a back-ref to the handler
- * because table configuration and direct insert are worker-dispatched, and per-row degradation lives
- * on the handler. AutoSQLHandler imported type-only to avoid a runtime import cycle.
+ * merge -> cleanup. Behaviour-preserving move out of AutoSQLHandler; holds a back-ref because table
+ * configuration and direct insert are worker-dispatched and per-row degradation lives on the handler.
+ * AutoSQLHandler imported type-only to avoid a runtime import cycle.
  */
 export class StagingPipeline {
     private handler: AutoSQLHandler;
@@ -24,10 +24,9 @@ export class StagingPipeline {
         const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
 
         const stagingQueries: QueryInput[][] = uniqueTables.map(table => {
-            // Drop any leftover staging table BEFORE recreating it. A prior run that crashed before
-            // removeStagingTables leaves an orphan; the create uses CREATE TABLE IF NOT EXISTS, which
-            // would then reuse that orphan's stale schema and corrupt this load. Dropping first
-            // guarantees the temp table always matches the current (just-configured) real table.
+            // Drop any leftover staging table BEFORE recreating it: a run that crashed before
+            // removeStagingTables leaves an orphan, and CREATE TABLE IF NOT EXISTS would reuse its
+            // stale schema. Dropping first guarantees the temp table matches the current real table.
             const tempTableName = getTempTableName(table, stagingPrefix);
             return [this.db.getDropTableQuery(tempTableName), this.db.getCreateTempTableQuery(table, stagingPrefix)];
         });
@@ -38,12 +37,11 @@ export class StagingPipeline {
     }
 
     async insertStagingTables(insertInput: InsertInput[]): Promise<QueryResult[]> {
-        // The staging temp table was just created with CREATE TABLE AS SELECT from the
-        // already-configured real table, so its columns already match. Re-applying the real
-        // table's ALTER changes (addColumns/modifyColumns) here would try to add columns the
-        // CTAS copy already has ("duplicate column" / "already exists"). Clear the changes so
-        // staging configuration is a no-op, but keep updatedMetaData so the insert still resolves
-        // per-column values (e.g. the dwh_* timestamp defaults) for the temp table.
+        // The staging temp table was created via CREATE TABLE AS SELECT from the already-configured
+        // real table, so its columns match. Re-applying the real table's ALTER changes here would try
+        // to add columns the CTAS copy already has ("duplicate column"). Clear the changes so staging
+        // config is a no-op, but keep updatedMetaData so the insert still resolves per-column values
+        // (e.g. the dwh_* timestamp defaults) for the temp table.
         const emptyChanges: AlterTableChanges = {
             addColumns: {}, modifyColumns: {}, dropColumns: [], renameColumns: [],
             nullableColumns: [], noLongerUnique: [], primaryKeyChanges: [],
@@ -66,12 +64,11 @@ export class StagingPipeline {
     }
 
     /**
-     * Populate the staging temp tables with the dialect's bulk-copy mechanism (Postgres COPY /
-     * MySQL LOAD DATA LOCAL INFILE) instead of parameterised INSERT — the opt-in `bulkLoad` fast
-     * path. The subsequent merge (temp → real) is unchanged, so upsert semantics are preserved. If a
-     * table's bulk load fails for any reason (server local_infile off, missing pg-copy-streams, a
-     * value the text protocol rejects), it falls back to parameterised INSERT for that table so the
-     * load still completes. COPY is all-or-nothing, so the temp table is empty when the fallback runs.
+     * Populate the staging temp tables with the dialect's bulk-copy mechanism (Postgres COPY / MySQL
+     * LOAD DATA LOCAL INFILE) instead of parameterised INSERT — the opt-in `bulkLoad` fast path. The
+     * temp → real merge is unchanged, so upsert semantics are preserved. On any bulk-load failure
+     * (server local_infile off, missing pg-copy-streams, a value the text protocol rejects) it falls
+     * back to INSERT for that table. COPY is all-or-nothing, so the temp table is empty on fallback.
      */
     private async bulkLoadStaging(stagingInputs: InsertInput[]): Promise<QueryResult[]> {
         const config = this.db.getConfig();
@@ -80,9 +77,8 @@ export class StagingPipeline {
         const results: QueryResult[] = [];
         for (const input of stagingInputs) {
             const header = input.comparedMetaData?.updatedMetaData || input.metaData;
-            // Same column set the INSERT path uses: drop auto-increment (surrogate) columns so the
-            // DB assigns them. getInsertValues drops the same columns from each value row, so the
-            // columns and value arrays stay aligned.
+            // Same column set as the INSERT path: drop auto-increment (surrogate) columns so the DB
+            // assigns them. getInsertValues drops the same columns per row, keeping columns/values aligned.
             const columns = Object.keys(header).filter(col => !(excludeAutoIncrement && header[col].autoIncrement === true));
             const valueRows = input.data.map(row => getInsertValues(header, row, dialectConfig, config, true));
             try {
@@ -124,11 +120,11 @@ export class StagingPipeline {
             primary: string[]
         }> = {};
 
-        // Derive the constraint structure (non-primary unique indexes → columns, plus primary-key
-        // columns) from already-known metadata where it is provably identical to the live catalog
-        // (see deriveConstraintStructure), and fall back to live introspection otherwise. Deriving
-        // skips the unique-index + primary-key introspection round-trip on the common path — an
-        // idempotent re-ingest of a stable schema, where the metadata was just read from the DB.
+        // Derive the constraint structure (non-primary unique indexes → columns + primary-key columns)
+        // from already-known metadata where it is provably identical to the live catalog (see
+        // deriveConstraintStructure), else fall back to live introspection. Deriving skips the
+        // unique-index + PK introspection round-trip on the common path (idempotent re-ingest of a
+        // stable schema, metadata just read from the DB).
         const tablesToIntrospect: string[] = [];
         for (const table of uniqueTables) {
             const derived = this.deriveConstraintStructure(inputByTable.get(table));
@@ -139,10 +135,9 @@ export class StagingPipeline {
         if (tablesToIntrospect.length > 0) {
             const uniqueIndexesQuery = tablesToIntrospect.map(table => [this.db.getUniqueIndexesQuery(table)]);
             const primaryKeyQuery = tablesToIntrospect.map(table => [this.db.getPrimaryKeysQuery(table)]);
-            // Run the unique-index and primary-key introspection as ONE concurrency-governed batch
-            // instead of two sequential round-trips. Both are independent reads; a single
-            // runTransactionsWithConcurrency call overlaps them under one pool-size cap. Results come
-            // back in input order, so the first N groups are unique indexes and the next N are PKs.
+            // Run unique-index and primary-key introspection as ONE concurrency-governed batch (both
+            // are independent reads) rather than two sequential round-trips. Results come back in input
+            // order, so the first N groups are unique indexes and the next N are PKs.
             const introspection : QueryResult[] = await this.db.runTransactionsWithConcurrency([
                 ...uniqueIndexesQuery,
                 ...primaryKeyQuery,
@@ -223,17 +218,14 @@ export class StagingPipeline {
           }
         }
 
-        // Serialize each table's unique-constraint DROP under that table's schema lock when locking is
-        // on (R1 Slice 2, PR 2f). This DROP runs AFTER the entry point released the load's advisory lock
-        // (it is held only through inference + DDL, then released before inserts begin), so without
-        // re-acquiring, two concurrent loads that both drop the same constraint would race — an
-        // unserialized DDL on a live table. acquireSchemaLock pins a dedicated connection and the
-        // advisory lock blocks any concurrent acquirer until releaseSchemaLock. When useSchemaLock is off
-        // there is no lock to serialize on, so the drops run as one concurrent batch (unchanged).
-        // Residual TOCTOU (acceptable): the conflict-count check above ran BEFORE this lock, so two loads
-        // can both decide to drop the same constraint; the loser then DROPs an already-dropped constraint
-        // and — the builders don't emit IF EXISTS — fails loud via throwIfFailedResults. That's strictly
-        // better than the prior unserialized race (which could corrupt the DDL), just surfaced as an error.
+        // Re-acquire each table's schema lock around its unique-constraint DROP when locking is on
+        // (R1 Slice 2, PR 2f). The entry point releases the load's advisory lock before inserts (held
+        // only through inference + DDL), so without this two concurrent same-constraint DROPs race —
+        // unserialized DDL on a live table. Lock off → drops run as one concurrent batch (unchanged).
+        // Residual TOCTOU (acceptable): the conflict-count check above ran BEFORE this lock, so two
+        // loads can both decide to drop; the loser then DROPs an already-gone constraint and — builders
+        // don't emit IF EXISTS — fails loud via throwIfFailedResults. Strictly better than the prior
+        // unserialized race (which could corrupt the DDL), just surfaced as an error.
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
         const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
@@ -255,23 +247,22 @@ export class StagingPipeline {
     }
 
     /**
-     * Derive a table's drop-target constraint structure (non-primary unique indexes → their
-     * columns, plus the primary-key columns) from the resolved metadata, WITHOUT a catalog
-     * round-trip — but only when it is provably identical to the live catalog. Returns null (→ the
-     * caller introspects live) whenever the run changed the constraint structure or any unique lacks
-     * a real, introspected name:
+     * Derive a table's drop-target constraint structure (non-primary unique indexes → columns + PK
+     * columns) from resolved metadata WITHOUT a catalog round-trip, but only when provably identical
+     * to the live catalog. Returns null (→ caller introspects live) whenever the run changed the
+     * constraint structure or any unique lacks a real introspected name:
      *   • no compared/resolved metadata to reason about;
      *   • a unique was dropped this run (`noLongerUnique`) — `updatedMetaData` still shows it unique;
-     *   • the primary key changed this run (`primaryKeyChanges`) — the conflict-count join keys on it;
+     *   • the PK changed this run (`primaryKeyChanges`) — the conflict-count join keys on it;
      *   • a newly-added column is unique — its index name isn't introspected yet;
      *   • any unique column lacks a `uniqueName` — inferred/just-created uniques (incl. every first
      *     load) and MySQL's column-named uniques can't be reproduced, so the DROP target is unknown;
-     *   • any column belongs to MORE THAN ONE non-primary unique index (`uniqueName` is a
-     *     comma-joined list) — the per-column single-name model can't unambiguously reconstruct each
-     *     composite index's full column set, so grouping could mis-scope (and thus over-drop) a
-     *     constraint. autosql only ever creates single-column uniques, so this is external-table-only.
-     * These are exactly the cases where deriving could drop the wrong (or an already-gone) constraint
-     * — the silent over-drop the introspection fallback exists to avoid.
+     *   • any column belongs to >1 non-primary unique index (`uniqueName` is a comma-joined list) —
+     *     the per-column single-name model can't unambiguously reconstruct each composite index's
+     *     full column set, so grouping could mis-scope/over-drop. autosql only creates single-column
+     *     uniques, so this is external-table-only.
+     * These are exactly the cases where deriving could drop the wrong (or already-gone) constraint —
+     * the silent over-drop the introspection fallback exists to avoid.
      */
     private deriveConstraintStructure(input?: InsertInput): { uniques: Record<string, string[]>, primary: string[] } | null {
         if (!input) return null;
@@ -287,12 +278,12 @@ export class StagingPipeline {
         for (const [columnName, def] of Object.entries(meta)) {
             if (!def) continue;
             if (def.primary) primary.push(columnName);
-            // A column marked unique but without a real DB index name means we don't know the DROP
-            // target (a just-created or inferred unique) — bail to live introspection.
+            // Unique but no real DB index name → DROP target unknown (just-created/inferred unique);
+            // bail to live introspection.
             if (def.unique && !def.uniqueName) return null;
             if (def.uniqueName) {
-                // A comma means the column is in >1 non-primary unique index — the single-name model
-                // can't group composite indexes unambiguously, so fall back rather than mis-scope.
+                // Comma → column is in >1 non-primary unique index; the single-name model can't group
+                // composite indexes unambiguously, so fall back rather than mis-scope.
                 if (def.uniqueName.includes(',')) return null;
                 (uniques[def.uniqueName] ??= []).push(columnName);
             }
@@ -310,11 +301,10 @@ export class StagingPipeline {
         })
         const allInsertResults : QueryResult[] = await this.db.runTransactionsWithConcurrency(stagingInsertQueries);
 
-        // Opt-in graceful degradation WITHOUT row-level history: when perRowFallback is passed AND
-        // rejectedRowsTable is configured AND the atomic merge failed for a table, retry that table's
-        // rows one at a time and divert unrecoverable rows. Without the opt-in this stays
-        // all-or-nothing (the current default). The addHistory case uses the atomic path instead
-        // (insertFromStagingTablesAtomic), so history and data stay transactionally consistent.
+        // Opt-in graceful degradation WITHOUT row-level history: when perRowFallback AND
+        // rejectedRowsTable are set AND a table's atomic merge failed, retry that table's rows one at a
+        // time and divert unrecoverable rows. Without the opt-in this stays all-or-nothing (default).
+        // The addHistory case uses insertFromStagingTablesAtomic so history/data stay consistent.
         const config = this.db.getConfig();
         if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r?.success)) {
             return await this.handler['degradation'].applyStagingPerRowFallback(insertInput, allInsertResults);
@@ -325,16 +315,15 @@ export class StagingPipeline {
     }
 
     /**
-     * Zero-window staging merge WITH row-level history. The before-image capture and the merge run in
-     * ONE transaction, so history and data commit — or roll back — together, with no crash window
-     * between them. Per table: attempt the whole-table [before-image, merge] transaction. The
-     * merge-failure handling depends on `perRowFallback`:
-     *   - plain atomic history (no rejectedRowsTable): the failed table's whole transaction already
-     *     rolled back — surface it all-or-nothing (throwIfFailedResults), matching the non-atomic
-     *     plain path this replaces;
+     * Zero-window staging merge WITH row-level history: before-image capture and merge run in ONE
+     * transaction, so history and data commit/roll-back together with no crash window. Per table,
+     * attempt the whole-table [before-image, merge] transaction; merge-failure handling depends on
+     * `perRowFallback`:
+     *   - plain atomic history (no rejectedRowsTable): the failed table's transaction already rolled
+     *     back — surface all-or-nothing (throwIfFailedResults), matching the non-atomic path replaced;
      *   - degradation combo (rejectedRowsTable + addHistory): fall back to a per-PK loop where each
      *     PK's [before-image, single-PK merge] is its own transaction — a PK whose merge violates a
-     *     constraint rolls back (no history, no data) and is diverted to `rejectedRowsTable`.
+     *     constraint rolls back (no history, no data) and diverts to `rejectedRowsTable`.
      * `historyByTable` maps a real table to its (already-created) history input; a table not in
      * `historyTables` merges with no before-image.
      */
@@ -355,9 +344,9 @@ export class StagingPipeline {
         });
         const allResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(groups);
 
-        // Without the rejectedRowsTable opt-in there is nothing to divert to: a failed table's whole
-        // [before-image, merge] transaction already rolled back atomically, so surface it
-        // all-or-nothing (this is the plain-addHistory atomicity path, spec-1 §5.b / PR 2g).
+        // Without the rejectedRowsTable opt-in there is nothing to divert to: the failed table's
+        // [before-image, merge] transaction already rolled back atomically — surface all-or-nothing
+        // (plain-addHistory atomicity path, spec-1 §5.b / PR 2g).
         if (!(options?.perRowFallback && this.db.getConfig().rejectedRowsTable)) {
             throwIfFailedResults(allResults, 'insert from staging table queries');
             return allResults;

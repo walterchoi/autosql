@@ -3,15 +3,12 @@ import { supportedDialects, DialectConfig } from "../../config/types";
 /**
  * SQL identifier / literal escaping helpers.
  *
- * autosql builds DDL and DML by string interpolation, and its identifiers come from
- * arbitrary caller data (JSON keys become column names, `config.metaData` supplies
- * table/column/type/length). Data *values* are parameter-bound by the drivers and are
- * safe, but identifiers, type tokens and lengths are interpolated into the statement
- * text and must be escaped/validated at generation time. These helpers are the single
- * place that does that — every builder routes its identifiers through `escapeIdentifier`.
- *
- * For a well-formed identifier (letters/digits/underscore) the output is byte-identical
- * to the previous hand-written quoting, so escaping is transparent to existing callers.
+ * autosql interpolates identifiers/type tokens/lengths into DDL/DML statement text, and they
+ * come from arbitrary caller data (JSON keys, `config.metaData`). Data *values* are parameter-
+ * bound by the drivers and safe; identifiers etc. are not, so they must be escaped/validated at
+ * generation time. This is the single place that does that — every builder routes identifiers
+ * through `escapeIdentifier`. For a well-formed identifier the output is byte-identical to the
+ * previous hand-written quoting, so escaping is transparent to existing callers.
  */
 
 const IDENTIFIER_QUOTE: Record<supportedDialects, string> = {
@@ -20,10 +17,9 @@ const IDENTIFIER_QUOTE: Record<supportedDialects, string> = {
     sqlserver: "]", // SQL Server wraps in [ ... ] with a doubled closing bracket ]] as the escape
 };
 
-// Maximum identifier length per dialect. MySQL counts characters (64) and errors past it; Postgres
-// counts BYTES (NAMEDATALEN-1 = 63) and SILENTLY TRUNCATES past it — which can collide two distinct
-// names on the same table; SQL Server allows 128. autosql validates here and fails loudly rather than
-// let Postgres truncate under us or emit a MySQL statement that dies mid-load.
+// Max identifier length per dialect. MySQL: 64 chars, errors past it. Postgres: 63 BYTES
+// (NAMEDATALEN-1), SILENTLY TRUNCATES past it — which can collide two distinct names on one table.
+// SQL Server: 128. Validate here and fail loudly rather than let Postgres truncate or MySQL die mid-load.
 const IDENTIFIER_MAX_LENGTH: Record<supportedDialects, number> = {
     mysql: 64,
     pgsql: 63,
@@ -31,13 +27,10 @@ const IDENTIFIER_MAX_LENGTH: Record<supportedDialects, number> = {
 };
 
 /**
- * Wrap a SQL identifier (table / column / schema / index / constraint name) in the
- * dialect's quote character, doubling any embedded quote character (the SQL-standard
- * escape). This closes identifier-injection via attacker-controlled names such as a JSON
- * key like `` a`, ADD COLUMN evil TEXT, ADD COLUMN `b `` (MySQL) or `x" ... --` (Postgres).
- *
- * Throws on an empty/non-string identifier or one containing a NUL byte (neither dialect
- * permits NUL in an identifier, and it can truncate the surrounding statement).
+ * Wrap a SQL identifier in the dialect's quote char, doubling any embedded quote (SQL-standard
+ * escape). Closes identifier-injection via attacker-controlled names (e.g. a JSON key
+ * `` a`, ADD COLUMN evil TEXT, ADD COLUMN `b `` on MySQL, or `x" ... --` on Postgres).
+ * Throws on empty/non-string, or a NUL byte (no dialect permits NUL, and it can truncate the statement).
  */
 export function escapeIdentifier(name: string, dialect: supportedDialects): string {
     if (typeof name !== "string" || name.length === 0) {
@@ -46,13 +39,11 @@ export function escapeIdentifier(name: string, dialect: supportedDialects): stri
     if (name.includes("\0")) {
         throw new Error(`Invalid SQL identifier: NUL byte is not permitted (${JSON.stringify(name)})`);
     }
-    // Length: fail loudly on an over-long identifier (a source-derived name, or an autosql-derived
-    // staging/history name built from it) rather than emit a statement the DB rejects — or, on
-    // Postgres, silently truncates. Measure the way each dialect counts its limit, so a legal
-    // international name isn't false-rejected:
-    //   • Postgres — UTF-8 BYTES (NAMEDATALEN-1 = 63);
-    //   • MySQL — Unicode CODE POINTS (utf8mb4 counts characters, so an astral char is 1);
-    //   • SQL Server — UTF-16 code units (`sysname` = `nvarchar(128)`).
+    // Fail loudly on an over-long identifier (source-derived, or an autosql staging/history name built
+    // from it) rather than emit a statement the DB rejects — or, on Postgres, silently truncates.
+    // Measure the way each dialect counts its limit so a legal international name isn't false-rejected:
+    // Postgres — UTF-8 BYTES (NAMEDATALEN-1 = 63); MySQL — Unicode CODE POINTS; SQL Server — UTF-16
+    // code units (`sysname` = `nvarchar(128)`).
     const maxLen = IDENTIFIER_MAX_LENGTH[dialect];
     let length: number;
     let unit: string;
@@ -62,8 +53,8 @@ export function escapeIdentifier(name: string, dialect: supportedDialects): stri
     if (length > maxLen) {
         throw new Error(`Invalid SQL identifier: "${name}" (${length} ${unit}) exceeds the ${maxLen}-${unit === "bytes" ? "byte" : "character"} identifier limit for ${dialect}; shorten the underlying table/column name (autosql derives staging/history names from it, so it can exceed the limit even when the base name does not).`);
     }
-    // SQL Server: bracket-quote, doubling only the closing bracket ("]" -> "]]"). The quote pair is
-    // asymmetric ([ ]) so it can't use the symmetric doubling below.
+    // SQL Server: bracket-quote, doubling only the closing bracket ("]" -> "]]"). The pair is
+    // asymmetric ([ ]), so it can't use the symmetric doubling below.
     if (dialect === "sqlserver") {
         return `[${name.split("]").join("]]")}]`;
     }
@@ -72,11 +63,10 @@ export function escapeIdentifier(name: string, dialect: supportedDialects): stri
 }
 
 /**
- * Escape a scalar as a single-quoted SQL string literal, for the rare cases where a value
- * must be inlined into statement text (e.g. a column DEFAULT) and cannot be
- * parameter-bound. Doubles single quotes for both dialects; additionally escapes
- * backslashes for MySQL (which treats `\` as an escape character by default). Postgres,
- * with `standard_conforming_strings` on (the default), treats `\` literally, so it is
+ * Escape a scalar as a single-quoted SQL string literal, for the rare cases where a value must be
+ * inlined into statement text (e.g. a column DEFAULT) and can't be parameter-bound. Doubles single
+ * quotes for both dialects; also escapes backslashes for MySQL (which treats `\` as an escape by
+ * default). Postgres with `standard_conforming_strings` on (default) treats `\` literally, so it's
  * left untouched there.
  */
 export function escapeLiteral(value: string | number | boolean, dialect: supportedDialects): string {
@@ -94,12 +84,10 @@ export function escapeLiteral(value: string | number | boolean, dialect: support
 const SAFE_TYPE_TOKEN = /^[a-z][a-z0-9_ ]*$/i;
 
 /**
- * Validate a SQL type token (after local→server translation) before it is interpolated
- * into a column definition or a `USING`/`CAST` expression. Server type names can contain
- * spaces (`double precision`, `timestamp with time zone`, `character varying`), so those
- * are allowed, but quotes, parentheses, semicolons and other punctuation are rejected —
- * lengths are appended separately, so a legitimate type token never needs them. Returns
- * the validated token unchanged.
+ * Validate a SQL type token (after local→server translation) before it is interpolated into a
+ * column definition or a `USING`/`CAST` expression. Spaces are allowed (`double precision`,
+ * `timestamp with time zone`), but quotes, parens, semicolons and other punctuation are rejected —
+ * lengths are appended separately, so a legit type token never needs them. Returns the token unchanged.
  */
 export function assertSafeTypeToken(type: string): string {
     if (typeof type !== "string" || !SAFE_TYPE_TOKEN.test(type)) {
@@ -139,11 +127,11 @@ export function assertSafeDefaultExpression(expr: string): void {
 }
 
 /**
- * Render a column DEFAULT for a DDL statement. Defaults are SQL expressions, not string
- * literals: a per-dialect translation (e.g. UUID() -> (UUID())), null, booleans and numbers
- * are emitted directly, and any other value is emitted bare after `assertSafeDefaultExpression`
- * confirms it cannot break out of the column definition. A string-literal default must be
- * self-quoted by the caller (e.g. `"'active'"`), matching the existing CREATE-path behavior.
+ * Render a column DEFAULT for a DDL statement. Defaults are SQL expressions, not string literals:
+ * a per-dialect translation (e.g. UUID() -> (UUID())), null, booleans and numbers emit directly;
+ * any other value is emitted bare after `assertSafeDefaultExpression` confirms it can't break out
+ * of the column definition. A string-literal default must be self-quoted by the caller (e.g.
+ * `"'active'"`), matching the existing CREATE-path behavior.
  */
 export function renderColumnDefault(value: unknown, dialectConfig: DialectConfig): string {
     if (typeof value === "string" && dialectConfig.defaultTranslation[value] !== undefined) {

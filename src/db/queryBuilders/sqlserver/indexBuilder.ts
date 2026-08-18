@@ -35,8 +35,7 @@ export class SqlServerIndexQueryBuilder {
     }
 
     static getViewDependenciesQuery(table: string, schema?: string): QueryInput {
-        // Match views whose definition references the table name. sys.sql_modules holds the view
-        // definition text; sys.views gives the view name.
+        // Match views whose definition (sys.sql_modules) references the table name.
         return {
             query: schema
                 ? `SELECT v.name AS viewname
@@ -53,8 +52,7 @@ export class SqlServerIndexQueryBuilder {
     }
 
     static getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
-        // SQL Server PK constraint names are not fixed (no `_pkey` convention), so look up the
-        // actual PK name and drop it dynamically via EXEC.
+        // SQL Server PK names aren't fixed (no `_pkey` convention); look up the actual name and drop via EXEC.
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const qualified = `${schemaPrefix}${q(table)}`;
         return {
@@ -84,9 +82,8 @@ export class SqlServerIndexQueryBuilder {
     }
 
     static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
-        // Unique indexes on the table, columns comma-joined via STRING_AGG. Table name is bound
-        // as @p0; the schema filter (when given) and the optional column filter follow as the
-        // next @p placeholders, in params-array order.
+        // Unique indexes, columns comma-joined via STRING_AGG. Table is @p0; optional schema/column
+        // filters follow as subsequent @p placeholders in params-array order.
         let query = `
             SELECT i.name AS index_name, STRING_AGG(c.name, ', ') AS columns
             FROM sys.indexes i

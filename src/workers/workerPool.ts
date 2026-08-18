@@ -2,10 +2,10 @@ import { Worker } from "worker_threads";
 import { resolve } from "path";
 import { existsSync } from "fs";
 
-// The config is handed to a worker via `workerData`, which goes through structured clone — that CANNOT
-// serialise functions or live handles. Strip them (A8): a configured `logger` (function) or a live
-// `sshClient`/`sshStream` would throw DataCloneError synchronously and crash the default-on worker
-// path. The worker re-derives what it needs from `sshConfig` and simply runs without the custom logger.
+// Config reaches a worker via `workerData` (structured clone), which can't serialise functions or live
+// handles. Strip them (A8): `logger` (function) or a live `sshClient`/`sshStream` would throw
+// DataCloneError and crash the default-on worker path. The worker re-derives from `sshConfig` and runs
+// without the custom logger.
 export function stripNonCloneable(config: any): any {
   if (!config || typeof config !== "object") return config;
   const { logger, sshClient, sshStream, ...cloneable } = config;
@@ -40,11 +40,10 @@ class WorkerPool {
     this.dbConfig = stripNonCloneable(dbConfig);
     this.workerFile = workerFile ?? resolve(__dirname, "worker.js");
 
-    // Per-task timeout (config is in SECONDS -> ms). 0/undefined disables it.
-    // The no-hang guarantee does NOT depend on this: worker death is always caught
-    // by the 'error'/'exit' handlers. The timeout only guards an alive-but-wedged
-    // worker (e.g. a DB call that never returns). Off by default so a legitimately
-    // long-running batch is never spuriously failed.
+    // Per-task timeout (config in SECONDS -> ms). 0/undefined disables it. The no-hang guarantee
+    // does NOT depend on this ('error'/'exit' handlers always catch worker death); this only guards
+    // an alive-but-wedged worker (e.g. a DB call that never returns). Off by default so a legitimately
+    // long-running batch isn't spuriously failed.
     const timeoutSec = Number(this.dbConfig?.workerTaskTimeout) || 0;
     this.taskTimeoutMs = timeoutSec > 0 ? timeoutSec * 1000 : 0;
 

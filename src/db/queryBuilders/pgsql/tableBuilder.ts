@@ -34,9 +34,8 @@ export class PostgresTableQueryBuilder {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
 
-            // Use SERIAL family for Auto-incrementing Primary Keys. `bigint` must map to
-            // BIGSERIAL (int8) — mapping it to plain SERIAL (int4) silently capped the sequence
-            // at ~2.1B, which matters for large tables and for surrogate keys.
+            // Auto-increment uses the SERIAL family. `bigint` must map to BIGSERIAL (int8) — plain
+            // SERIAL (int4) silently caps the sequence at ~2.1B.
             if (column.autoIncrement) {
                 if (columnType === "int") {
                     columnDef = `${q(columnName)} SERIAL`;
@@ -61,7 +60,7 @@ export class PostgresTableQueryBuilder {
     
         if (primaryKeys.length) {
             sqlQuery += `PRIMARY KEY (${primaryKeys.map(q).join(", ")}),\n`
-            remainingIndexSlots--; // 🔢 count primary key toward the limit
+            remainingIndexSlots--; // count primary key toward the limit
         }
         const includedUniqueKeys = uniqueKeys.slice(0, remainingIndexSlots);
         if (includedUniqueKeys.length) {
@@ -97,7 +96,7 @@ export class PostgresTableQueryBuilder {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
-        // ✅ Handle `DROP COLUMN`
+        // Handle `DROP COLUMN`
         if(databaseConfig?.deleteColumns) {
             changes.dropColumns.forEach(columnName => {
                 alterStatements.push(`DROP COLUMN ${q(columnName)}`);
@@ -106,16 +105,15 @@ export class PostgresTableQueryBuilder {
 
         const schemaPrefix = schema ? `${q(schema)}.` : "";
 
-        // ✅ Handle `RENAME COLUMN` — Postgres requires each rename in its own ALTER TABLE
-        // statement; it cannot be combined with other actions (or with another rename) as
-        // MySQL's CHANGE COLUMN can. Emit each as a standalone statement, before the rest.
+        // RENAME COLUMN — Postgres requires each rename in its own ALTER TABLE statement (can't be
+        // combined with other actions like MySQL's CHANGE COLUMN). Emit standalone, before the rest.
         changes.renameColumns.forEach(({ oldName, newName }) => {
             queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} RENAME COLUMN ${q(oldName)} TO ${q(newName)};`, params: [] });
         });
     
-        // ✅ Handle `ADD COLUMN`
+        // Handle `ADD COLUMN`
         for (const [columnName, column] of Object.entries(changes.addColumns)) {
-    
+
             if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
             let columnType = column.type.toLowerCase()
             if (dialectConfig.translate.localToServer[columnType]) {
@@ -123,9 +121,8 @@ export class PostgresTableQueryBuilder {
             }
             assertSafeTypeToken(columnType);
             let columnDef = `${q(columnName)} ${columnType}`;
-            // Only length-requiring types carry a length in Postgres (matching CREATE). Postgres has
-            // no integer display width — `smallint(3)` / `int(11)` is a syntax error — so an integer
-            // added via ALTER must render as a bare `smallint` / `integer`.
+            // Only length-requiring types carry a length. Postgres has no integer display width —
+            // `smallint(3)` / `int(11)` is a syntax error.
             if (column.length && dialectConfig.requireLength.includes(columnType)) {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal ? `,${assertSafeLength(column.decimal)}` : ""})`;
             }
@@ -133,19 +130,17 @@ export class PostgresTableQueryBuilder {
             if (column.default !== undefined) {
                 columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
             } else if (!column.allowNull && column.calculated) {
-                // A NOT NULL calculated timestamp (e.g. dwh_created_at) added to a table that may
-                // already contain rows needs a DEFAULT, or ADD COLUMN fails the NOT NULL
-                // constraint on those pre-existing rows. Backfill them with the alter-time value
-                // (their true creation time is unknown); new rows still get the per-row
-                // calculatedDefault at insert. Every calculated column autosql creates is a
-                // timestamp, so CURRENT_TIMESTAMP is the correct backfill.
+                // NOT NULL calculated timestamp (e.g. dwh_created_at) on a possibly-populated table
+                // needs a DEFAULT or ADD COLUMN fails on pre-existing rows. Backfill with the
+                // alter-time value (true creation time unknown); new rows get calculatedDefault at
+                // insert. Calculated columns are timestamps, so CURRENT_TIMESTAMP is correct.
                 columnDef += ` DEFAULT CURRENT_TIMESTAMP`;
             }
 
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         };
     
-        // ✅ Handle `ALTER COLUMN` - Consolidate changes per column
+        // Handle `ALTER COLUMN` - consolidate changes per column
         const alterColumnMap: { [key: string]: string[] } = {};
     
         for (const [columnName, column] of Object.entries(changes.modifyColumns)) {
@@ -161,8 +156,8 @@ export class PostgresTableQueryBuilder {
                 }
                 assertSafeTypeToken(columnType);
                 let columnDef = `SET DATA TYPE ${columnType}`;
-                // Only length-requiring types carry a length (matching CREATE/ADD) — Postgres has no
-                // integer display width, so a `SET DATA TYPE smallint(3)` is a syntax error.
+                // Only length-requiring types carry a length — Postgres has no integer display width,
+                // so `SET DATA TYPE smallint(3)` is a syntax error.
                 if (column.length && dialectConfig.requireLength.includes(columnType)) {
                     columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
                 }
@@ -176,32 +171,30 @@ export class PostgresTableQueryBuilder {
             if (column.allowNull || changes.nullableColumns.includes(columnName)) {
                 alterColumnMap[columnName].push(`DROP NOT NULL`);
             }
-            // Only re-assert a genuine, intended default. A null default is an introspection
-            // artefact (a column with no default reports column_default = NULL); emitting
-            // `SET DEFAULT NULL` on every type/length change is a no-op that also risks bad SQL.
+            // Only re-assert a genuine default. A null default is an introspection artefact (no
+            // default reports column_default = NULL); `SET DEFAULT NULL` is a no-op that risks bad SQL.
             if (column.default !== undefined && column.default !== null) {
                 alterColumnMap[columnName].push(`SET DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`);
             }
         };
 
-        // Emit ONE `ALTER COLUMN` action per change. Postgres treats each SET/DROP as its own
-        // ALTER TABLE action; they must not be comma-joined under a single `ALTER COLUMN` prefix —
-        // `ALTER COLUMN c SET DATA TYPE x, SET DEFAULT y` is a syntax error at the bare second
-        // action (this broke widening an existing column on re-ingest).
+        // Emit ONE `ALTER COLUMN` action per change. Postgres treats each SET/DROP as its own ALTER
+        // TABLE action; comma-joining under one `ALTER COLUMN` prefix
+        // (`ALTER COLUMN c SET DATA TYPE x, SET DEFAULT y`) is a syntax error (broke widening on re-ingest).
         Object.keys(alterColumnMap).forEach(columnName => {
             for (const action of alterColumnMap[columnName]) {
                 alterStatements.push(`ALTER COLUMN ${q(columnName)} ${action}`);
             }
         });
 
-        // ✅ Handle `NULLABLE COLUMNS` separately (if not already modified)
+        // Handle `NULLABLE COLUMNS` separately (if not already modified)
         changes.nullableColumns.forEach(columnName => {
             if (!alterColumnMap[columnName]) {
                 alterStatements.push(`ALTER COLUMN ${q(columnName)} DROP NOT NULL`);
             }
         });
 
-        // ✅ Combine all `ALTER TABLE` statements
+        // Combine all `ALTER TABLE` statements
         if (alterStatements.length > 0) {
             queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} ${alterStatements.join(", ")};`, params: [] });
         }

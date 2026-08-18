@@ -7,9 +7,8 @@ import { AutoSQLHandler } from "./autosql";
 import { setSSH } from '../helpers/ssh';
 
 /**
- * Normalise a driver error's structured code for QueryResult.errorCode. A real driver code is a
- * non-empty string (mysql2 `code` / pg SQLSTATE) or a number (SQL Server, stringified) — so an
- * empty-string `code` is treated as absent (→ undefined), while a numeric `0` is preserved as "0".
+ * Normalise a driver error's structured code for QueryResult.errorCode: non-empty string (mysql2
+ * `code` / pg SQLSTATE) or number (SQL Server). Empty-string `code` → undefined; numeric `0` → "0".
  */
 function driverErrorCode(err: any): string | undefined {
     const code = err?.code;
@@ -22,16 +21,15 @@ export abstract class Database {
     protected config: DatabaseConfig;
     public autoSQLHandler!: AutoSQLHandler;
     protected abstract getPermanentErrors(): Promise<string[]>;
-    // Per-operation schema override. A schema-scoped call (e.g. autoSQL(table, data, schema))
-    // runs its whole async operation inside this context so concurrent calls with different
-    // schemas stay isolated instead of racing on a shared, mutated this.config.schema.
+    // Per-operation schema override: a schema-scoped call runs its whole async operation inside this
+    // context so concurrent calls with different schemas stay isolated instead of racing on a shared,
+    // mutated this.config.schema.
     private schemaContext = new AsyncLocalStorage<string>();
     // Per-operation number-format override. Dataset-level separator consensus resolves ONE
-    // {thousands, decimal} pair from the batch and runs the whole load inside this context, so
-    // BOTH inference and load-time sqlize (and worker dispatch, which clones getConfig() inside the
-    // scope) see the resolved separators — without mutating the shared config or threading it through
-    // every call site. Concurrent loads with different formats stay isolated (same rationale as
-    // schemaContext). Consumed via getConfig().thousandsSeparator/decimalSeparator.
+    // {thousands, decimal} pair and runs the whole load inside this context, so inference, load-time
+    // sqlize, and worker dispatch (clones getConfig() inside the scope) all see the resolved
+    // separators without mutating shared config. Isolated per-load like schemaContext. Consumed via
+    // getConfig().thousandsSeparator/decimalSeparator.
     private separatorContext = new AsyncLocalStorage<{ thousands: string; decimal: string }>();
 
     constructor(config: DatabaseConfig) {
@@ -93,13 +91,11 @@ export abstract class Database {
     public error(msg: string): void { this.config.logger?.error?.(msg); }
 
     /**
-     * Make blocked schema changes observable (R9). `deleteColumns` and `updatePrimaryKey` default
-     * to `false` — the safe default — so `compareMetaData` can *compute* a column drop or primary-key
-     * change that is then silently not executed. For an ETL product "the schema changed and autosql
-     * didn't apply it" should be visible, not silent. Warns (once, real-table only; the caller guards
-     * on `isStagingTable`) naming the columns and the flag to flip. `primaryKeyChanges` is only
-     * populated on a genuine structural/rename delta (not in steady state), and `dropColumns` is the
-     * final rename-folded list, so neither warning fires spuriously on an unchanged re-ingest.
+     * Make blocked schema changes observable (R9): `deleteColumns`/`updatePrimaryKey` default to
+     * false, so `compareMetaData` can compute a drop/PK change that is then silently not executed —
+     * warn (once, real-table only; caller guards on `isStagingTable`) naming the columns and the flag
+     * to flip. `primaryKeyChanges` is only populated on a genuine structural/rename delta and
+     * `dropColumns` is the rename-folded list, so neither warns spuriously on an unchanged re-ingest.
      */
     protected warnBlockedSchemaChanges(table: string, changes: AlterTableChanges): void {
         if (changes.dropColumns?.length && !this.config.deleteColumns) {
@@ -114,10 +110,9 @@ export abstract class Database {
     }
 
     /**
-     * Opt-in charset upgrade (R8) for a pre-existing table: detect text columns whose charset differs
-     * from the target and return the DDL to convert them. Base implementation is a no-op — only MySQL
-     * has the 3-byte `utf8`/`utf8mb3` vs 4-byte `utf8mb4` split; Postgres `UTF8` already stores 4-byte
-     * characters, so there is nothing to migrate. See `upgradeCharset`.
+     * Opt-in charset upgrade (R8): detect text columns whose charset differs from the target and
+     * return the DDL to convert them. Base impl is a no-op — only MySQL has the 3-byte `utf8`/`utf8mb3`
+     * vs 4-byte `utf8mb4` split; Postgres `UTF8` already stores 4-byte chars. See `upgradeCharset`.
      */
     public async getCharsetUpgradeQueries(_table: string): Promise<QueryInput[]> {
         return [];
@@ -174,8 +169,8 @@ export abstract class Database {
             } catch (error: any) {
                 this.error(`Database connection attempt ${attempts + 1} failed: ${error.message}`);
 
-                // Close any SSH tunnel opened on this attempt so a retry (or the final throw) doesn't
-                // leak an SSH connection per failed attempt.
+                // Close any SSH tunnel opened on this attempt so a retry/final-throw doesn't leak an
+                // SSH connection per failed attempt.
                 if (this.config.sshClient) {
                     try { this.config.sshClient.end(); } catch { /* already closed / never connected */ }
                     this.config.sshClient = undefined;
@@ -214,10 +209,9 @@ export abstract class Database {
         const QueryInput = this.getCheckSchemaQuery(schemaName);
         const result = await this.runQuery(QueryInput);
 
-        // A failed query means we could NOT determine existence (connectivity/auth/permissions),
-        // which is not the same as "the schema is absent". Masking it as `false` would mislead a
-        // caller into creating a schema that already exists or skipping one that does — so surface
-        // the failure instead of guessing.
+        // A failed query means we could NOT determine existence (connectivity/auth/permissions), not
+        // that the schema is absent. Masking as `false` would mislead a caller into re-creating an
+        // existing schema or skipping one that exists — surface the failure instead of guessing.
         if (!result.success) {
             throw new Error(`checkSchemaExists: could not determine schema existence — ${result.error}`);
         }
@@ -309,10 +303,10 @@ export abstract class Database {
     
     public async runQuery(queryOrParams: QueryInput, maxAttemptsOverride?: number): Promise<QueryResult> {
         const results: any[] = [];
-        // `maxAttemptsOverride` lets a caller that owns its OWN retry loop opt out of the internal
-        // retry. This matters for NON-idempotent statements (e.g. a single-row INSERT): on an
-        // ambiguous failure (connection dropped AFTER the server applied the row) the internal retry
-        // would re-execute and duplicate it. `perRowInsertWithRetry` passes 1 for exactly this (A15).
+        // `maxAttemptsOverride` lets a caller owning its OWN retry loop opt out of the internal retry.
+        // Matters for NON-idempotent statements (single-row INSERT): on an ambiguous failure (conn
+        // dropped AFTER the server applied the row) the internal retry would duplicate it.
+        // `perRowInsertWithRetry` passes 1 for exactly this (A15).
         const maxAttempts = maxAttemptsOverride ?? maxQueryAttempts ?? 3;
         let attempts = 0;
         let _error: any;
@@ -364,7 +358,7 @@ export abstract class Database {
         const start = new Date();
         // Establishing the connection can fail (bad creds, host down, SSH tunnel failure). Keep it
         // inside the failure envelope so runTransaction always resolves to a QueryResult and never
-        // rejects — matching runQuery's contract so a caller's process can't crash on a connect error.
+        // rejects (matches runQuery's contract) — a caller's process can't crash on a connect error.
         try {
             if (!this.connection) {
                 await this.establishConnection();
@@ -382,10 +376,10 @@ export abstract class Database {
         );
 
         // Retry the whole transaction (not individual statements) on transient errors: a
-        // deadlock/serialization failure aborts the entire transaction, so a per-statement
-        // retry on the same connection cannot succeed. Transactions that contain DDL run
-        // exactly once — MySQL implicitly commits before each DDL statement, so re-running a
-        // mixed DDL+DML batch would re-apply the already-committed (non-idempotent) DML.
+        // deadlock/serialization failure aborts the entire transaction, so a per-statement retry on
+        // the same connection can't succeed. DDL-containing transactions run exactly once — MySQL
+        // implicitly commits before each DDL, so re-running a mixed DDL+DML batch would re-apply the
+        // already-committed (non-idempotent) DML.
         const containsDDL = queries.some(q => /^\s*(create|alter|drop|truncate|rename)\b/i.test(q.query || ""));
         const maxAttempts = containsDDL ? 1 : (maxQueryAttempts || 3);
 
@@ -395,10 +389,10 @@ export abstract class Database {
             let results: any[] = [];
             let totalAffectedRows = 0;
             try {
-                // Acquire INSIDE the try: pool exhaustion, an acquire timeout, or a connection dropped
-                // between establish and acquire must become a {success:false} QueryResult, not an
-                // unhandled rejection that escapes this method — callers (autosql.ts) invoke it bare and
-                // rely on the documented "always resolves, never rejects" contract (A16).
+                // Acquire INSIDE the try: pool exhaustion, acquire timeout, or a conn dropped between
+                // establish and acquire must become a {success:false} QueryResult, not an unhandled
+                // rejection escaping this method — callers invoke it bare and rely on the "always
+                // resolves, never rejects" contract (A16).
                 client = await this.acquireConnection();
                 await this.startTransaction(client);
 
@@ -438,7 +432,7 @@ export abstract class Database {
                 await new Promise(res => setTimeout(res, 1000)); // Wait before retrying the whole transaction
             } finally {
                 if (client) {
-                    // A failed rollback leaves the connection dirty (esp. Postgres: aborted transaction);
+                    // A failed rollback leaves the connection dirty (esp. Postgres: aborted txn);
                     // destroy it rather than return a poisoned connection to the pool (A24).
                     if (rollbackFailed) this.destroyConnection(client);
                     else this.releaseConnection(client);
@@ -459,8 +453,7 @@ export abstract class Database {
 
     public async runTransactionsWithConcurrency(queryGroups: QueryInput[][]): Promise<QueryResult[]> {
         // A connect failure must not reject the whole batch — return one failure result per group so
-        // callers still get a well-formed array they can inspect (matching the per-group failure path
-        // inside runNext below).
+        // callers still get a well-formed array (matching the per-group failure path in runNext below).
         try {
             if (!this.connection) {
                 await this.establishConnection();
@@ -516,8 +509,8 @@ export abstract class Database {
             const existsQueryInput = this.getTableExistsQuery(schema, table);
             const exists = await this.runQuery(existsQueryInput);
             // `exists` is always a (truthy) QueryResult, so the old `if (!exists)` never fired (A19).
-            // Surface a failed existence probe, and read the COUNT(*) it returns to short-circuit for a
-            // genuinely absent table (key casing varies by dialect, so read the first column value).
+            // Surface a failed existence probe, then read the COUNT(*) to short-circuit an absent table
+            // (key casing varies by dialect, so read the first column value).
             if (!exists.success) {
                 throw new Error(`Failed to check whether ${schema}.${table} exists: ${exists.error ?? "unknown error"}`);
             }

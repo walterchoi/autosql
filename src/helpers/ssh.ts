@@ -33,7 +33,7 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
     throw new Error("No SSH username provided in sshKeys config.");
   }
 
-  // Read the private key into a LOCAL — do not mutate the caller's sshKeys object (it may be reused).
+  // Read the private key into a LOCAL — don't mutate the caller's sshKeys object (it may be reused).
   let privateKey = sshKeys.private_key;
   if (sshKeys.private_key_path && !privateKey) {
     privateKey = await readFile(sshKeys.private_key_path, "utf-8");
@@ -58,11 +58,10 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
     })
   };
 
-  // Host-key verification (A7). ssh2 performs NO host-key verification unless a `hostVerifier` is
-  // supplied — it accepts whatever key the server presents, so the tunnel that exists to protect the
-  // DB credentials in transit is silently MITM-able. When the caller pins a fingerprint, verify against
-  // it and refuse a mismatch; otherwise warn loudly that verification is off (parity with the TLS
-  // `rejectUnauthorized: false` warning).
+  // Host-key verification (A7). ssh2 does NO host-key verification without a `hostVerifier` — it
+  // accepts whatever key the server presents, so the tunnel protecting the DB credentials is silently
+  // MITM-able. When the caller pins a fingerprint, verify and refuse a mismatch; otherwise warn loudly
+  // that verification is off (parity with the TLS `rejectUnauthorized: false` warning).
   if (sshKeys.hostFingerprint) {
     sshConfig.hostVerifier = (key: Buffer): boolean => {
       const ok = fingerprintMatches(key, sshKeys.hostFingerprint!);
@@ -77,7 +76,7 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
 
   const sshClient = new SSHClient();
 
-  // ✅ Wrap ssh connection & forwardOut into a single promise
+  // Wrap ssh connection & forwardOut into a single promise
   const stream: ClientChannel = await new Promise((resolve, reject) => {
     sshClient
       .on("ready", () => {

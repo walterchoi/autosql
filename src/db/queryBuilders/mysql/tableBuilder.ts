@@ -29,9 +29,8 @@ export class MySQLTableQueryBuilder {
             assertSafeTypeToken(columnType);
             let columnDef = `${q(columnName)} ${columnType}`;
 
-            // Handle column lengths. Never emit a display width for `tinyint`: it is cosmetic in
-            // MySQL, and `tinyint(1)` specifically is the boolean convention — a non-boolean
-            // tinyint written as `tinyint(1)` would be read back as boolean and trigger a
+            // Never emit a display width for `tinyint`: it's cosmetic, and `tinyint(1)` is the
+            // boolean convention — a non-boolean tinyint(1) reads back as boolean and triggers
             // destructive re-typing on the next ingest.
             if (column.length && !dialectConfig.noLength.includes(columnType) && columnType !== "tinyint") {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
@@ -65,7 +64,7 @@ export class MySQLTableQueryBuilder {
     
         if (primaryKeys.length) {
             sqlQuery += `PRIMARY KEY (${primaryKeys.map(q).join(", ")}),\n`;
-            remainingIndexSlots--; // 🔢 count primary key toward the limit
+            remainingIndexSlots--; // count primary key toward the limit
         }
         const includedUniqueKeys = uniqueKeys.slice(0, remainingIndexSlots);
         if (includedUniqueKeys.length) {
@@ -96,14 +95,14 @@ export class MySQLTableQueryBuilder {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
-        // ✅ Handle `DROP COLUMN`
+        // Handle `DROP COLUMN`
         if(databaseConfig?.deleteColumns) {
             changes.dropColumns.forEach(columnName => {
                 alterStatements.push(`DROP COLUMN ${q(columnName)}`);
             });
         }
     
-        // ✅ Handle `RENAME COLUMN`
+        // Handle `RENAME COLUMN`
         changes.renameColumns.forEach(({ oldName, newName }) => {
             const columnType = databaseConfig?.metaData?.[table]?.[newName]?.type || databaseConfig?.metaData?.[table]?.[oldName]?.type || 'varchar'
             const columnLength = databaseConfig?.metaData?.[table]?.[newName]?.length || databaseConfig?.metaData?.[table]?.[oldName]?.length || 1
@@ -117,7 +116,7 @@ export class MySQLTableQueryBuilder {
             alterStatements.push(`CHANGE COLUMN ${q(oldName)} ${q(newName)} ${columnType}${columnLengthSQL} ${columnNullable ? 'NULL' : 'NOT NULL'}`);
         });
     
-        // ✅ Handle `ADD COLUMN`
+        // Handle `ADD COLUMN`
         for (const [columnName, column] of Object.entries(changes.addColumns)) {
             if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
             let columnType = column.type.toLowerCase()
@@ -125,9 +124,9 @@ export class MySQLTableQueryBuilder {
                 columnType = dialectConfig.translate.localToServer[columnType];
             }
             assertSafeTypeToken(columnType);
-            // Same tinyint invariant as CREATE: boolean → TINYINT(1); a non-boolean tinyint never
-            // carries a display width (a `tinyint(1)` would be read back as boolean). Keeping this
-            // consistent with CREATE/MODIFY is what makes the boolean/small-int round-trip converge.
+            // Same tinyint invariant as CREATE: boolean → TINYINT(1); non-boolean tinyint carries no
+            // display width (a `tinyint(1)` reads back as boolean). Consistency across CREATE/MODIFY
+            // makes the boolean/small-int round-trip converge.
             let columnDef = `${q(columnName)} ${columnType}`;
             if (column.type === "boolean") {
                 columnDef = `${q(columnName)} TINYINT(1)`;
@@ -138,19 +137,17 @@ export class MySQLTableQueryBuilder {
             if (column.default !== undefined) {
                 columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
             } else if (!column.allowNull && column.calculated) {
-                // A NOT NULL calculated timestamp (e.g. dwh_created_at) added to a table that may
-                // already contain rows needs a DEFAULT, or ADD COLUMN fails the NOT NULL
-                // constraint on those pre-existing rows. Backfill them with the alter-time value
-                // (their true creation time is unknown); new rows still get the per-row
-                // calculatedDefault at insert. Every calculated column autosql creates is a
-                // timestamp, so CURRENT_TIMESTAMP is the correct backfill.
+                // NOT NULL calculated timestamp (e.g. dwh_created_at) on a possibly-populated table
+                // needs a DEFAULT or ADD COLUMN fails on pre-existing rows. Backfill with the
+                // alter-time value (true creation time unknown); new rows get calculatedDefault at
+                // insert. Calculated columns are timestamps, so CURRENT_TIMESTAMP is correct.
                 columnDef += ` DEFAULT CURRENT_TIMESTAMP`;
             }
 
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         };
     
-        // ✅ Handle `MODIFY COLUMN` - Include `NULL` conditionally
+        // Handle `MODIFY COLUMN` - include `NULL` conditionally
         for (const [columnName, column] of Object.entries(changes.modifyColumns)) {
             if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
             let columnType = column.type.toLowerCase()
@@ -158,8 +155,7 @@ export class MySQLTableQueryBuilder {
                 columnType = dialectConfig.translate.localToServer[columnType];
             }
             assertSafeTypeToken(columnType);
-            // Same tinyint invariant as CREATE/ADD: boolean → TINYINT(1); a non-boolean tinyint
-            // never carries a display width.
+            // Same tinyint invariant as CREATE/ADD: boolean → TINYINT(1); non-boolean tinyint carries no display width.
             let columnDef = `${q(columnName)} ${columnType}`;
             if (column.type === "boolean") {
                 columnDef = `${q(columnName)} TINYINT(1)`;
@@ -167,7 +163,7 @@ export class MySQLTableQueryBuilder {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
 
-            // ✅ Apply NULL or NOT NULL depending on whether the column is in nullableColumns
+            // Apply NULL or NOT NULL depending on whether the column is in nullableColumns
             if (changes.nullableColumns.includes(columnName)) {
                 columnDef += " NULL";
             } else if (!column.allowNull) {
@@ -188,7 +184,7 @@ export class MySQLTableQueryBuilder {
             alterStatements.push(`MODIFY COLUMN ${columnDef}`);
         };
 
-        // ✅ Handle standalone `NULLABLE COLUMNS` not in modifyColumns
+        // Handle standalone `NULLABLE COLUMNS` not in modifyColumns
         changes.nullableColumns.forEach(columnName => {
             if (!Object.prototype.hasOwnProperty.call(changes.modifyColumns, columnName)) {
                 alterStatements.push(`MODIFY COLUMN ${q(columnName)} DROP NOT NULL`);
@@ -196,7 +192,7 @@ export class MySQLTableQueryBuilder {
         });
         const schemaPrefix = schema ? `${q(schema)}.` : "";
 
-        // ✅ Combine all `ALTER TABLE` statements
+        // Combine all `ALTER TABLE` statements
         if (alterStatements.length > 0) {
             queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} ${alterStatements.join(", ")};`, params: [] });
         }

@@ -26,9 +26,8 @@ function getAppliedBy(): string {
 }
 
 // Escaped, dialect-quoted reference to the history table (A13). Routes schema and table each through
-// escapeIdentifier — the old version returned a raw `schema.table` string that every caller then
-// re-split on '.', which dropped 3rd+ segments, corrupted any name containing a dot, and bypassed the
-// injection-safe escaping the rest of the codebase uses.
+// escapeIdentifier. The old raw `schema.table` string was re-split on '.' by callers — dropping 3rd+
+// segments, corrupting dotted names, and bypassing the injection-safe escaping used elsewhere.
 function historyTableRef(config: DatabaseConfig): string {
     const table = config.schemaHistoryTable || 'autosql_schema_history';
     const schema = config.schemaHistorySchema || config.schema;
@@ -93,8 +92,8 @@ CREATE TABLE ${ref} (
     // runQuery validates single-statement — use executeQuery via runTransaction
     const res = await db.runTransaction([{ query: ddl, params: [] }]);
     if (!res.success) {
-        // schemaHistory is opt-in; if its table cannot be created the feature cannot work. Fail loud
-        // rather than silently record nothing and later report "no drift" when actually blind (A19).
+        // schemaHistory is opt-in; if its table can't be created the feature can't work. Fail loud
+        // rather than record nothing and later report "no drift" while actually blind (A19).
         throw new Error(`schemaHistory: failed to create the history table ${ref}: ${res.error ?? "unknown error"}. Grant the load user CREATE on the schema/database, or disable schemaHistory.`);
     }
 }
@@ -103,8 +102,8 @@ CREATE TABLE ${ref} (
 // Record start of migration (status = 'pending')
 // Returns the inserted record id.
 // ---------------------------------------------------------------------------
-// A `pending` migration start older than this is treated as orphaned (a crashed run) and
-// swept to `failed`, so it can't linger forever. Comfortably longer than any real migration.
+// A `pending` start older than this is treated as orphaned (a crashed run) and swept to `failed`,
+// so it can't linger forever. Comfortably longer than any real migration.
 const STALE_PENDING_MS = 60 * 60 * 1000;
 
 /** Best-effort: mark this table's orphaned `pending` starts (from crashed runs) as failed. */
@@ -145,9 +144,9 @@ export async function recordMigrationStart(
 
     await sweepStalePending(db, table);
 
-    // The version is computed as MAX(version)+1 against a UNIQUE(table_name, version)
-    // constraint. Without a schema lock, two concurrent migrations can compute the same
-    // version and one hits a unique violation — recompute and retry a few times.
+    // Version = MAX(version)+1 against a UNIQUE(table_name, version) constraint. Without a schema
+    // lock, two concurrent migrations can compute the same version and one hits a unique violation —
+    // recompute and retry a few times.
     const maxAttempts = 5;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const now = new Date();
@@ -157,9 +156,9 @@ export async function recordMigrationStart(
             const query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
 SELECT ?, COALESCE(MAX(version), 0) + 1, 'pending', ?, ?, ?, ?
 FROM ${tableRef} WHERE table_name = ?`;
-            // Run the INSERT and LAST_INSERT_ID() in one transaction so they share a single
-            // connection — LAST_INSERT_ID() is connection-scoped, so reading it on a separate
-            // pooled connection returns 0/unrelated and leaves the row stuck at 'pending'.
+            // INSERT and LAST_INSERT_ID() in one transaction so they share a connection —
+            // LAST_INSERT_ID() is connection-scoped, so reading it on a separate pooled connection
+            // returns 0/unrelated and leaves the row stuck at 'pending'.
             result = await db.runTransaction([
                 {
                     query,
@@ -177,8 +176,8 @@ FROM ${tableRef} WHERE table_name = ?`;
         } else if (dialect === 'sqlserver') {
             const tableRef = ref; // already dialect-escaped (A13)
             // OUTPUT INSERTED.id returns the new IDENTITY in the same statement (no LAST_INSERT_ID /
-            // RETURNING). @p0 is bound once and referenced in both the SELECT list and WHERE. JSON is
-            // NVARCHAR(MAX) text (no ::jsonb cast); `now` binds to DATETIME2 as a Date.
+            // RETURNING). @p0 bound once, referenced in both SELECT list and WHERE. JSON is
+            // NVARCHAR(MAX) text (no ::jsonb); `now` binds to DATETIME2 as a Date.
             const query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
 OUTPUT INSERTED.id
 SELECT @p0, COALESCE(MAX(version), 0) + 1, 'pending', @p1, @p2, @p3, @p4
@@ -189,9 +188,9 @@ FROM ${tableRef} WHERE table_name = @p0`;
             });
         } else {
             const tableRef = ref; // already dialect-escaped (A13)
-            // $1 is used both in the SELECT list and the WHERE clause; without an explicit cast
-            // Postgres infers it as text in one place and varchar in the other and rejects the
-            // statement with "inconsistent types deduced for parameter $1".
+            // $1 is used in both the SELECT list and WHERE; without an explicit cast Postgres infers
+            // it as text in one place and varchar in the other and rejects with "inconsistent types
+            // deduced for parameter $1".
             const query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
 SELECT $1::varchar, COALESCE(MAX(version), 0) + 1, 'pending', $2, $3, $4::jsonb, $5::jsonb
 FROM ${tableRef} WHERE table_name = $1
@@ -211,9 +210,9 @@ RETURNING id`;
         const id = Number(result.results?.[0]?.id ?? 0);
         if (id > 0) return id;
         if (attempt < maxAttempts && UNIQUE_VIOLATION.test(result.error ?? '')) continue;
-        // Failed to record the start — warn (the change proceeds, just untracked) and return undefined
-        // so callers' `id !== undefined` guard skips the follow-up UPDATE (a 0 would run
-        // UPDATE ... WHERE id = 0). Previously this returned silently (A19).
+        // Failed to record the start — warn (change proceeds, just untracked) and return undefined so
+        // callers' `id !== undefined` guard skips the follow-up UPDATE (a 0 would run WHERE id = 0).
+        // Previously returned silently (A19).
         db.warn(`schemaHistory: could not record migration start for '${table}' (${result.error ?? 'unknown error'}); the schema change will proceed but won't be recorded in history.`);
         return undefined;
     }
@@ -233,13 +232,13 @@ async function updateHistoryStatus(
 ): Promise<void> {
     const ref = historyTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
-    // The drift baseline must be comparable to the drift-time check, which reads the LIVE (introspected)
-    // schema. So checksum the introspected `checksumSchema` when the caller re-introspects post-migration
-    // (A6): both sides then come from introspection and match for an unchanged table — inferred-vs-
-    // introspected would false-positive on legitimate type round-trips. `checksumSchema === undefined`
-    // (caller didn't re-introspect) falls back to `newSchema`; an explicit `null` (introspection read
-    // nothing) stores a null checksum → treated as "no baseline" at drift time, not a false positive.
-    // `new_schema` itself stays the inferred schema (used for point-in-time reconstruction).
+    // The drift baseline must match the drift-time check, which reads the LIVE (introspected) schema.
+    // So checksum the introspected `checksumSchema` when the caller re-introspects post-migration (A6):
+    // both sides are then introspection-derived and match for an unchanged table (inferred-vs-
+    // introspected would false-positive on legitimate type round-trips). `undefined` (no re-introspect)
+    // falls back to `newSchema`; explicit `null` (introspection read nothing) stores a null checksum →
+    // "no baseline" at drift time, not a false positive. `new_schema` stays the inferred schema (used
+    // for point-in-time reconstruction).
     const checksumSource = checksumSchema !== undefined ? checksumSchema : newSchema;
     const checksum = checksumSource ? computeChecksum(checksumSource) : null;
 
@@ -292,10 +291,10 @@ export async function detectSchemaDrift(
     const ref = historyTableRef(config);
     const dialect = config.sqlDialect;
 
-    // Read the recorded baseline FIRST. No applied record (or a null checksum) → no reliable baseline
-    // for this table: a first run (the table legitimately doesn't exist yet) or a migration whose
-    // post-migration introspection couldn't read the table. Nothing to compare — return quietly, and
-    // crucially DON'T warn about a "missing" table that isn't supposed to exist yet (A6/A19).
+    // Read the recorded baseline FIRST. No applied record (or null checksum) → no reliable baseline:
+    // a first run (table legitimately absent) or a migration whose post-migration introspection
+    // couldn't read the table. Nothing to compare — return quietly, and crucially DON'T warn about a
+    // "missing" table that isn't supposed to exist yet (A6/A19).
     let query: string;
     if (dialect === 'mysql') {
         const tableRef = ref; // already dialect-escaped (A13)
@@ -315,12 +314,12 @@ export async function detectSchemaDrift(
     }
 
     // We HAVE a baseline — read the live (introspected) schema and compare. Both the stored baseline
-    // (recorded from a post-migration re-introspection) and this are introspection-derived, so an
-    // unchanged table matches exactly.
+    // (from a post-migration re-introspection) and this are introspection-derived, so an unchanged
+    // table matches exactly.
     const liveSchema = await db.getTableMetaData(config.schema || config.database || '', table);
     if (!liveSchema) {
         // Had a baseline but can't read the live table now — NOT a clean bill. Warn instead of
-        // silently reporting "no drift" (A19).
+        // reporting "no drift" (A19).
         db.warn(`Schema drift check for '${table}' could not read the live table schema (introspection returned nothing); skipping the check. This is not a clean bill — verify the table if it persists.`);
         return { drifted: false, expected, actual: '' };
     }

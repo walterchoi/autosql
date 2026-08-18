@@ -24,9 +24,9 @@ export function isAutosqlStreamTable(tableName: string, table: string, prefix: s
     return /^[0-9a-f]{8}$/.test(suffix);
 }
 
-// --- Identifier escaping. Column names originate from arbitrary caller JSON keys and table/
-//     schema names from config, so every interpolated identifier must be quote-escaped (the
-//     rest of the query builders already route through escape.ts; the streaming path did not). ---
+// --- Identifier escaping. Column names come from arbitrary caller JSON keys and table/schema names
+//     from config, so every interpolated identifier must be quote-escaped (the rest of the query
+//     builders route through escape.ts; the streaming path did not). ---
 function qi(name: string, dialect: supportedDialects): string {
     return escapeIdentifier(name, dialect);
 }
@@ -55,9 +55,9 @@ export function buildCreateStreamStagingTableQuery(
  * Build INSERT for a single chunk of rows into the stream staging table.
  * All values are cast to strings (TEXT columns) and parameter-bound.
  */
-// Objects/arrays must serialise to JSON, not String()'s useless "[object Object]" / "a,b,c" (A18) —
-// matching what sqlize does for JSON values on the batch path, so a JSON-bearing source round-trips
-// the same via openStream as via autoSQL.
+// Objects/arrays must serialise to JSON, not String()'s "[object Object]" / "a,b,c" (A18) — matching
+// sqlize's JSON handling on the batch path, so a JSON-bearing source round-trips the same via
+// openStream as via autoSQL.
 function streamCell(v: any): string | null {
     if (v === null || v === undefined) return null;
     if (typeof v === "object") return JSON.stringify(v);
@@ -148,10 +148,10 @@ const MYSQL_TIME    = ['time'];
 const MYSQL_BOOL    = ['boolean'];
 
 // Postgres has no tinyint/mediumint — they map to smallint/integer (same as the CREATE-path
-// dialect translation), so the stream-merge cast must map them too. Without this a tinyint
-// column falls through uncast and the text→smallint INSERT is rejected (`column "id" is of
-// type smallint but expression is of type text`). Previously masked because a bare 0/1
-// inferred as boolean; now that 0/1 is a small integer (R3), the merge must cast it.
+// translation), so the stream-merge cast must map them too. Without this a tinyint column falls
+// through uncast and the text→smallint INSERT is rejected (`column "id" is of type smallint but
+// expression is of type text`). Previously masked because a bare 0/1 inferred as boolean; now that
+// 0/1 is a small integer (R3), the merge must cast it.
 const PG_INT     = ['int', 'integer', 'mediumint'];
 const PG_BIGINT  = ['bigint'];
 const PG_SMALL   = ['smallint', 'tinyint'];
