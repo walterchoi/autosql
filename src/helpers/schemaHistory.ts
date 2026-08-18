@@ -3,7 +3,7 @@ import os from 'os';
 import { Database } from '../db/database';
 import { MetadataHeader, DatabaseConfig, QueryResult } from '../config/types';
 import { SchemaDriftError } from '../errors';
-import { escapeIdentifier } from '../db/utils/escape';
+import { escapeIdentifier, escapeLiteral } from '../db/utils/escape';
 
 // ---------------------------------------------------------------------------
 // Stable JSON stringify (key-sorted, recursive) for deterministic checksums
@@ -58,6 +58,23 @@ export async function bootstrapSchemaHistoryTable(db: Database): Promise<void> {
   checksum        CHAR(64),
   UNIQUE KEY uq_table_version (table_name, version)
 );`;
+    } else if (dialect === 'sqlserver') {
+        // No CREATE TABLE IF NOT EXISTS — guard with IF OBJECT_ID. No native JSON (NVARCHAR(MAX)),
+        // no BIGSERIAL (BIGINT IDENTITY), TIMESTAMPTZ→DATETIME2.
+        ddl = `IF OBJECT_ID(${escapeLiteral(ref, 'sqlserver')}, 'U') IS NULL
+CREATE TABLE ${ref} (
+  id              BIGINT IDENTITY(1,1) PRIMARY KEY,
+  table_name      NVARCHAR(255) NOT NULL,
+  version         INT           NOT NULL,
+  status          NVARCHAR(20)  NOT NULL,
+  applied_at      DATETIME2     NOT NULL,
+  applied_by      NVARCHAR(255),
+  previous_schema NVARCHAR(MAX) NOT NULL,
+  new_schema      NVARCHAR(MAX),
+  changes         NVARCHAR(MAX) NOT NULL,
+  checksum        CHAR(64),
+  CONSTRAINT uq_autosql_schema_history_table_version UNIQUE (table_name, version)
+);`;
     } else {
         ddl = `CREATE TABLE IF NOT EXISTS ${ref} (
   id              BIGSERIAL PRIMARY KEY,
@@ -100,6 +117,11 @@ async function sweepStalePending(db: Database, table: string): Promise<void> {
         await db.runQuery({
             query: `UPDATE ${tableRef} SET status = 'failed' WHERE table_name = ? AND status = 'pending' AND applied_at < ?`,
             params: [table, cutoff.toISOString().slice(0, 19).replace('T', ' ')]
+        }).catch(() => {});
+    } else if (dialect === 'sqlserver') {
+        await db.runQuery({
+            query: `UPDATE ${tableRef} SET status = 'failed' WHERE table_name = @p0 AND status = 'pending' AND applied_at < @p1`,
+            params: [table, cutoff] // Date binds to DATETIME2 via mssql
         }).catch(() => {});
     } else {
         await db.runQuery({
@@ -152,6 +174,19 @@ FROM ${tableRef} WHERE table_name = ?`;
                 },
                 { query: 'SELECT LAST_INSERT_ID() AS id', params: [] }
             ]);
+        } else if (dialect === 'sqlserver') {
+            const tableRef = ref; // already dialect-escaped (A13)
+            // OUTPUT INSERTED.id returns the new IDENTITY in the same statement (no LAST_INSERT_ID /
+            // RETURNING). @p0 is bound once and referenced in both the SELECT list and WHERE. JSON is
+            // NVARCHAR(MAX) text (no ::jsonb cast); `now` binds to DATETIME2 as a Date.
+            const query = `INSERT INTO ${tableRef} (table_name, version, status, applied_at, applied_by, previous_schema, changes)
+OUTPUT INSERTED.id
+SELECT @p0, COALESCE(MAX(version), 0) + 1, 'pending', @p1, @p2, @p3, @p4
+FROM ${tableRef} WHERE table_name = @p0`;
+            result = await db.runQuery({
+                query,
+                params: [table, now, appliedBy, JSON.stringify(previousSchema), JSON.stringify(changes)]
+            });
         } else {
             const tableRef = ref; // already dialect-escaped (A13)
             // $1 is used both in the SELECT list and the WHERE clause; without an explicit cast
@@ -214,6 +249,12 @@ async function updateHistoryStatus(
             query: `UPDATE ${tableRef} SET status = ?, new_schema = ?, checksum = ? WHERE id = ?`,
             params: [status, newSchema ? JSON.stringify(newSchema) : null, checksum, id]
         });
+    } else if (dialect === 'sqlserver') {
+        const tableRef = ref; // already dialect-escaped (A13)
+        await db.runQuery({
+            query: `UPDATE ${tableRef} SET status = @p0, new_schema = @p1, checksum = @p2 WHERE id = @p3`,
+            params: [status, newSchema ? JSON.stringify(newSchema) : null, checksum, id]
+        });
     } else {
         const tableRef = ref; // already dialect-escaped (A13)
         await db.runQuery({
@@ -259,6 +300,9 @@ export async function detectSchemaDrift(
     if (dialect === 'mysql') {
         const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT checksum FROM ${tableRef} WHERE table_name = ? AND status = 'applied' ORDER BY version DESC LIMIT 1`;
+    } else if (dialect === 'sqlserver') {
+        const tableRef = ref; // already dialect-escaped (A13)
+        query = `SELECT TOP 1 checksum FROM ${tableRef} WHERE table_name = @p0 AND status = 'applied' ORDER BY version DESC`;
     } else {
         const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT checksum FROM ${tableRef} WHERE table_name = $1 AND status = 'applied' ORDER BY version DESC LIMIT 1`;
@@ -313,15 +357,20 @@ export async function getSchemaAt(
     const dialect = config.sqlDialect;
 
     let query: string;
+    let params: any[] = [table, at.toISOString()];
     if (dialect === 'mysql') {
         const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT new_schema FROM ${tableRef} WHERE table_name = ? AND status = 'applied' AND applied_at <= ? ORDER BY applied_at DESC LIMIT 1`;
+    } else if (dialect === 'sqlserver') {
+        const tableRef = ref; // already dialect-escaped (A13)
+        query = `SELECT TOP 1 new_schema FROM ${tableRef} WHERE table_name = @p0 AND status = 'applied' AND applied_at <= @p1 ORDER BY applied_at DESC`;
+        params = [table, at]; // Date binds to DATETIME2 (an ISO string with trailing 'Z' can fail the compare)
     } else {
         const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT new_schema FROM ${tableRef} WHERE table_name = $1 AND status = 'applied' AND applied_at <= $2 ORDER BY applied_at DESC LIMIT 1`;
     }
 
-    const result = await db.runQuery({ query, params: [table, at.toISOString()] });
+    const result = await db.runQuery({ query, params });
     if (!result.success || !result.results?.length) return null;
 
     const raw = result.results[0].new_schema;

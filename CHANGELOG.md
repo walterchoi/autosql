@@ -1,5 +1,27 @@
 ## [Unreleased]
 
+### ✨ New — SQL Server feature parity (spec-2 slices 1–4)
+- **IDENTITY introspection.** SQL Server table introspection now reports `IDENTITY` columns as
+  auto-increment (via `COLUMNPROPERTY(... 'IsIdentity')`), matching MySQL `AUTO_INCREMENT` / Postgres
+  `nextval`. Fixes two latent issues on re-load: a re-introspected identity column no longer shows
+  spurious drift, and `surrogateKey` stays sticky to its existing identity surrogate (detected by the
+  auto-increment flag) instead of thrashing the primary key on run 2.
+- **`schemaHistory` on SQL Server.** The schema-history bootstrap + record/detect queries now emit T-SQL
+  (`BIGINT IDENTITY`, `NVARCHAR(MAX)`, `DATETIME2`, `TOP`, `OUTPUT INSERTED.id`) instead of Postgres-only
+  DDL; `schemaHistory: true` is now supported on SQL Server (drift detection included). The former
+  fail-loud guard is removed.
+- **`rejectedRowsTable` (dead-letter) on SQL Server.** The rejected-rows table + insert builders now emit
+  T-SQL; opt-in per-row degradation diverts bad rows to the dead-letter table on SQL Server (direct and
+  staging paths). The former fail-loud guard is removed.
+- **Row-level history (`addHistory`) and split tables (`autoSplit`) verified on SQL Server** — already
+  implemented, now covered by live tests.
+
+### 🔒 Guardrails
+- **`rejectedRowsTable` + `addHistory` together still fail loud on SQL Server.** That combination uses the
+  zero-window atomic (before-image + merge in one transaction) path on MySQL/Postgres; the SQL Server
+  atomic path is not yet ported, so the combo is rejected at construction rather than silently running a
+  weaker, non-atomic version. Use the two features separately on SQL Server for now.
+
 ## [2.4.0] - 2026-08-16
 
 ### ✨ New

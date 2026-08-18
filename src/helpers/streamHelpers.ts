@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { MetadataHeader, DatabaseConfig, QueryInput, supportedDialects } from '../config/types';
-import { escapeIdentifier, assertSafeLength } from '../db/utils/escape';
+import { escapeIdentifier, escapeLiteral, assertSafeLength } from '../db/utils/escape';
 
 // Generate an 8-char hex run ID for unique staging table names
 export function generateRunId(): string {
@@ -257,21 +257,35 @@ export function buildBootstrapRejectedRowsQuery(config: DatabaseConfig): QueryIn
     const prefix    = schema ? `${escapeIdentifier(schema, dialect)}.` : '';
     const tableRef  = `${prefix}${qi(tableName, dialect)}`;
 
-    const ddl = dialect === 'mysql'
-        ? `CREATE TABLE IF NOT EXISTS ${tableRef} (
+    let ddl: string;
+    if (dialect === 'mysql') {
+        ddl = `CREATE TABLE IF NOT EXISTS ${tableRef} (
   id            BIGINT AUTO_INCREMENT PRIMARY KEY,
   target_table  VARCHAR(255) NOT NULL,
   rejected_at   DATETIME     NOT NULL,
   error_message TEXT         NOT NULL,
   raw_data      JSON         NOT NULL
-);`
-        : `CREATE TABLE IF NOT EXISTS ${tableRef} (
+);`;
+    } else if (dialect === 'sqlserver') {
+        // No CREATE TABLE IF NOT EXISTS (IF OBJECT_ID guard), no BIGSERIAL (BIGINT IDENTITY),
+        // no JSONB (raw_data is NVARCHAR(MAX) JSON text), TIMESTAMPTZ→DATETIME2.
+        ddl = `IF OBJECT_ID(${escapeLiteral(tableRef, 'sqlserver')}, 'U') IS NULL
+CREATE TABLE ${tableRef} (
+  id            BIGINT IDENTITY(1,1) PRIMARY KEY,
+  target_table  NVARCHAR(255) NOT NULL,
+  rejected_at   DATETIME2     NOT NULL,
+  error_message NVARCHAR(MAX) NOT NULL,
+  raw_data      NVARCHAR(MAX) NOT NULL
+);`;
+    } else {
+        ddl = `CREATE TABLE IF NOT EXISTS ${tableRef} (
   id            BIGSERIAL PRIMARY KEY,
   target_table  VARCHAR(255) NOT NULL,
   rejected_at   TIMESTAMPTZ  NOT NULL,
   error_message TEXT         NOT NULL,
   raw_data      JSONB        NOT NULL
 );`;
+    }
     return [{ query: ddl, params: [] }];
 }
 
@@ -293,6 +307,20 @@ export function buildInsertRejectedRowsQuery(
         const params: any[] = [];
         for (const f of failures) {
             params.push(targetTable, now, f.error, JSON.stringify(f.row));
+        }
+        return {
+            query: `INSERT INTO ${tableRef} (target_table, rejected_at, error_message, raw_data) VALUES ${placeholders}`,
+            params
+        };
+    } else if (dialect === 'sqlserver') {
+        // @pN placeholders zero-indexed in params-array order; raw_data is NVARCHAR(MAX) text (no
+        // ::jsonb); rejected_at binds a Date to DATETIME2.
+        let idx = 0;
+        const placeholders = failures.map(() => `(@p${idx++}, @p${idx++}, @p${idx++}, @p${idx++})`).join(', ');
+        const nowDate = new Date();
+        const params: any[] = [];
+        for (const f of failures) {
+            params.push(targetTable, nowDate, f.error, JSON.stringify(f.row));
         }
         return {
             query: `INSERT INTO ${tableRef} (target_table, rejected_at, error_message, raw_data) VALUES ${placeholders}`,

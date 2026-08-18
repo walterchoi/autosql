@@ -319,7 +319,11 @@ export class SqlServerTableQueryBuilder {
                           AND i.is_unique = 1
                           AND i.is_primary_key = 0
                           AND sc.name = c.COLUMN_NAME
-                    ) AS UNIQUE_INDEX_NAME
+                    ) AS UNIQUE_INDEX_NAME,
+                    -- IDENTITY flag: SQL Server's analogue of MySQL AUTO_INCREMENT / Postgres nextval.
+                    -- Wrapped in MAX() so it needn't join the GROUP BY (constant per grouped column);
+                    -- normalizeResultKeys lowercases IS_IDENTITY → is_identity for deriveColumnMetadata.
+                    MAX(COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)), c.COLUMN_NAME, 'IsIdentity')) AS IS_IDENTITY
                 FROM INFORMATION_SCHEMA.COLUMNS AS c
                 WHERE c.TABLE_SCHEMA = @p0 AND c.TABLE_NAME = @p1
                 GROUP BY c.COLUMN_NAME, c.DATA_TYPE, c.COLUMN_DEFAULT, c.NUMERIC_PRECISION, c.NUMERIC_SCALE, c.CHARACTER_MAXIMUM_LENGTH, c.IS_NULLABLE, c.TABLE_SCHEMA, c.TABLE_NAME;
@@ -378,7 +382,9 @@ export class SqlServerTableQueryBuilder {
                               AND sc.name = c.COLUMN_NAME
                         ) THEN 'INDEX'
                         ELSE NULL
-                    END AS COLUMN_KEY
+                    END AS COLUMN_KEY,
+                    -- IDENTITY flag (see getTableMetaDataQuery) — MAX() keeps it out of the GROUP BY.
+                    MAX(COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)), c.COLUMN_NAME, 'IsIdentity')) AS IS_IDENTITY
                 FROM INFORMATION_SCHEMA.COLUMNS AS c
                 WHERE c.TABLE_SCHEMA = @p0
                   AND c.TABLE_NAME LIKE @p1 + '__part_%'

@@ -130,19 +130,16 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
                 throw new Error(`Invalid sourceTimeZone "${merged.sourceTimeZone}": must be a valid IANA time zone name (e.g. "America/New_York", "Australia/Sydney", "UTC").`);
             }
         }
-        if (merged.rejectedRowsTable && merged.sqlDialect === "sqlserver") {
-            // The rejected-rows builders emit Postgres-only DDL (BIGSERIAL/JSONB/TIMESTAMPTZ) and `$n`
-            // placeholders, so on SQL Server the divert would fail — and rather than let the load run and
-            // then fail loud only if rows actually need diverting, refuse it here. SQL Server
-            // streaming/degradation parity is deferred (roadmap D-F); fail loud rather than risk a
-            // silent drop (A5).
-            throw new Error("rejectedRowsTable is not yet supported on SQL Server (the rejected-rows table builder emits Postgres-only DDL/placeholders; SQL Server streaming/degradation parity is deferred — see roadmap D-F). Omit rejectedRowsTable on SQL Server for now.");
-        }
-        if (merged.schemaHistory && merged.sqlDialect === "sqlserver") {
-            // The history-table bootstrap emits Postgres-only DDL (BIGSERIAL/JSONB), so schemaHistory
-            // silently no-ops (or errors) on SQL Server today. Fail loud rather than report "no drift"
-            // while blind. SQL Server parity is deferred (roadmap D-F) (A19).
-            throw new Error("schemaHistory is not yet supported on SQL Server (the history-table bootstrap emits Postgres-only DDL; SQL Server parity is deferred — see roadmap D-F). Disable schemaHistory on SQL Server for now.");
+        // (SQL Server: rejectedRowsTable and schemaHistory guards removed in spec-2 slices 3 & 4 — the
+        // rejected-rows builders (streamHelpers.ts) and schema-history bootstrap (schemaHistory.ts) now
+        // emit T-SQL. openStream stays guarded (autosql.ts) until the streaming builders are ported, slice 5.)
+        if (merged.rejectedRowsTable && merged.addHistory && merged.sqlDialect === "sqlserver") {
+            // rejectedRowsTable + addHistory is atomic (before-image + merge in one transaction) on
+            // mysql/pgsql via loadStrategy's useAtomicHistory branch — but that branch is gated
+            // `!== 'sqlserver'` (2g), so SQL Server would silently take the NON-atomic insertHistory-then-
+            // merge path with a crash window between history and the divert. Rather than ship a weaker,
+            // untested combo, fail loud here; the atomic SQL Server combo is a future slice (spec-2 §3.8).
+            throw new Error("rejectedRowsTable combined with addHistory is not yet supported on SQL Server (the atomic history+divert path is not yet ported — see spec-2 §3.8). Use them separately on SQL Server for now.");
         }
         if (merged.surrogateKey) {
             // A surrogate is unique per physical insert, so these features are incoherent with it:
@@ -396,8 +393,9 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
         }
 
         const autoIncrement =
-            String(normalizedRow["extra"] || "").includes("auto_increment") ||
-            String(normalizedRow["column_default"] || "").includes("nextval");
+            String(normalizedRow["extra"] || "").includes("auto_increment") ||       // MySQL
+            String(normalizedRow["column_default"] || "").includes("nextval") ||      // Postgres SERIAL/IDENTITY
+            String(normalizedRow["is_identity"]) === "1" || normalizedRow["is_identity"] === true; // SQL Server IDENTITY
 
         const tableName = normalizedRow.table_name || "noTableName"; // Default for single-table case
 
