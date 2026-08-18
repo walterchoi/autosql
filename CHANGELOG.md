@@ -15,6 +15,11 @@
   staging paths). The former fail-loud guard is removed.
 - **Row-level history (`addHistory`) and split tables (`autoSplit`) verified on SQL Server** — already
   implemented, now covered by live tests.
+- **Streaming (`openStream`) on SQL Server (spec-4 slice B).** The stream builders now emit T-SQL —
+  `NVARCHAR(MAX)` staging (`IF OBJECT_ID` guard), `@pN` chunk inserts, and a `MERGE … WITH (HOLDLOCK)`
+  end-of-stream merge with `CAST(NULLIF(…))` text→typed casts. `write()` splits each chunk to stay under
+  SQL Server's 2,100-parameter request cap. Orphaned-staging cleanup and `abort()` work on SQL Server too.
+  The former fail-loud guard is removed.
 
 ### 🐛 Bug Fixes
 - **SQL Server `surrogateKey` re-ingest now appends (spec-4 §3.7).** A surrogate-key load re-ingested on

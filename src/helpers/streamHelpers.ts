@@ -45,9 +45,13 @@ export function buildCreateStreamStagingTableQuery(
 ): QueryInput {
     const dialect = config.sqlDialect;
     const schemaPrefix = schemaPrefixFor(config);
-    const colType = dialect === 'mysql' ? 'LONGTEXT' : 'TEXT';
+    const colType = dialect === 'mysql' ? 'LONGTEXT' : dialect === 'sqlserver' ? 'NVARCHAR(MAX)' : 'TEXT';
     const colDefs = columns.map(col => `${qi(col, dialect)} ${colType}`).join(',\n  ');
     const tableRef = `${schemaPrefix}${qi(stagingTable, dialect)}`;
+    if (dialect === 'sqlserver') {
+        // No CREATE TABLE IF NOT EXISTS — guard with IF OBJECT_ID.
+        return { query: `IF OBJECT_ID(${escapeLiteral(tableRef, 'sqlserver')}, 'U') IS NULL CREATE TABLE ${tableRef} (\n  ${colDefs}\n);`, params: [] };
+    }
     return { query: `CREATE TABLE IF NOT EXISTS ${tableRef} (\n  ${colDefs}\n);`, params: [] };
 }
 
@@ -80,6 +84,17 @@ export function buildInsertIntoStreamStagingQuery(
     if (dialect === 'mysql') {
         for (const row of rows) {
             rowPlaceholders.push(`(${columns.map(() => '?').join(', ')})`);
+            for (const col of columns) {
+                params.push(streamCell(row[col]));
+            }
+        }
+    } else if (dialect === 'sqlserver') {
+        // @pN zero-indexed. The caller (write()) chunks rows so a single request stays under SQL
+        // Server's 2,100-parameter cap.
+        let paramIdx = 0;
+        for (const row of rows) {
+            const holders = columns.map(() => `@p${paramIdx++}`);
+            rowPlaceholders.push(`(${holders.join(', ')})`);
             for (const col of columns) {
                 params.push(streamCell(row[col]));
             }
@@ -132,8 +147,11 @@ export function buildOrphanSearchQuery(
 ): QueryInput {
     const schema = config.schema || config.database || '';
     const pattern = orphanPattern(table, prefix);
+    const where = config.sqlDialect === 'mysql' ? '? AND table_name LIKE ?'
+        : config.sqlDialect === 'sqlserver' ? '@p0 AND table_name LIKE @p1'
+        : '$1 AND table_name LIKE $2';
     return {
-        query: `SELECT table_name FROM information_schema.tables WHERE table_schema = ? AND table_name LIKE ?`,
+        query: `SELECT table_name FROM information_schema.tables WHERE table_schema = ${where}`,
         params: [schema, pattern]
     };
 }
@@ -197,6 +215,38 @@ function pgCast(col: string, colDef: { type: string | null; length?: number; dec
     return q;
 }
 
+// SQL Server: no tinyint (signed) — map to SMALLINT; datetime family → DATETIME2; boolean → BIT (SQL
+// Server casts 'true'/'false' and '1'/'0' to BIT). NULLIF(x,'') so an empty staged string becomes NULL
+// rather than a cast error (mirrors alterTableTypeConversion's text→numeric guard).
+const SS_INT      = ['int', 'integer', 'mediumint'];
+const SS_BIGINT   = ['bigint'];
+const SS_SMALL    = ['smallint', 'tinyint'];
+const SS_FLOAT    = ['float', 'double'];
+const SS_DATE     = ['date'];
+const SS_DATETIME = ['datetime', 'datetimetz', 'timestamp', 'timestamptz'];
+const SS_TIME     = ['time'];
+const SS_BOOL     = ['boolean'];
+
+function sqlserverCast(col: string, colDef: { type: string | null; length?: number; decimal?: number }): string {
+    const q = qi(col, 'sqlserver');
+    const t = (colDef.type || '').toLowerCase();
+    const cast = (typ: string) => `CAST(NULLIF(${q}, '') AS ${typ})`;
+    if (SS_INT.includes(t))    return cast('INT');
+    if (SS_BIGINT.includes(t)) return cast('BIGINT');
+    if (SS_SMALL.includes(t))  return cast('SMALLINT');
+    if (SS_FLOAT.includes(t))  return cast('FLOAT');
+    if (t === 'decimal') {
+        const len = assertSafeLength(colDef.length  ?? 10, 'length');
+        const dec = assertSafeLength(colDef.decimal ?? 2, 'decimal');
+        return cast(`DECIMAL(${len},${dec})`);
+    }
+    if (SS_DATETIME.includes(t)) return cast('DATETIME2');
+    if (SS_DATE.includes(t))     return cast('DATE');
+    if (SS_TIME.includes(t))     return cast('TIME');
+    if (SS_BOOL.includes(t))     return cast('BIT');
+    return q; // text-like: NVARCHAR(MAX), no cast
+}
+
 /**
  * Build INSERT INTO main SELECT ... FROM stagingTable with type casts.
  * This is the primary merge query used at end().
@@ -229,6 +279,22 @@ export function buildMergeFromStreamQuery(
             }
         }
         return { query: q, params: [] };
+    } else if (dialect === 'sqlserver') {
+        const castList = columns.map(c => sqlserverCast(c, metaData[c])).join(', ');
+        // Merge only on written PKs; a surrogate PK (excluded elsewhere) or no PK → plain append (§3.7).
+        const mergeKeys = primaryKeys.filter(pk => columns.includes(pk));
+        if (insertType === 'UPDATE' && mergeKeys.length > 0) {
+            const onMatch = mergeKeys.map(pk => `target.${qi(pk, dialect)} = source.${qi(pk, dialect)}`).join(' AND ');
+            const updateCols = columns.filter(c => !mergeKeys.includes(c) && !(metaData[c].calculated && metaData[c].updatedCalculated === false));
+            // WITH (HOLDLOCK) serialises match+insert (A11), same as the direct/staging MERGE.
+            let q = `MERGE INTO ${mainRef} WITH (HOLDLOCK) AS target USING (SELECT ${castList} FROM ${stagingRef}) AS source (${colList}) ON ${onMatch} `;
+            if (updateCols.length > 0) {
+                q += `WHEN MATCHED THEN UPDATE SET ${updateCols.map(c => `target.${qi(c, dialect)} = source.${qi(c, dialect)}`).join(', ')} `;
+            }
+            q += `WHEN NOT MATCHED THEN INSERT (${colList}) VALUES (${columns.map(c => `source.${qi(c, dialect)}`).join(', ')});`;
+            return { query: q, params: [] };
+        }
+        return { query: `INSERT INTO ${mainRef} (${colList}) SELECT ${castList} FROM ${stagingRef};`, params: [] };
     } else {
         const castList = columns.map(c => pgCast(c, metaData[c])).join(', ');
         let q = `INSERT INTO ${mainRef} (${colList}) SELECT ${castList} FROM ${stagingRef}`;

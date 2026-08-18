@@ -83,10 +83,18 @@ export class AutoSQLStreamHandle {
                 }
             }
 
-            const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, chunk, config);
-            const insertResult = await this.db.runTransaction([insertQ]);
-            if (!insertResult.success) {
-                throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error}`);
+            // SQL Server caps a request at 2,100 bound parameters, so split the chunk into sub-batches of
+            // ≤ floor(2000 / colCount) rows (one request each). Other dialects send the whole chunk in one.
+            const perStatement = config.sqlDialect === 'sqlserver'
+                ? Math.max(1, Math.floor(2000 / this.columns!.length))
+                : chunk.length;
+            for (let i = 0; i < chunk.length; i += perStatement) {
+                const sub = chunk.slice(i, i + perStatement);
+                const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, sub, config);
+                const insertResult = await this.db.runTransaction([insertQ]);
+                if (!insertResult.success) {
+                    throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error}`);
+                }
             }
         });
     }
