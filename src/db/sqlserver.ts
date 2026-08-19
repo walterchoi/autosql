@@ -299,21 +299,18 @@ export class SqlServerDatabase extends Database {
         await tx.begin();
         try {
             const request = new this.sql.Request(tx);
-            request.input("res", resource);
-            request.input("timeout", timeoutSeconds * 1000);
-            // @LockOwner='Transaction' ties the lock to this open transaction; released on commit/rollback.
-            const result = await request.execute("sp_getapplock_wrapper").catch(async () => {
-                // sp_getapplock returns a result code (>=0 success, <0 failure) via an output param.
-                const r = new this.sql.Request(tx);
-                r.input("Resource", resource);
-                r.input("LockMode", "Exclusive");
-                r.input("LockOwner", "Transaction");
-                r.input("LockTimeout", timeoutSeconds * 1000);
-                r.output("ret", this.sql.Int);
-                await r.execute("sp_getapplock");
-                return { returnValue: r.parameters?.ret?.value ?? r.returnValue };
-            });
-            const code = (result as any)?.returnValue ?? 0;
+            request.input("res", this.sql.NVarChar(255), resource);
+            request.input("timeout", this.sql.Int, timeoutSeconds * 1000);
+            // sp_getapplock returns a status code (>=0 success, <0 failure) via its RETURN value, NOT an
+            // output param — capture it into a local and SELECT it. @LockOwner='Transaction' ties the lock
+            // to this open transaction; it releases on commit/rollback.
+            const result = await request.query(
+                "DECLARE @code int; " +
+                "EXEC @code = sp_getapplock @Resource = @res, @LockMode = 'Exclusive', " +
+                "@LockOwner = 'Transaction', @LockTimeout = @timeout; " +
+                "SELECT @code AS code;"
+            );
+            const code = Number(result?.recordset?.[0]?.code ?? 0);
             if (typeof code === "number" && code < 0) {
                 await tx.rollback().catch(() => {});
                 throw new SchemaLockTimeoutError(
