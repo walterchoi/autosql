@@ -1,5 +1,15 @@
 ## [Unreleased]
 
+## [2.5.0] - 2026-08-19
+
+> **SQL Server reaches full feature parity, plus a run-audit table and tz-aware fidelity.** SQL Server now
+> supports IDENTITY introspection, `schemaHistory`, `rejectedRowsTable`, streaming (`openStream`),
+> bulk-copy (`bulkLoad`), row-level history + split tables, the atomic history+degradation combo, and
+> `ALTER COLUMN` on indexed columns — matching MySQL/Postgres (the one exception: `useSchemaLock` is not
+> yet supported on SQL Server). New opt-in **`runAudit`** persists one row per load to a managed table.
+> Timezone-aware (`datetimetz`) values now keep their offset where the target type stores one. All additive
+> and backward-compatible.
+
 ### 🐛 Bug Fixes
 - **Timezone-aware columns keep their offset.** A value with an explicit offset (`2024-01-15T10:00:00+05:00`,
   inferred as `datetimetz`) was normalised to a UTC instant before storage, discarding the offset. It's now
