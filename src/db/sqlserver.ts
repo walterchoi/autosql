@@ -146,6 +146,8 @@ export class SqlServerDatabase extends Database {
         return (this.connection as any)?.config?.pool?.max ?? this.config.connectionLimit ?? 5;
     }
 
+    protected getHeldSchemaLockCount(): number { return this.schemaLockTx.size; }
+
     public async closeConnection(): Promise<{ success: boolean; error?: string }> {
         if (!this.connection) return { success: true };
         try {
@@ -471,12 +473,12 @@ export class SqlServerDatabase extends Database {
         return SqlServerInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig(), insertInput);
     }
 
-    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE" | "INSERT"): QueryInput {
-        return SqlServerInsertQueryBuilder.getInsertFromStagingQuery(tableOrInput, metaData, this.getConfig(), insertInput);
+    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE" | "INSERT", pkFilter?: Record<string, any>): QueryInput {
+        return SqlServerInsertQueryBuilder.getInsertFromStagingQuery(tableOrInput, metaData, this.getConfig(), insertInput, pkFilter);
     }
 
-    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader): QueryInput {
-        return SqlServerInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig());
+    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: Record<string, any>): QueryInput {
+        return SqlServerInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig(), pkFilter);
     }
 
     getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput {

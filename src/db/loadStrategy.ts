@@ -45,11 +45,9 @@ export class RowStoreLoadStrategy implements LoadStrategy {
             // transaction) so history and data commit — or roll back — together, no crash window
             // between them. Covers BOTH plain addHistory and the opt-in rejectedRowsTable combo
             // (rejectedRowsTable forces this branch since it needs addHistory for before-images; only
-            // the merge-failure handling differs, see perRowFallback below). SQL Server keeps the
-            // non-atomic insertHistory-then-merge path: its row-level history is unverified
-            // (decisions.md D-F) and configureHistoryTables guards it off, so we don't extend the
-            // atomic guarantee to it (spec-1 §5.b: keep that guard).
-            const useAtomicHistory = !!(config.addHistory && config.historyTables?.length && config.sqlDialect !== 'sqlserver');
+            // the merge-failure handling differs, see perRowFallback below). All dialects incl. SQL
+            // Server take this path (SQL Server's pkFilter atomic path landed in spec-4 §3.8).
+            const useAtomicHistory = !!(config.addHistory && config.historyTables?.length);
             try {
                 await this.staging.prepareStagingTables(input);
                 await this.staging.insertStagingTables(input);

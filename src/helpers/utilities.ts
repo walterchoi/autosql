@@ -130,13 +130,8 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         // (SQL Server: rejectedRowsTable and schemaHistory guards removed in spec-2 slices 3 & 4 — the
         // rejected-rows builders (streamHelpers.ts) and schema-history bootstrap (schemaHistory.ts) now
         // emit T-SQL. openStream stays guarded (autosql.ts) until the streaming builders are ported, slice 5.)
-        if (merged.rejectedRowsTable && merged.addHistory && merged.sqlDialect === "sqlserver") {
-            // rejectedRowsTable + addHistory is atomic on mysql/pgsql via loadStrategy's useAtomicHistory
-            // branch, but that branch is gated `!== 'sqlserver'` (2g). SQL Server would silently take the
-            // NON-atomic insertHistory-then-merge path (crash window between history and divert). Fail loud
-            // rather than ship a weaker untested combo; atomic SQL Server combo is a future slice (spec-2 §3.8).
-            throw new Error("rejectedRowsTable combined with addHistory is not yet supported on SQL Server (the atomic history+divert path is not yet ported — see spec-2 §3.8). Use them separately on SQL Server for now.");
-        }
+        // (rejectedRowsTable + addHistory on SQL Server is now supported — the atomic before-image+merge
+        // path incl. the per-PK pkFilter form landed in spec-4 §3.8; the combo guard is removed.)
         if (merged.surrogateKey) {
             // A surrogate is unique per physical insert, so these features are incoherent with it:
             // history diffs join on the primary key (nothing to match), nested extraction keys
