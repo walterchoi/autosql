@@ -1,5 +1,12 @@
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+- **Timezone-aware columns keep their offset.** A value with an explicit offset (`2024-01-15T10:00:00+05:00`,
+  inferred as `datetimetz`) was normalised to a UTC instant before storage, discarding the offset. It's now
+  preserved on the dialects whose type stores one — SQL Server `datetimeoffset` (the offset survives) and
+  Postgres `timestamptz` (the correct instant is stored). MySQL `timestamp` can't hold an offset, so it
+  still UTC-normalises (unchanged). Plain `datetime`/`timestamp` columns are unaffected.
+
 ### ✨ New
 - **`runAudit` — persisted run-audit table (spec-3 / F1).** Opt-in (`runAudit: true`): the engine writes one
   row per top-level load (`autoSQL` / `autoSQLChunked` / stream `end()`) to a managed table (`autosql_runs`,

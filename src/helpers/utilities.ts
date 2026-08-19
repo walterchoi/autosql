@@ -791,7 +791,7 @@ function zonedWallClockToUtcIso(Y: string, Mo: string, D: string, h: string, mi:
  * absolute instant convertible to UTC. `date`/`time` columns keep the wall-clock regardless of zone —
  * converting a zoned value can shift the stored day (`2024-01-15T02:00:00+05:00` into `date` → 2024-01-14).
  */
-function normalizeDateValue(strValue: string, columnType: string, sourceTimeZone?: string): string {
+function normalizeDateValue(strValue: string, columnType: string, sourceTimeZone?: string, dialect?: string): string {
     const s = strValue.trim();
     const dateOnly = columnType === "date";
     const timeOnly = columnType === "time";
@@ -809,6 +809,14 @@ function normalizeDateValue(strValue: string, columnType: string, sourceTimeZone
     // local guessing). Never for date/time columns — see the day-shift note above.
     const hasZone = /\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?\s*(?:Z|[+-]\d{2}:?\d{2})$/.test(s);
     if (hasZone && !dateOnly && !timeOnly) {
+        // A genuine tz-aware column on a dialect whose type STORES the offset (SQL Server `datetimeoffset`,
+        // Postgres `timestamptz`) keeps the original offset rather than normalising to UTC — otherwise the
+        // zone the caller sent is silently lost. Plain `datetime`/`timestamp`, or MySQL (whose `timestamp`
+        // literal rejects an offset), still get the UTC instant. The dialect rules turn `T`→space and, for
+        // a `Z`, strip it (= UTC); an explicit `±HH:MM` survives to the literal.
+        if (columnType === "datetimetz" && (dialect === "sqlserver" || dialect === "pgsql")) {
+            return s;
+        }
         const d = new Date(s);
         if (!isNaN(d.getTime())) return d.toISOString();
         // Unparseable despite a zone marker — fall through to textual handling.
@@ -888,7 +896,7 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
 
         const isDateLike = groupings.dateGroup.includes(columnType);
         if (isDateLike) {
-            strValue = normalizeDateValue(strValue, columnType, databaseConfig?.sourceTimeZone);
+            strValue = normalizeDateValue(strValue, columnType, databaseConfig?.sourceTimeZone, dialectConfig.dialect);
         }
 
         const isNumberLike = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
