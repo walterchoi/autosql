@@ -58,8 +58,8 @@ AutoSQL supports:
 - **SQL Server / Azure SQL** (via `mssql`) — full feature parity with MySQL/Postgres: create, insert,
   idempotent re-ingest, `MERGE` upsert, schema evolution, multilingual/emoji via `NVARCHAR`, plus
   streaming (`openStream`), row-level history (`addHistory`), split tables (`autoSplit`), schema-drift
-  history (`schemaHistory`), the dead-letter queue (`rejectedRowsTable`), and bulk-copy (`bulkLoad`, via
-  the `mssql` bulk API). (One opt-in edge is deferred: `useSchemaLock` is not yet supported on SQL Server.)
+  history (`schemaHistory`), the dead-letter queue (`rejectedRowsTable`), bulk-copy (`bulkLoad`, via the
+  `mssql` bulk API), and advisory locks (`useSchemaLock`, via `sp_getapplock`).
 
 The dialect drivers (`mysql2` / `pg` / `mssql`) and `pg-copy-streams` (for `bulkLoad`) are **optional
 peer dependencies** — install only the driver for the dialect you use:

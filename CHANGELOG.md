@@ -4,13 +4,18 @@
 
 > **SQL Server reaches full feature parity, plus a run-audit table and tz-aware fidelity.** SQL Server now
 > supports IDENTITY introspection, `schemaHistory`, `rejectedRowsTable`, streaming (`openStream`),
-> bulk-copy (`bulkLoad`), row-level history + split tables, the atomic history+degradation combo, and
-> `ALTER COLUMN` on indexed columns — matching MySQL/Postgres (the one exception: `useSchemaLock` is not
-> yet supported on SQL Server). New opt-in **`runAudit`** persists one row per load to a managed table.
+> bulk-copy (`bulkLoad`), row-level history + split tables, the atomic history+degradation combo,
+> `ALTER COLUMN` on indexed columns, and advisory locks (`useSchemaLock` via `sp_getapplock`) — matching
+> MySQL/Postgres. New opt-in **`runAudit`** persists one row per load to a managed table.
 > Timezone-aware (`datetimetz`) values now keep their offset where the target type stores one. All additive
 > and backward-compatible.
 
 ### 🐛 Bug Fixes
+- **SQL Server `useSchemaLock` now works.** `acquireSchemaLock` invoked `sp_getapplock` with a phantom
+  wrapper proc and an output param the proc doesn't accept, so every acquire threw
+  `@ret is not a parameter for procedure sp_getapplock` — `useSchemaLock: true` was effectively broken on
+  SQL Server (latent, since it defaults to `false`). It now calls `sp_getapplock` directly and reads its
+  status via the RETURN value, so per-table advisory locks work on all three dialects.
 - **Timezone-aware columns keep their offset.** A value with an explicit offset (`2024-01-15T10:00:00+05:00`,
   inferred as `datetimetz`) was normalised to a UTC instant before storage, discarding the offset. It's now
   preserved on the dialects whose type stores one — SQL Server `datetimeoffset` (the offset survives) and
