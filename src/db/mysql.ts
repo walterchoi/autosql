@@ -83,6 +83,8 @@ export class MySQLDatabase extends Database {
         return conn?.pool?.config?.connectionLimit ?? conn?.config?.connectionLimit ?? 5;
     }
 
+    protected getHeldSchemaLockCount(): number { return this.schemaLockConnections.size; }
+
     public async bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult> {
         const start = new Date();
         if (!this.connection) await this.establishConnection();

@@ -111,16 +111,10 @@ export class HistoryCoordinator {
     /**
      * Create the history tables (DDL only) and return their inputs, for the ATOMIC history path — the
      * before-image INSERT itself is deferred into the merge transaction (see
-     * `insertFromStagingTablesAtomic`). Errors up-front on SQL Server, whose row-level history is
-     * unverified (D-F), so the opt-in combo fails before any partial work.
+     * `insertFromStagingTablesAtomic`). Works on all three dialects (SQL Server's atomic pkFilter path
+     * landed in spec-4 §3.8; the former SQL Server guard is gone).
      */
     async configureHistoryTables(insertInput: InsertInput[]): Promise<InsertInput[]> {
-        if (this.db.getConfig().sqlDialect === 'sqlserver') {
-            // Defense-in-depth: validateConfig already rejects rejectedRowsTable on SQL Server at
-            // construction (utilities.ts), and the atomic path this guards is only routed for
-            // non-SQL-Server (loadStrategy). Only reachable if a caller mutates the live config.
-            throw new Error('Staging-path per-row degradation (rejectedRowsTable) with addHistory is not supported for SQL Server.');
-        }
         const historyInputs = await this.buildHistoryInputs(insertInput);
         if (!historyInputs.length) return [];
         await this.handler['configureTables'](historyInputs);

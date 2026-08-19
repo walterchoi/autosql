@@ -14,7 +14,8 @@ const HISTORY_HOOKS: HistoryHooks = {
     // T-SQL has no IS DISTINCT FROM — expand the NULL-safe difference test explicitly.
     colDiff: (a, b) => `((${a} <> ${b}) OR (${a} IS NULL AND ${b} IS NOT NULL) OR (${a} IS NOT NULL AND ${b} IS NULL))`,
     now: "CURRENT_TIMESTAMP",
-    placeholder: (n) => `@p${n}`, // unused on SQL Server (no pkFilter path), provided for completeness
+    // buildHistoryQuery passes a 1-based param index; mssql binds @p0-based, so shift by one (spec-4 §3.8).
+    placeholder: (n) => `@p${n - 1}`,
 };
 
 // MERGE tail shared by direct and staging upserts. WITH (HOLDLOCK) serialises match+insert so two
@@ -60,7 +61,7 @@ export class SqlServerInsertQueryBuilder {
         return { query: buildMerge(target, source, columns, header, mergeKeys), params };
     }
 
-    static getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
+    static getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT", pkFilter?: Record<string, any>): QueryInput {
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         const { table, header, insertType, stagingPrefix } = resolveStagingInput(tableOrInput, metaData, databaseConfig, inputInsertType);
         const tempTable = getTempTableName(table, stagingPrefix);
@@ -76,14 +77,23 @@ export class SqlServerInsertQueryBuilder {
         // append (surrogate is unique per insert; the real table generates fresh keys) (spec-4 §3.7).
         const mergeKeys = primaryKeys.filter(pk => columns.includes(pk));
 
+        if (pkFilter) {
+            // Atomic per-PK degradation path (spec-4 §3.8): scope the MERGE to a single primary key via a
+            // filtered source subquery, so this PK's before-image + merge run in one transaction.
+            const params: any[] = [];
+            const where = primaryKeys.map(pk => { params.push(pkFilter[pk]); return `${q(pk)} = @p${params.length - 1}`; }).join(" AND ");
+            const scoped = `USING (SELECT ${selectCols} FROM ${source} WHERE ${where}) AS source (${escapedCols})`;
+            return { query: buildMerge(target, scoped, columns, header, mergeKeys.length > 0 ? mergeKeys : primaryKeys), params };
+        }
+
         if (insertType !== "UPDATE" || mergeKeys.length === 0) {
             return { query: `INSERT INTO ${target} (${escapedCols}) SELECT ${selectCols} FROM ${source};`, params: [] };
         }
         return { query: buildMerge(target, `USING ${source} AS source`, columns, header, mergeKeys), params: [] };
     }
 
-    static getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput {
+    static getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, pkFilter?: Record<string, any>): QueryInput {
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
-        return buildHistoryQuery(resolveHistoryInput(tableOrInput, metaData), schemaPrefix, HISTORY_HOOKS);
+        return buildHistoryQuery(resolveHistoryInput(tableOrInput, metaData), schemaPrefix, HISTORY_HOOKS, pkFilter);
     }
 }

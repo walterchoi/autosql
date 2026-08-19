@@ -186,10 +186,42 @@ export class SqlServerTableQueryBuilder {
             // NOTE: default-constraint handling (drop + re-add) is deferred — a default change in a
             // modify is intentionally NOT emitted to avoid an invalid `ALTER COLUMN ... SET DEFAULT`.
             const nullability = wantsNull ? "NULL" : "NOT NULL";
-            queries.push({
-                query: `ALTER TABLE ${qualified} ALTER COLUMN ${q(columnName)} ${serverType} ${nullability};`,
-                params: []
-            });
+
+            // SQL Server rejects ALTER COLUMN that changes a column's TYPE while an index/unique
+            // constraint depends on it (err 5074). Length/nullability changes are fine (spec-4 §3.6).
+            // So for a real type change, wrap the ALTER: dynamically drop the single-column indexes /
+            // unique constraints on the column, alter, then recreate them (one batch — DDL is
+            // transactional). No-op for non-indexed columns (the discovery finds none). Composite indexes
+            // are left alone (their ALTER still fails, unchanged) — a documented edge.
+            const isTypeChange = !!(column.type && column.previousType && column.type !== column.previousType);
+            if (isTypeChange) {
+                const qcol = q(columnName);
+                queries.push({
+                    query:
+`DECLARE @t NVARCHAR(512) = ${lit(qualified)};
+DECLARE @objs TABLE (nm SYSNAME, is_uq BIT, is_uqc BIT);
+INSERT INTO @objs
+SELECT i.name, i.is_unique, i.is_unique_constraint
+FROM sys.indexes i
+JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+WHERE i.object_id = OBJECT_ID(@t) AND c.name = ${lit(columnName)} AND i.is_primary_key = 0
+  AND (SELECT COUNT(*) FROM sys.index_columns x WHERE x.object_id = i.object_id AND x.index_id = i.index_id) = 1;
+DECLARE @drop NVARCHAR(MAX) = N'';
+SELECT @drop = @drop + CASE WHEN is_uqc = 1 THEN N'ALTER TABLE ' + @t + N' DROP CONSTRAINT ' + QUOTENAME(nm) + N';' ELSE N'DROP INDEX ' + QUOTENAME(nm) + N' ON ' + @t + N';' END FROM @objs;
+IF LEN(@drop) > 0 EXEC (@drop);
+ALTER TABLE ${qualified} ALTER COLUMN ${qcol} ${serverType} ${nullability};
+DECLARE @cre NVARCHAR(MAX) = N'';
+SELECT @cre = @cre + CASE WHEN is_uqc = 1 THEN N'ALTER TABLE ' + @t + N' ADD CONSTRAINT ' + QUOTENAME(nm) + N' UNIQUE (${qcol});' WHEN is_uq = 1 THEN N'CREATE UNIQUE INDEX ' + QUOTENAME(nm) + N' ON ' + @t + N' (${qcol});' ELSE N'CREATE INDEX ' + QUOTENAME(nm) + N' ON ' + @t + N' (${qcol});' END FROM @objs;
+IF LEN(@cre) > 0 EXEC (@cre);`,
+                    params: []
+                });
+            } else {
+                queries.push({
+                    query: `ALTER TABLE ${qualified} ALTER COLUMN ${q(columnName)} ${serverType} ${nullability};`,
+                    params: []
+                });
+            }
         }
 
         // NULLABLE COLUMNS not already handled by modify above. Without a type we can't emit a

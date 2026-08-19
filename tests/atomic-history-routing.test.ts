@@ -5,8 +5,8 @@ import { InsertInput, MetadataHeader } from "../src/config/types";
 // rejectedRowsTable degradation opt-in) used to run insertHistory and then the merge as TWO separate
 // transactions — a crash between them recorded history for rows that never merged. It now takes the
 // same zero-window atomic path as the degradation combo: before-image + merge in ONE transaction, so
-// history and data commit — or roll back — together. SQL Server keeps the non-atomic path (its
-// row-level history is unverified, D-F; configureHistoryTables guards the atomic path off).
+// history and data commit — or roll back — together. As of spec-4 §3.8 SQL Server takes this atomic
+// path too (its pkFilter before-image+merge form landed), so the routing is uniform across dialects.
 
 const meta: MetadataHeader = { id: { type: "int", primary: true }, val: { type: "int" } };
 const input = (): InsertInput[] => [
@@ -41,17 +41,16 @@ describe("row-level history routing — plain addHistory now takes the atomic pa
         expect(h.staging.insertFromStagingTables).not.toHaveBeenCalled();
     });
 
-    test("SQL Server addHistory → keeps the non-atomic insertHistory-then-merge path (atomic guarded off, D-F)", async () => {
+    test("SQL Server addHistory → now takes the atomic path too (spec-4 §3.8; no longer guarded off)", async () => {
         const db: any = Database.create({ sqlDialect: "sqlserver", host: "h", user: "u", password: "p", database: "d", schema: "s", useStagingInsert: true, addHistory: true, historyTables: ["t"] });
         const h = stubPipeline(db);
         const inp = input();
         await h.strategy.load({ insertInput: inp, table: "t", label: "test" });
 
-        expect(h.history.insertHistory).toHaveBeenCalledWith(inp);
-        expect(h.staging.insertFromStagingTables).toHaveBeenCalledWith(inp, { perRowFallback: false });
-        // Never reaches the atomic path — configureHistoryTables would throw the SQL-Server guard.
-        expect(h.history.configureHistoryTables).not.toHaveBeenCalled();
-        expect(h.staging.insertFromStagingTablesAtomic).not.toHaveBeenCalled();
+        // The SQL Server pkFilter atomic path landed (spec-4 §3.8), so the routing is now uniform.
+        expect(h.history.configureHistoryTables).toHaveBeenCalledWith(inp);
+        expect(h.staging.insertFromStagingTablesAtomic).toHaveBeenCalledWith(inp, [], { perRowFallback: false });
+        expect(h.history.insertHistory).not.toHaveBeenCalled();
     });
 });
 

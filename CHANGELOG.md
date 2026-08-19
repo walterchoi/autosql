@@ -40,12 +40,15 @@
   regenerated in the staging clone, so it self-matched. It now merges only on primary keys that are
   actually written; a surrogate (DB-generated) key falls through to a plain `INSERT`, so the real table
   assigns fresh keys and rows append — matching the other dialects.
-
-### 🔒 Guardrails
-- **`rejectedRowsTable` + `addHistory` together still fail loud on SQL Server.** That combination uses the
-  zero-window atomic (before-image + merge in one transaction) path on MySQL/Postgres; the SQL Server
-  atomic path is not yet ported, so the combo is rejected at construction rather than silently running a
-  weaker, non-atomic version. Use the two features separately on SQL Server for now.
+- **Atomic `rejectedRowsTable` + `addHistory` on SQL Server (spec-4 §3.8).** The zero-window atomic path
+  (each PK's before-image capture + merge in one transaction, diverting unrecoverable rows) now works on
+  SQL Server too — the SQL Server insert builders gained the per-PK `pkFilter` form (`@pN`, `MERGE` scoped
+  to one key). The combo is no longer rejected at construction on any dialect.
+- **SQL Server `ALTER COLUMN` on an indexed column (spec-4 §3.6).** A column *type* change (e.g. INT→BIGINT)
+  on a column backed by an index or unique constraint used to fail on SQL Server (err 5074). The alter now
+  wraps a type-change in one batch — drop the single-column indexes/unique constraints on the column, alter,
+  then recreate them. Length/nullability changes are unaffected (they don't hit 5074); composite indexes are
+  left as-is (a documented edge).
 
 ## [2.4.0] - 2026-08-16
 

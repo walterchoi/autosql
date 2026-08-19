@@ -465,8 +465,10 @@ export abstract class Database {
         }
         const results: QueryResult[] = [];
         let running: Promise<void>[] = [];
-        const poolSize = this.getMaxConnections()
-      
+        // Cap concurrency at the connections actually AVAILABLE — the pool size minus any connections
+        // this instance has pinned for held schema locks (A25b). At least 1 so a batch always progresses.
+        const poolSize = Math.max(1, this.getMaxConnections() - this.getHeldSchemaLockCount())
+
         let index = 0;
       
         const runNext = async () => {
@@ -564,6 +566,13 @@ export abstract class Database {
     public abstract getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, stagingPrefix?: string): QueryInput;
 
     public abstract getMaxConnections(): number;
+
+    /**
+     * How many schema locks this instance currently holds. Each pins a pool connection (mysql/pgsql) or a
+     * transaction (sqlserver), so those aren't available for concurrent work — `runTransactionsWithConcurrency`
+     * subtracts this from the pool size to avoid over-subscribing the pool while locks are held (A25b).
+     */
+    protected getHeldSchemaLockCount(): number { return 0; }
 
     /**
      * Bulk-load already-sqlized value rows into `table` using the dialect's native mechanism

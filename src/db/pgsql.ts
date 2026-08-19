@@ -62,6 +62,8 @@ export class PostgresDatabase extends Database {
         return (this.connection as Pool)?.options?.max ?? 5;
     }
 
+    protected getHeldSchemaLockCount(): number { return this.schemaLockConnections.size; }
+
     public async bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult> {
         const start = new Date();
         if (!this.connection) await this.establishConnection();
