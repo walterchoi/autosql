@@ -55,10 +55,11 @@ AutoSQL supports:
 
 - **MySQL** (via `mysql2`)
 - **PostgreSQL** (via `pg`)
-- **SQL Server / Azure SQL** (via `mssql`) — core ETL path: create, insert, idempotent re-ingest,
-  `MERGE` upsert, add-column evolution, and multilingual/emoji via `NVARCHAR`. A few advanced
-  features (streaming, row-level history, split tables, bulk-copy) are not yet implemented for SQL
-  Server — use MySQL/Postgres for those.
+- **SQL Server / Azure SQL** (via `mssql`) — full feature parity with MySQL/Postgres: create, insert,
+  idempotent re-ingest, `MERGE` upsert, schema evolution, multilingual/emoji via `NVARCHAR`, plus
+  streaming (`openStream`), row-level history (`addHistory`), split tables (`autoSplit`), schema-drift
+  history (`schemaHistory`), the dead-letter queue (`rejectedRowsTable`), and bulk-copy (`bulkLoad`, via
+  the `mssql` bulk API). (One opt-in edge is deferred: `useSchemaLock` is not yet supported on SQL Server.)
 
 The dialect drivers (`mysql2` / `pg` / `mssql`) and `pg-copy-streams` (for `bulkLoad`) are **optional
 peer dependencies** — install only the driver for the dialect you use:
@@ -210,7 +211,7 @@ export interface DatabaseConfig {
   // Insert strategy
   insertType?: 'UPDATE' | 'INSERT'; // UPDATE upserts (replaces non-primary-key values); INSERT appends and errors on a duplicate key. Defaults to UPDATE.
   insertStack?: number; // Maximum number of rows to insert in one query - defaults to 100
-  bulkLoad?: boolean; // Populate staging with the dialect's bulk-copy (Postgres COPY / MySQL LOAD DATA LOCAL INFILE) instead of parameterised INSERT — much faster for large loads; falls back to INSERT on failure. MySQL/Postgres only. Defaults to false.
+  bulkLoad?: boolean; // Populate staging with the dialect's bulk-copy (Postgres COPY / MySQL LOAD DATA LOCAL INFILE / SQL Server mssql bulk API) instead of parameterised INSERT — much faster for large loads; falls back to INSERT on failure. Defaults to false.
   safeMode?: boolean; // Prevent the altering of tables if needed - defaults to false
   deleteColumns?: boolean; // Drop columns if needed - defaults to false
 
@@ -257,6 +258,10 @@ export interface DatabaseConfig {
   schemaHistorySchema?: string;     // Schema/database to place the audit log table in — defaults to the current schema
   detectDrift?: boolean;            // Check for out-of-band schema changes on every autoSQL call — defaults to true (when schemaHistory is enabled)
   strictDriftDetection?: boolean;   // Throw SchemaDriftError instead of warning when drift is detected — defaults to false
+
+  runAudit?: boolean;               // Persist one row per load (counts, duration, success/error) to a managed run-audit table — defaults to false
+  runAuditTable?: string;           // Name of the run-audit table — defaults to "autosql_runs"
+  runAuditSchema?: string;          // Schema/database to place the run-audit table in — defaults to the current schema
 
   // Streaming (v1.1.0+)
   streamingStagingPrefix?: string;      // Prefix for per-run stream staging tables — defaults to "autosql_stream__"
@@ -423,13 +428,16 @@ These control how data is batched, inserted, and optionally how schema alteratio
   Enables a staging table strategy where data is first inserted into a temporary table before being merged into the target. Useful for large or high-concurrency environments. Defaults to `true`.
 
 - `addHistory`: `boolean`  
-  If enabled, before overwriting rows (in `UPDATE` mode), AutoSQL writes the previous version into a corresponding history table. Requires `useStagingInsert`. Defaults to `false`. (Not available on SQL Server.)
+  If enabled, before overwriting rows (in `UPDATE` mode), AutoSQL writes the previous version into a corresponding history table. Requires `useStagingInsert`. Defaults to `false`. Works on all three dialects.
 
 - `historyTables`: `string[]`  
   List of table names to track with history inserts. Used in conjunction with `addHistory`.
 
 - `bulkLoad`: `boolean`  
-  Populate staging tables with the dialect's native bulk-copy — Postgres `COPY FROM STDIN` (via the optional `pg-copy-streams`) or MySQL `LOAD DATA LOCAL INFILE` — instead of parameterised multi-row `INSERT`. Much faster and cheaper for large loads; the merge (staging → real) and upsert semantics are unchanged. Falls back to `INSERT` (with a warning) if bulk load fails for a table. MySQL/Postgres only. Defaults to `false`.
+  Populate staging tables with the dialect's native bulk-copy — Postgres `COPY FROM STDIN` (via the optional `pg-copy-streams`), MySQL `LOAD DATA LOCAL INFILE`, or SQL Server's `mssql` bulk-copy API — instead of parameterised multi-row `INSERT`. Much faster and cheaper for large loads; the merge (staging → real) and upsert semantics are unchanged. Falls back to `INSERT` (with a warning) if bulk load fails for a table. Defaults to `false`.
+
+- `runAudit`: `boolean`  
+  Persist one row per top-level load (`autoSQL` / `autoSQLChunked` / stream `end()`) to a managed run-audit table — timestamp, target table, success/error, input/affected row counts, duration, rows/sec, per-phase timings, and staged/bulk flags — so you get run history without wiring a `logger.stats` sink or writing SQL. Table name is `runAuditTable` (default `autosql_runs`) in `runAuditSchema` (default the current schema). Best-effort: if the audit write fails (e.g. no `CREATE` grant), it warns and the load still succeeds. Works on all three dialects. Defaults to `false`.
 
 - `rejectedRowsTable`: `string` — **graceful degradation (opt-in)**  
   By default a load is all-or-nothing: a row the database rejects fails the whole batch. Set `rejectedRowsTable` and AutoSQL instead retries the failed batch **row-by-row**, lands the good rows, and diverts the unrecoverable ones (with their error and raw data) to this table — so one bad row no longer sinks the load. Works on the streaming path, the direct path (`useStagingInsert: false`), and the default staging path. When combined with `addHistory`, each row's before-image and its merge commit in a single transaction, so a diverted row leaves no data change **and** no spurious history entry. Without `rejectedRowsTable` the fail-loud all-or-nothing default is unchanged.
