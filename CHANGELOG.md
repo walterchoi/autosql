@@ -1,5 +1,22 @@
 ## [Unreleased]
 
+## [2.5.1] - 2026-09-14
+
+> **Security maintenance.** Patches two high-severity advisories in dependencies. No API or behavior changes.
+
+### 🔒 Security
+- **`mysql2` — bumped floor to a patched release.** The `mysql2` peer dependency floor is raised to
+  `^3.23.1` (dev/CI installs `^3.24.4`) to clear two advisories:
+  [GHSA-3f6p-5ww8-9rcr](https://github.com/advisories/GHSA-3f6p-5ww8-9rcr) (high — auth-plugin downgrade to
+  `mysql_clear_password` can leak plaintext credentials, patched 3.22.0) and
+  [GHSA-rgwj-5xj2-c3m3](https://github.com/advisories/GHSA-rgwj-5xj2-c3m3) (moderate — unbounded zlib inflate
+  in the compressed-protocol handler allows a decompression-bomb DoS, patched 3.23.1). `mysql2` is an
+  optional peer dependency; consumers using it should ensure they are on `>= 3.23.1`.
+- **`js-yaml` — dev-only, override bumped to `^4.3.2`.** Clears
+  [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh) (high — `maxTotalMergeKeys` does
+  not limit CPU use for empty merge sources). Transitive test-toolchain dependency only; not shipped in the
+  published package.
+
 ## [2.5.0] - 2026-08-19
 
 > **SQL Server reaches full feature parity, plus a run-audit table and tz-aware fidelity.** SQL Server now

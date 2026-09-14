@@ -1,6 +1,6 @@
 {
   "name": "autosql",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "An auto-parser of JSON into SQL.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -43,7 +43,7 @@
     "@types/ssh2": "^1.15.5",
     "jest": "^30.0.5",
     "mssql": "^11.0.1",
-    "mysql2": "^3.14.3",
+    "mysql2": "^3.24.4",
     "pg": "^8.16.3",
     "pg-copy-streams": "^7.0.0",
     "ssh2": "^1.16.0",
@@ -53,7 +53,7 @@
   },
   "peerDependencies": {
     "mssql": "^11.0.1",
-    "mysql2": "^3.14.3",
+    "mysql2": "^3.23.1",
     "pg": "^8.16.3",
     "pg-copy-streams": "^7.0.0",
     "ssh2": "^1.16.0"
@@ -67,7 +67,7 @@
   },
   "overrides": {
     "handlebars": "4.7.9",
-    "js-yaml": "^4.3.1",
+    "js-yaml": "^4.3.2",
     "brace-expansion": "^5.0.9",
     "@babel/core": "^7.29.7"
   },
