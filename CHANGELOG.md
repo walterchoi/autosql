@@ -1,6 +1,6 @@
 ## [Unreleased]
 
-## [2.6.0] - 2026-10-01
+## [2.5.2] - 2026-10-01
 
 > **Wider driver support, tested at both ends.** `mssql` 12 is now supported alongside 11, and the `pg`
 > floor drops to 8.0.3. CI now runs the full live suite twice: once on the latest drivers and once on the
