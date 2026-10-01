@@ -1,5 +1,29 @@
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-01
+
+> **Wider driver support, tested at both ends.** `mssql` 12 is now supported alongside 11, and the `pg`
+> floor drops to 8.0.3. CI now runs the full live suite twice: once on the latest drivers and once on the
+> lowest version each peer range allows. No API or behavior changes.
+
+### ✨ Features
+- **`mssql` peer range widened to `^11.0.1 || ^12.0.0`.** mssql 12's only breaking change (config objects
+  are no longer cloned) doesn't affect autosql, which builds a fresh config per pool. mssql 9 and 10 stay
+  unsupported: they pull in `@azure/identity` below 4.2.1, which carries an elevation-of-privilege advisory.
+- **`pg` peer floor lowered from `^8.16.3` to `^8.0.3`.** pg 8.0.0 to 8.0.2 exit silently on connect under
+  current Node, so 8.0.3 is the real minimum. pg 7 stays unsupported because it doesn't verify TLS
+  certificates by default.
+
+### 🔧 Maintenance
+- New CI workflow with a `latest` and a `floor` driver leg against live MySQL, Postgres and SQL Server. The
+  floor versions are read from `peerDependencies`, so the tested floor can't drift from the claimed one.
+- Dev toolchain: TypeScript 6, jest 30.5, ts-jest 29.4.12, `@types/*` refreshed. Emitted declarations still
+  typecheck under TypeScript 5.9.
+- `.npmrc` sets `min-release-age=14`, so installs only take versions published at least 14 days ago.
+  `.nvmrc` pins Node 24.21.0.
+- `brace-expansion` dev override bumped to `^5.0.12` (DoS advisories, test toolchain only).
+- `schema-lock-concurrency-cap` moved out of the unit run, since it needs a live database.
+
 ## [2.5.1] - 2026-09-14
 
 > **Security maintenance.** Patches two high-severity advisories in dependencies. No API or behavior changes.

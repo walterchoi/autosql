@@ -55,5 +55,6 @@ module.exports = {
     'tests/number-like-fidelity-live\\.test\\.ts',
     'tests/query-stats-live\\.test\\.ts',
     'tests/chunked-drift-live\\.test\\.ts',
+    'tests/schema-lock-concurrency-cap\\.test\\.ts',
   ],
 };
