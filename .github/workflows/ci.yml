@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.drivers }} drivers)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # latest = the dev versions in package-lock; floor = the lowest version each peer range claims.
+        drivers: [latest, floor]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Install floor driver versions
+        if: matrix.drivers == 'floor'
+        run: |
+          floor=$(node -e "const p=require('./package.json').peerDependencies; console.log(Object.entries(p).map(([k,v])=>k+'@'+v.match(/\d+\.\d+\.\d+/)[0]).join(' '))")
+          echo "Floor drivers: $floor"
+          npm install --no-save $floor
+
+      - run: npm run build
+
+      - name: Start test databases
+        run: npm run db:up
+
+      - run: npm test

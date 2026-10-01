@@ -1,6 +1,6 @@
 {
   "name": "autosql",
-  "version": "2.5.1",
+  "version": "2.5.2",
   "description": "An auto-parser of JSON into SQL.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -38,37 +38,47 @@
   "license": "ISC",
   "devDependencies": {
     "@types/jest": "^30.0.0",
-    "@types/node": "^24.1.0",
-    "@types/pg": "^8.15.5",
-    "@types/ssh2": "^1.15.5",
-    "jest": "^30.0.5",
-    "mssql": "^11.0.1",
+    "@types/node": "^24.13.5",
+    "@types/pg": "^8.23.1",
+    "@types/ssh2": "^1.15.6",
+    "jest": "^30.5.1",
+    "mssql": "^12.7.2",
     "mysql2": "^3.24.4",
     "pg": "^8.16.3",
     "pg-copy-streams": "^7.0.0",
     "ssh2": "^1.16.0",
-    "ts-jest": "^29.4.0",
+    "ts-jest": "^29.4.12",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^6.0.3"
   },
   "peerDependencies": {
-    "mssql": "^11.0.1",
+    "mssql": "^11.0.1 || ^12.0.0",
     "mysql2": "^3.23.1",
-    "pg": "^8.16.3",
+    "pg": "^8.0.3",
     "pg-copy-streams": "^7.0.0",
     "ssh2": "^1.16.0"
   },
   "peerDependenciesMeta": {
-    "mssql": { "optional": true },
-    "mysql2": { "optional": true },
-    "pg": { "optional": true },
-    "pg-copy-streams": { "optional": true },
-    "ssh2": { "optional": true }
+    "mssql": {
+      "optional": true
+    },
+    "mysql2": {
+      "optional": true
+    },
+    "pg": {
+      "optional": true
+    },
+    "pg-copy-streams": {
+      "optional": true
+    },
+    "ssh2": {
+      "optional": true
+    }
   },
   "overrides": {
     "handlebars": "4.7.9",
     "js-yaml": "^4.3.2",
-    "brace-expansion": "^5.0.9",
+    "brace-expansion": "^5.0.12",
     "@babel/core": "^7.29.7"
   },
   "bugs": {
