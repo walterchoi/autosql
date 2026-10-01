@@ -41,4 +41,18 @@ jobs:
       - name: Start test databases
         run: npm run db:up
 
-      - run: npm test
+      - run: npm test -- --json --outputFile=jest-results.json
+
+      # A clean exit alone can hide a suite that never ran: fail unless every listed suite ran and the
+      # total stays above the known floor (1004 tests on 2026-10-01).
+      - name: Assert test count
+        run: |
+          listed=$(npx jest --listTests | wc -l)
+          node -e "
+            const r = require('./jest-results.json');
+            const listed = Number(process.argv[1]);
+            console.log('suites', r.numTotalTestSuites, 'of', listed, 'listed; tests', r.numTotalTests);
+            const bad = !r.success || r.numFailedTests || r.numRuntimeErrorTestSuites
+              || r.numTotalTestSuites !== listed || r.numTotalTests < 1000;
+            if (bad) { console.error('Test run incomplete'); process.exit(1); }
+          " "$listed"
