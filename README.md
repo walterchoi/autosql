@@ -620,7 +620,7 @@ This is the core interface for managing connections, generating queries, and exe
 
 #### 🔹 Table and Schema Methods
 - **`checkSchemaExists(schemaName: string)`** – Returns whether the given schema exists.
-- **`createSchema(schemaName: string)`** – Creates the schema if it doesn't exist already.
+- **`createSchema(schemaName: string)`** – Creates the schema if it doesn't exist already. Resolves `{ [schemaName]: true }` (the same shape as `checkSchemaExists`; a deprecated `success: true` is also included). Rejects if the CREATE fails, with the driver code on `error.code` (e.g. Postgres `42501`, MySQL `ER_DBACCESS_DENIED_ERROR` for a login without create rights).
 - **`createTableQuery(table: string, headers: MetadataHeader)`** – Returns `QueryInput[]` to create a table.
 - **`alterTableQuery(table: string, oldHeaders: MetadataHeader, newHeaders: MetadataHeader)`** – Returns `QueryInput[]` to alter an existing table.
 - **`dropTableQuery(table: string)`** – Returns a `QueryInput` to drop a table.

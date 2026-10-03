@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+### 🐛 Bug Fixes
+- **`createSchema` now reports a failed CREATE.** It ignored the query result, and `runQuery` returns
+  `success: false` on a SQL error instead of throwing, so a refused `CREATE SCHEMA` still reported success.
+  A login without `CREATE ON DATABASE` "created" the schema, and the load then failed with
+  `schema "…" does not exist`, which points away from the missing grant. It now throws with the schema
+  name, the driver message and the driver code on `error.code` (Postgres `42501`, MySQL
+  `ER_DBACCESS_DENIED_ERROR`). An existing schema still succeeds (`IF NOT EXISTS`).
+- **`createSchema` returns `{ [schemaName]: true }`**, matching `checkSchemaExists`. The old
+  `success: true` key is still returned for existing callers but is deprecated; read `[schemaName]` or
+  rely on the throw.
+
 ### ✨ Features
 - **Opt out of inferred `UNIQUE` constraints.** A column that is 100% distinct within a batch gets a
   `UNIQUE` constraint at CREATE TABLE, even when the caller passed a `primaryKey`. Within one batch an `id`

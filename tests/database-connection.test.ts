@@ -21,13 +21,13 @@ Object.values(DB_CONFIG).forEach((config) => {
             
             test("Create schema", async () => {
                 const result = await db.createSchema("test_schema");
-                expect(result.success).toBe(true);
+                expect(result["test_schema"]).toBe(true);
             });
 
             test("Create schema that already exists", async () => {
                 await db.createSchema("test_schema"); // First creation
                 const result = await db.createSchema("test_schema");
-                expect(result.success).toBe(true);
+                expect(result["test_schema"]).toBe(true);
             });
 
             test("Check if schema exists", async () => {
