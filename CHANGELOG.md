@@ -1,5 +1,42 @@
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-03
+
+> **Opt out of inferred `UNIQUE` constraints, and `createSchema` reports failures.** Two new options,
+> `inferUnique` and `inferAdditionalUniques`, stop autosql adding `UNIQUE` constraints from one batch's
+> data, which on a composite-key table let MySQL upserts overwrite other rows. Both default to `true`, so
+> nothing changes unless you set them. `createSchema` now throws with the driver code when the CREATE is
+> refused instead of reporting success.
+
+### 🐛 Bug Fixes
+- **`createSchema` now reports a failed CREATE.** It ignored the query result, and `runQuery` returns
+  `success: false` on a SQL error instead of throwing, so a refused `CREATE SCHEMA` still reported success.
+  A login without `CREATE ON DATABASE` "created" the schema, and the load then failed with
+  `schema "…" does not exist`, which points away from the missing grant. It now throws with the schema
+  name, the driver message and the driver code on `error.code` (Postgres `42501`, MySQL
+  `ER_DBACCESS_DENIED_ERROR`). An existing schema still succeeds (`IF NOT EXISTS`).
+- **`createSchema` returns `{ [schemaName]: true }`**, matching `checkSchemaExists`. The old
+  `success: true` key is still returned for existing callers but is deprecated; read `[schemaName]` or
+  rely on the throw.
+
+### ✨ Features
+- **Opt out of inferred `UNIQUE` constraints.** A column that is 100% distinct within a batch gets a
+  `UNIQUE` constraint at CREATE TABLE, even when the caller passed a `primaryKey`. Within one batch an `id`
+  is always distinct, so a table keyed `PRIMARY KEY (conn, id)` also got `UNIQUE(id)`, and usually
+  `UNIQUE(name)` and `UNIQUE(conn)` too. On MySQL, `ON DUPLICATE KEY UPDATE` fires on any unique index, so
+  connection B's `id = r1` overwrote connection A's row; Postgres failed the load with a unique violation.
+  Two new options, both defaulting to `true` (today's behaviour, no change unless you set them):
+  - **`inferAdditionalUniques: false`** infers uniques only for a **new table with no explicit primary
+    key** (call argument or `config.primaryKey`). An existing table gains no inferred unique on CREATE or
+    ALTER; uniques already on it are kept, and `dropUniqueConstraints` works as before. Recommended
+    whenever you pass a composite key.
+  - **`inferUnique: false`** never infers a `UNIQUE` constraint. Wins over `inferAdditionalUniques`.
+
+  Primary-key, index and pseudounique prediction are unchanged either way; only the `UNIQUE` constraint
+  is dropped. `preview()` reports the same DDL a real load would run. Standalone `getMetaData` applies
+  `inferUnique` and the primary-key rule (it can't see the live table); loads also apply the
+  existing-table rule. The lower-level `getDataHeaders` profiler still reports raw in-batch uniqueness.
+
 ## [2.5.2] - 2026-10-01
 
 > **Wider driver support, tested at both ends.** `mssql` 12 is now supported alongside 11, and the `pg`

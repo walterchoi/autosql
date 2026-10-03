@@ -2,7 +2,7 @@ import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
 import { InsertInput, QueryResult, MetadataHeader, QueryInput } from "../config/types";
 import { getInsertValues, tableChangesExist, throwIfFailedResults, sqlize } from "../helpers/utilities";
-import { getMetaData, compareMetaData } from "../helpers/metadata";
+import { getMetaData, compareMetaData, restrictInferredUniques } from "../helpers/metadata";
 import { buildBootstrapRejectedRowsQuery, buildInsertRejectedRowsQuery } from "../helpers/streamHelpers";
 import { defaults } from "../config/defaults";
 
@@ -107,7 +107,7 @@ export class DegradationPolicy {
 
             if (round < maxRetries) {
                 // Widen the schema to fit the rows that failed, then loop retries only those rows.
-                const failedMeta = await getMetaData(config, pendingRows, primaryKey);
+                const failedMeta = restrictInferredUniques(await getMetaData(config, pendingRows, primaryKey), workingMeta, config);
                 const { changes, updatedMetaData } = compareMetaData(workingMeta, failedMeta, this.db.getDialectConfig(), config.logger);
                 if (tableChangesExist(changes)) {
                     const widenInput = [{

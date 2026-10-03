@@ -228,14 +228,27 @@ export abstract class Database {
         return { [schemaName]: resultsArray[0]?.[schemaName] === 1 };
     }
 
+    /**
+     * Create the schema if it doesn't exist. Resolves `{ [schemaName]: true }` (same shape as
+     * checkSchemaExists), plus a deprecated `success: true`. Throws when the CREATE fails, e.g. a login without create rights, with the
+     * driver code on `error.code` (Postgres `42501`, MySQL `ER_DBACCESS_DENIED_ERROR`) so the caller
+     * sees the real cause rather than a later "schema does not exist".
+     */
     public async createSchema(schemaName: string): Promise<Record<string, boolean>> {
+        let result: QueryResult;
         try {
-            const QueryInput = this.getCreateSchemaQuery(schemaName);
-            const result = await this.runQuery(QueryInput);
-            return { success: true };
+            result = await this.runQuery(this.getCreateSchemaQuery(schemaName));
         } catch (error) {
-            throw new Error(`Failed to create schema: ${error}`);
+            throw new Error(`Failed to create schema "${schemaName}": ${error}`);
         }
+        // runQuery reports a SQL error as success:false rather than throwing.
+        if (!result.success) {
+            const err: any = new Error(`Failed to create schema "${schemaName}": ${result.error ?? "unknown error"}${result.errorCode ? ` [${result.errorCode}]` : ""}`);
+            if (result.errorCode) err.code = result.errorCode;
+            throw err;
+        }
+        // `success` is kept for callers written against the old `{ success: true }` return (deprecated).
+        return { [schemaName]: true, success: true };
     }
 
     public createTableQuery(table: string, headers: MetadataHeader): QueryInput[] {

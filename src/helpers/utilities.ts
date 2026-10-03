@@ -26,6 +26,8 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             pseudoUnique: defaults.pseudoUnique,
             categorical: defaults.categorical,
             autoIndexing: defaults.autoIndexing,
+            inferUnique: defaults.inferUnique,
+            inferAdditionalUniques: defaults.inferAdditionalUniques,
             sampling: defaults.sampling,
             samplingMinimum: defaults.samplingMinimum,
             metaData: config.metaData || {}, // Ensuring headers remain intact
