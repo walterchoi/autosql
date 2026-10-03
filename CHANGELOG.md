@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-03
+
+> **Opt out of inferred `UNIQUE` constraints, and `createSchema` reports failures.** Two new options,
+> `inferUnique` and `inferAdditionalUniques`, stop autosql adding `UNIQUE` constraints from one batch's
+> data, which on a composite-key table let MySQL upserts overwrite other rows. Both default to `true`, so
+> nothing changes unless you set them. `createSchema` now throws with the driver code when the CREATE is
+> refused instead of reporting success.
+
 ### 🐛 Bug Fixes
 - **`createSchema` now reports a failed CREATE.** It ignored the query result, and `runQuery` returns
   `success: false` on a SQL error instead of throwing, so a refused `CREATE SCHEMA` still reported success.
