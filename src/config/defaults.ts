@@ -10,6 +10,8 @@ export const defaults = {
     // 4 covers effectively every real composite key; raise only for a genuine 5+ column natural key.
     maxCompositeKeyColumns: 4,
     autoIndexing: true,
+    inferUnique: true,
+    inferAdditionalUniques: true,
     insertType: "UPDATE",
     insertStack: 100,
     safeMode: false,

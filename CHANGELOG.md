@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+### ✨ Features
+- **Opt out of inferred `UNIQUE` constraints.** A column that is 100% distinct within a batch gets a
+  `UNIQUE` constraint at CREATE TABLE, even when the caller passed a `primaryKey`. Within one batch an `id`
+  is always distinct, so a table keyed `PRIMARY KEY (conn, id)` also got `UNIQUE(id)`, and usually
+  `UNIQUE(name)` and `UNIQUE(conn)` too. On MySQL, `ON DUPLICATE KEY UPDATE` fires on any unique index, so
+  connection B's `id = r1` overwrote connection A's row; Postgres failed the load with a unique violation.
+  Two new options, both defaulting to `true` (today's behaviour, no change unless you set them):
+  - **`inferAdditionalUniques: false`** infers uniques only for a **new table with no explicit primary
+    key** (call argument or `config.primaryKey`). An existing table gains no inferred unique on CREATE or
+    ALTER; uniques already on it are kept, and `dropUniqueConstraints` works as before. Recommended
+    whenever you pass a composite key.
+  - **`inferUnique: false`** never infers a `UNIQUE` constraint. Wins over `inferAdditionalUniques`.
+
+  Primary-key, index and pseudounique prediction are unchanged either way; only the `UNIQUE` constraint
+  is dropped. `preview()` reports the same DDL a real load would run. Standalone `getMetaData` applies
+  `inferUnique` and the primary-key rule (it can't see the live table); loads also apply the
+  existing-table rule. The lower-level `getDataHeaders` profiler still reports raw in-batch uniqueness.
+
 ## [2.5.2] - 2026-10-01
 
 > **Wider driver support, tested at both ends.** `mssql` 12 is now supported alongside 11, and the `pg`

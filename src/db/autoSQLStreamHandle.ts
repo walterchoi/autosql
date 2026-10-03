@@ -1,7 +1,7 @@
 import type { Database } from "./database";
 import type { AutoSQLHandler } from "./autosql";
 import { MetadataHeader, QueryResult, QueryStats } from "../config/types";
-import { getMetaData, compareMetaData } from "../helpers/metadata";
+import { getMetaData, compareMetaData, restrictInferredUniques } from "../helpers/metadata";
 import { writeRunAudit } from "../helpers/runAudit";
 import { tableChangesExist } from "../helpers/utilities";
 import { defaults } from "../config/defaults";
@@ -151,8 +151,8 @@ export class AutoSQLStreamHandle {
 
             // Infer schema from staging data
             const tPrepare = perf();
-            const inferredMeta = await getMetaData(flushConfig, stagingRows, this.primaryKey);
             const { currentMetaData } = await this.handler.fetchTableMetadata(this.table);
+            const inferredMeta = restrictInferredUniques(await getMetaData(flushConfig, stagingRows, this.primaryKey), currentMetaData, config);
             const { changes, updatedMetaData } = compareMetaData(currentMetaData, inferredMeta, this.db.getDialectConfig(), config.logger);
             phases.prepare = perf() - tPrepare;
 

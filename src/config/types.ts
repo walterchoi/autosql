@@ -156,6 +156,25 @@ export interface DatabaseConfig {
       categorical?: number;
       autoIndexing?: boolean;
       /**
+       * Infer `UNIQUE` constraints from the data (default `true`). A column whose values are all
+       * distinct within the batch is marked `unique` and gets a `UNIQUE` constraint at CREATE TABLE.
+       * Set `false` to never infer one, e.g. when one batch's distinctness says nothing about the
+       * real key. Wins over `inferAdditionalUniques`. `pseudounique`, `index` and primary-key
+       * prediction are unaffected. Applies to `getMetaData` and loads; the raw `getDataHeaders`
+       * profiler still reports in-batch uniqueness.
+       */
+      inferUnique?: boolean;
+      /**
+       * Infer `UNIQUE` constraints beyond a new keyless table (default `true`): beside an explicit
+       * `primaryKey` (call arg or `config.primaryKey`), and on an existing table. Set `false` to infer
+       * uniques only for a NEW table with no explicit key. Use it for composite keys: on MySQL a
+       * stray `UNIQUE(id)` beside `PRIMARY KEY (conn, id)` makes `ON DUPLICATE KEY UPDATE` overwrite
+       * another key's row. With `false`, an existing table gains no inferred unique (CREATE or ALTER);
+       * uniques already on it are kept and `dropUniqueConstraints` behaves as before.
+       * `inferUnique: false` wins over this.
+       */
+      inferAdditionalUniques?: boolean;
+      /**
        * Max fractional-digit scale for inferred `decimal` columns. Unset (default): stored at the full
        * scale the data needs, up to the dialect limit (MySQL 30, SQL Server 38, Postgres 16383) — no
        * silent precision loss. Set lower to cap scale (e.g. `2` for currency). A value whose true scale

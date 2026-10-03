@@ -3,7 +3,7 @@ import { PostgresDatabase } from "./pgsql";
 import { SqlServerDatabase } from "./sqlserver";
 import { Database } from "./database";
 import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig } from "../config/types";
-import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../helpers/metadata";
+import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults, restrictInferredUniques } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { resolveDatasetSeparators } from "../helpers/numberFormat";
 import { writeRunAudit } from "../helpers/runAudit";
@@ -251,6 +251,7 @@ export class AutoSQLHandler {
             let tableChanges: AlterTableChanges | null = null;
             let updatedMetadata: MetadataHeader | undefined | null = newMetaData;
             let tableExists: boolean | undefined = undefined;
+            const inferredHere = !newMetaData;
             if(!newMetaData) {
                 if(!data || !isValidDataFormat(data)) {throw new Error('Invalid data format: Expected a non-empty array of objects.')}
                 newMetaData = await getMetaData(this.db.getConfig(), data);
@@ -268,6 +269,7 @@ export class AutoSQLHandler {
                 // Standalone path (metadata inferred above, not supplied by the caller): apply the
                 // opt-in surrogate key now that the existing table is known, so it stays sticky.
                 updatedMetadata = applySurrogateKey(updatedMetadata, currentMetaData, this.db.getConfig());
+                if (inferredHere) updatedMetadata = restrictInferredUniques(updatedMetadata, currentMetaData, this.db.getConfig());
 
                 if (currentMetaData) {
                     // Compare metadata if table exists
@@ -285,6 +287,7 @@ export class AutoSQLHandler {
             else if(isMetadataHeader(currentMetaDataOrTableChanges)) {
                 this.db.log("Comparing metadata for changes...");
                 // If provided with metadata, compare changes
+                if (inferredHere) newMetaData = restrictInferredUniques(newMetaData, currentMetaDataOrTableChanges, this.db.getConfig());
                 const { changes, updatedMetaData: mergedMetadata } = compareMetaData(currentMetaDataOrTableChanges, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
                 tableChanges = changes;
                 updatedMetadata = mergedMetadata;
@@ -409,7 +412,7 @@ export class AutoSQLHandler {
             const newGroupedData = organizeSplitData(data, newGroupedByTable)
             const transformedData = await Promise.all(
                 Object.keys(newGroupedByTable).map(async (tableName) => {
-                    const newMetaData = await getMetaData(this.db.getConfig(), newGroupedData[tableName] || []);
+                    const newMetaData = restrictInferredUniques(await getMetaData(this.db.getConfig(), newGroupedData[tableName] || []), parsedSplitMetadata[tableName], this.db.getConfig());
                     const mergedMetaData = compareMetaData(parsedSplitMetadata[tableName], newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
             
                     return {
@@ -505,11 +508,12 @@ export class AutoSQLHandler {
             if (schemaCoversColumns(provided, collectDataColumns(data))) {
                 newMetaData = provided; // fully declared → no inference
             } else {
-                const inferred = await getMetaData(this.db.getConfig(), data, primaryKey);
+                const inferred = restrictInferredUniques(await getMetaData(this.db.getConfig(), data, primaryKey), currentMetaData, this.db.getConfig());
                 newMetaData = overlaySchema(inferred, provided); // infer undeclared, provided wins
             }
         } else {
-            newMetaData = await getMetaData(this.db.getConfig(), data, primaryKey);
+            // inferAdditionalUniques: false → on an existing table, inferred uniques only survive where the live column has one.
+            newMetaData = restrictInferredUniques(await getMetaData(this.db.getConfig(), data, primaryKey), currentMetaData, this.db.getConfig());
         }
         // Apply the opt-in surrogate key, sticky to the existing table so re-ingestion stays
         // idempotent (see applySurrogateKey). No-op unless config.surrogateKey is enabled.

@@ -156,6 +156,14 @@ export interface DatabaseConfig {
   pseudoUnique?: number;      // The % of values that must be unique to be considered pseudoUnique — defaults to 0.9 (90%)
   categorical?: number;       // The % of values that must be repeated to be considered categorical — defaults to 0.20 (20%)
   autoIndexing?: boolean;     // Automatically identify and add indexes to tables when altering / creating — defaults to TRUE
+  // A column that is 100% distinct in the batch gets a UNIQUE constraint at CREATE TABLE. inferUnique:
+  // false turns that off entirely (PK, index and pseudounique prediction are unaffected) — defaults to TRUE.
+  inferUnique?: boolean;
+  // Also infer UNIQUEs beside an explicit primaryKey and on an existing table — defaults to TRUE. Set false
+  // to infer them only for a NEW table with NO explicit primaryKey (uniques already on a table are kept).
+  // Recommended for composite keys such as (tenant, id), where a stray UNIQUE(id) lets MySQL's upsert
+  // overwrite another tenant's row. inferUnique: false wins.
+  inferAdditionalUniques?: boolean;
   // Max fractional-digit scale for inferred decimals. NO hard default (v2.0.0): a decimal keeps the
   // full scale the data needs, up to the dialect limit (MySQL 30, SQL Server 38, Postgres 16383), so
   // precision is never silently lost. Set a value (e.g. 2 for currency) to deliberately cap scale —

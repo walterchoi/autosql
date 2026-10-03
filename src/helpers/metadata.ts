@@ -491,18 +491,47 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
         }
         
         const headers = await getDataHeaders(data, validatedConfig)
+        const effectivePrimaryKey = primaryKey || validatedConfig.primaryKey;
         let metaData : MetadataHeader
         if(validatedConfig.autoIndexing) {
-            metaData = predictIndexes(headers, validatedConfig.maxKeyLength, primaryKey || validatedConfig.primaryKey, data, validatedConfig.maxCompositeKeyColumns)
+            metaData = predictIndexes(headers, validatedConfig.maxKeyLength, effectivePrimaryKey, data, validatedConfig.maxCompositeKeyColumns)
         } else {
             metaData = headers
         }
-        
+
+        // Drop inferred uniques AFTER predictIndexes, which reads `unique` to pick (or confirm) the
+        // primary key: stripping earlier would change PK selection, and with an explicit composite
+        // key could widen it with an extra column. Only the UNIQUE constraint goes; index,
+        // pseudounique and primary flags stay as predicted.
+        const explicitKey = (effectivePrimaryKey?.length ?? 0) > 0;
+        if (validatedConfig.inferUnique === false || (validatedConfig.inferAdditionalUniques === false && explicitKey)) {
+            for (const column in metaData) metaData[column].unique = false;
+        }
+
         return metaData;
         
     } catch (error) {
         throw new Error(`Error in getMetaData: ${error}`);
     }
+}
+
+/**
+ * `inferAdditionalUniques: false` for an existing table: an inferred `unique` survives only where the live
+ * column is already unique. Keeping those stops compareMetaData reading them as `noLongerUnique`;
+ * everything else (a newly 100%-distinct column, a brand-new column) loses the flag. Apply to
+ * INFERRED metadata only, never a caller's assumeSchema. No-op for a new table (no or empty
+ * current metadata) or with the option off. Never mutates the input.
+ */
+export function restrictInferredUniques(inferred: MetadataHeader, current: MetadataHeader | null | undefined, config: DatabaseConfig): MetadataHeader {
+    if (config.inferAdditionalUniques !== false) return inferred;
+    if (!current || Object.keys(current).length === 0) return inferred;
+    let result: MetadataHeader | null = null;
+    for (const [column, def] of Object.entries(inferred)) {
+        if (!def?.unique || current[column]?.unique) continue;
+        result ??= { ...inferred };
+        result[column] = { ...def, unique: false };
+    }
+    return result ?? inferred;
 }
 
 export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHeadersOriginal: MetadataHeader, dialectConfig?: DialectConfig, logger?: { warn?: (msg: string) => void }): { changes: AlterTableChanges; updatedMetaData: MetadataHeader } {
