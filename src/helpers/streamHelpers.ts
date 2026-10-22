@@ -28,13 +28,10 @@ export function isAutosqlStreamTable(tableName: string, table: string, prefix: s
 const RESUMABLE_MARKER = 'rs_';
 
 /**
- * Name a *resumable* stream staging table from a caller-owned session key.
+ * Name a resumable staging table from a caller-owned session key.
  *
- * Unlike {@link buildStreamStagingTableName}, which embeds a per-invocation run id and is therefore
- * a new table every call, this is a pure function of the session key — so a second `openStream`
- * with the same key resolves to the same table and can keep appending to it across runs/processes.
- * The key is hashed (not interpolated) so an arbitrary caller-owned string can never affect the
- * identifier's shape or length.
+ * A pure function of the key, so a later run resolves the same table. Hashed rather than
+ * interpolated so a caller-owned string can never affect the identifier's shape or length.
  */
 export function buildResumableStagingTableName(table: string, prefix: string, sessionKey: string): string {
     const hash = crypto.createHash('sha256').update(sessionKey).digest('hex').slice(0, 8);
@@ -42,12 +39,10 @@ export function buildResumableStagingTableName(table: string, prefix: string, se
 }
 
 /**
- * Confirm a table name is a resumable (session-keyed) stream staging table.
- *
- * Orphan cleanup must skip these: they are owned by a caller's session and may be mid-resume, so
- * "left behind by a previous run" is their normal state rather than evidence of a crash. Note this
- * is deliberately an explicit check and not a side effect of {@link isAutosqlStreamTable}'s 8-hex
- * regex rejecting the `rs_` prefix — the exclusion is intent, and must survive that regex changing.
+ * Orphan cleanup skips these: owned by a caller's session, so outliving the run that created one is
+ * its normal state, not evidence of a crash. Deliberately an explicit check rather than a side
+ * effect of {@link isAutosqlStreamTable}'s regex rejecting `rs_`, so the exclusion survives that
+ * regex changing.
  */
 export function isResumableStreamTable(tableName: string, table: string, prefix: string): boolean {
     const expected = `${prefix}${table}__${RESUMABLE_MARKER}`;
@@ -56,9 +51,8 @@ export function isResumableStreamTable(tableName: string, table: string, prefix:
 }
 
 /**
- * Build a query listing the columns of an existing staging table, in ordinal order.
- * Used to adopt a resumable staging table: its committed column set becomes the stream's, so
- * write()'s stable-shape check (A18) validates incoming rows against what is actually there.
+ * Columns of an existing staging table, so an adopted stream validates writes against the shape
+ * that is really there rather than one inferred from its own first chunk.
  */
 export function buildStagingColumnsQuery(stagingTable: string, config: DatabaseConfig): QueryInput {
     const schema = config.schema || config.database || '';
@@ -103,11 +97,10 @@ export function buildCreateStreamStagingTableQuery(
 }
 
 /**
- * Build ALTER TABLE … ADD to widen an existing stream staging table with columns that appeared
- * after it was created.
+ * Widen an existing stream staging table.
  *
- * Staging is all-text, so there is never a type to widen — only columns to add. Added columns are
- * nullable, so rows already staged read as NULL for them, which is what they were.
+ * Staging is all-text, so there is never a type to widen, only columns to add. Added columns stay
+ * nullable because rows already staged genuinely had no value for them.
  */
 export function buildAddStreamStagingColumnsQuery(
     stagingTable: string,

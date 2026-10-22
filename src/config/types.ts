@@ -59,21 +59,10 @@ export interface AutoSQLOptions {
 /** Options for `openStream` (see `AutoSQLHandler.openStream`). */
 export interface OpenStreamOptions {
   /**
-   * Opt in to a staging table that survives between runs.
-   *
-   * A stable, caller-owned string identifying the *load session* — NOT one run of it. The staging
-   * table name is derived from it (hashed), so a later `openStream` with the same key adopts the
-   * same table and keeps appending instead of starting over. Derive it from something that outlives
-   * an attempt (e.g. a connection/destination id), never from a run or attempt id, or every retry
-   * gets a fresh table and resuming silently becomes restarting.
-   *
-   * Omit it and behaviour is unchanged: a per-run staging table, dropped by `end()`/`abort()`.
-   *
-   * Always check {@link AutoSQLStreamHandle.adopted} on the returned handle before trusting your own
-   * resume point — `false` means nothing was carried over and you must re-send from the start.
-   *
-   * ⚠ autosql does not serialise writers. The caller must guarantee a single writer per session key;
-   * two concurrent streams sharing a key both append and duplicate rows at merge.
+   * Opt in to staging that survives between runs. Identifies the load SESSION, not one run of it:
+   * a run or attempt id would hand every retry a fresh table, so resuming would silently become
+   * restarting. ⚠ One writer per key — autosql does not serialise them.
+   * See README, "Resuming a stream across runs".
    */
   sessionKey?: string;
 }

@@ -25,26 +25,16 @@ export class AutoSQLStreamHandle {
     private columnSet: Set<string> | null = null;
     private stagingCreated = false;
     private ended = false;
-    /** True when opened with a `sessionKey` — staging may outlive this run. */
+    /** Opened with a `sessionKey`, so staging may outlive this run. */
     public readonly resumable: boolean;
     /**
-     * Whether this stream attached to staging rows left by an earlier run.
+     * Attached to rows an earlier run staged.
      *
-     * ⚠ **Callers that track their own resume point MUST read this.** `false` means there was no
-     * staging table to attach to — first run for this session key, or an earlier attempt's table is
-     * gone — so nothing was carried over and you must re-send from the beginning. Trusting a stored
-     * high-water mark against a non-adopted stream silently drops every row before that mark. A
-     * table that exists but holds no rows yet still reports `true`: its column set was adopted.
-     * Always `false` for a non-resumable (no `sessionKey`) stream.
+     * ⚠ A caller with its own resume point must read this: trusting a stored high-water mark against
+     * a non-adopted stream silently drops every row before that mark.
      */
     public readonly adopted: boolean;
-    /**
-     * Columns added to an adopted staging table because they appeared after it was created.
-     *
-     * Non-empty means the source's shape drifted mid-load and staging was widened to fit it. The
-     * load is correct either way — this is for reporting, since a drifted source is usually worth
-     * knowing about even when it was absorbed cleanly.
-     */
+    /** Columns added to an adopted table mid-load. Reporting only; the load is correct either way. */
     public readonly widenedColumns: string[] = [];
 
     constructor(
@@ -64,8 +54,7 @@ export class AutoSQLStreamHandle {
         this.primaryKey = primaryKey;
         this.resumable = resume?.resumable ?? false;
 
-        // Adopting: the table already exists, so its committed columns become this stream's shape and
-        // write() must NOT try to create it again.
+        // Pre-set so write() doesn't try to create a table that's already there.
         const adoptedColumns = resume?.adoptedColumns ?? null;
         if (adoptedColumns && adoptedColumns.length > 0) {
             this.columns = adoptedColumns;
@@ -118,19 +107,11 @@ export class AutoSQLStreamHandle {
                 }
             }
             if (unknown.length > 0) {
-                // On a RESUMABLE stream, widen staging to fit the new data — the same thing autosql
-                // does everywhere else, and the reason a drifted source is normally a non-event. The
-                // table is all-text, so there is no type to widen, only columns to add; the added
-                // columns are nullable, so rows staged by earlier runs read NULL for them, which is
-                // what they were. end() infers over the whole staging table afterwards, so the new
-                // column reaches the target through the ordinary DDL path.
-                //
-                // `safeMode` means "load, but no DDL", so there widening isn't available and the only
-                // honest options are refusing or losing the column. Refuse.
-                //
-                // A per-run stream keeps the established throw: its column set comes from its own
-                // first chunk moments earlier, so an unknown key is a caller inconsistency rather
-                // than source drift across runs, and changing that would alter shipped behaviour.
+                // Widen rather than refuse: absorbing a drifted source is what autosql does
+                // everywhere else, and refusing would strand a resume mid-load. `safeMode` means no
+                // DDL, so there the only non-lossy option left is to refuse. A keyless stream keeps
+                // the established throw — its columns came from its own first chunk moments earlier,
+                // so an unknown key is caller inconsistency, not drift between runs.
                 if (this.resumable && !config.safeMode) {
                     const alterQ = buildAddStreamStagingColumnsQuery(this.stagingTable, unknown, config);
                     const alterResult = await this.db.runTransaction([alterQ]);
@@ -184,9 +165,7 @@ export class AutoSQLStreamHandle {
         // staging + infer (prepare) → DDL (configure) → merge (load) — not the incremental write()s.
         const perf = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
         const phases: { prepare?: number; configure?: number; load?: number } = {};
-        // Whether the staged rows reached the target. Gates the drop in `finally` for a resumable
-        // stream, so a failed merge does not destroy work accumulated across earlier runs.
-        let promoted = false;
+        let promoted = false; // gates the drop in `finally`
 
         try {
             if (!this.stagingCreated) {
@@ -202,8 +181,7 @@ export class AutoSQLStreamHandle {
             }
             const stagingRows: Record<string, any>[] = selectResult.results;
             if (stagingRows.length === 0) {
-                // An empty staging table is a completed (if empty) session — nothing to lose by
-                // dropping it, so let `finally` clean up rather than leaking it to the sweeper.
+                // Nothing to lose by dropping an empty table, so don't leak it to the sweeper.
                 promoted = true;
                 return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
             }
@@ -305,12 +283,9 @@ export class AutoSQLStreamHandle {
             await writeRunAudit(this.db, { table: this.table, success: false, rows: 0, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: true, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined });
             return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
         } finally {
-            // Drop staging once the rows are safely in the target. A per-run stream drops either way
-            // (its table is useless after this call). A RESUMABLE stream whose merge failed keeps its
-            // table: the failure may be transient (lock timeout, connection blip), and dropping here
-            // would throw away rows accumulated over earlier runs — the exact loss this feature
-            // exists to prevent. The caller can retry end(), or abort() to discard deliberately; if
-            // it never comes back, the table's lifetime belongs to the session registry/sweeper.
+            // A resumable stream keeps its table when the rows didn't land: the failure may be
+            // transient, and dropping here would discard rows accumulated over earlier runs, the
+            // exact loss this feature exists to prevent. Per-run tables are useless after the call.
             const keepForResume = this.resumable && !promoted;
             if (this.stagingCreated && !keepForResume) {
                 const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
@@ -339,19 +314,11 @@ export class AutoSQLStreamHandle {
     }
 
     /**
-     * Stop without promoting and without discarding: leave the staging table exactly as it is so a
-     * later `openStream` with the same `sessionKey` can adopt it and keep appending.
+     * Stop without promoting and without discarding, so a later run can adopt the staging table.
      *
-     * This is the third state, distinct from both of the existing ones — {@link end} merges and
-     * {@link abort} destroys, and neither expresses "I got through part of the data, I'll be back".
-     * Call it when a run ends early for a reason that is worth retrying (page fetch failed, token
-     * expired, Lambda timed out) rather than a reason that invalidates the data.
-     *
-     * Only meaningful on a resumable stream: without a `sessionKey` the table name is per-invocation,
-     * so nothing could ever find it again — suspending would just leak it. That case throws, since
-     * silently leaking a table (or silently dropping the rows) are both worse than a loud refusal.
-     *
-     * After this call the handle is spent; open a new stream with the same key to continue.
+     * Throws on a non-resumable stream: its table name is per-invocation, so suspending would leak a
+     * table nothing can ever find again, and both that and silently dropping the rows are worse than
+     * a loud refusal.
      */
     async suspend(): Promise<void> {
         if (!this.resumable) {

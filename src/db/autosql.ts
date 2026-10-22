@@ -1126,11 +1126,8 @@ export class AutoSQLHandler {
      * (`write`/`end`/`abort`) follow the same reject-on-failure, must-await contract —
      * they are not fire-and-forget. See {@link AutoSQLStreamHandle.write}.
      *
-     * By default the staging table is per-invocation and is dropped by `end()`/`abort()`. Pass
-     * `opts.sessionKey` to get one that **survives between runs**: the name derives from the key, so
-     * a later call with the same key adopts the table and keeps appending, and
-     * {@link AutoSQLStreamHandle.suspend} stops without promoting or discarding. Check
-     * {@link AutoSQLStreamHandle.adopted} before trusting an external resume point.
+     * `opts.sessionKey` opts into staging that survives between runs. See README, "Resuming a
+     * stream across runs".
      */
     async openStream(
         table: string,
@@ -1156,12 +1153,11 @@ export class AutoSQLHandler {
 
         const sessionKey = opts?.sessionKey;
         if (sessionKey !== undefined && sessionKey.trim() === '') {
-            // An empty key is almost always an unset caller variable. Silently treating it as a
-            // valid session would make every such caller share one staging table.
+            // Almost always an unset caller variable; accepting it would make every such caller
+            // share one staging table.
             throw new Error(`openStream: sessionKey must be a non-empty string when provided.`);
         }
 
-        // --- Per-run staging (default, unchanged): a fresh table per invocation. ---
         if (!sessionKey) {
             const runId = generateRunId();
             const stagingTable = buildStreamStagingTableName(table, prefix, runId);
@@ -1172,15 +1168,10 @@ export class AutoSQLHandler {
             return new AutoSQLStreamHandle(this, this.db, table, stagingTable, schema, primaryKey);
         }
 
-        // --- Resumable staging: the table name is a pure function of the session key, so this
-        //     resolves to the same table on a later run and we adopt whatever it already holds. ---
         const stagingTable = buildResumableStagingTableName(table, prefix, sessionKey);
         this.activeStreamStagingTables.add(stagingTable);
 
-        // Adopt the existing table's committed column set, if the table is already there. write()'s
-        // stable-shape check (A18) then validates incoming rows against what is physically present,
-        // which is what stops a resumed run writing mismatched columns into a table whose shape has
-        // since drifted — the refusal is loud, never a silent partial write.
+        // Null when the table isn't there yet, which is the normal first run for a key.
         const adoptedColumns = await this._probeStagingColumns(stagingTable);
 
         return new AutoSQLStreamHandle(
@@ -1190,10 +1181,7 @@ export class AutoSQLHandler {
       });
     }
 
-    /**
-     * Column names of an existing stream staging table, in ordinal order, or `null` if the table is
-     * not there (the normal first-run case for a session key).
-     */
+    /** Column names of an existing stream staging table, or `null` if it isn't there. */
     async _probeStagingColumns(stagingTable: string): Promise<string[] | null> {
         const config = this.db.getConfig();
         const result = await this.db.runQuery(buildStagingColumnsQuery(stagingTable, config));
@@ -1220,12 +1208,9 @@ export class AutoSQLHandler {
 
         for (const row of result.results) {
             const name: string = row.table_name || row.TABLE_NAME;
-            // Resumable (session-keyed) staging tables are owned by a caller's session and are
-            // SUPPOSED to outlive the run that created them — surviving between runs is the whole
-            // point. Dropping one here would delete the very table a resume is about to adopt, and
-            // not only this session's: cleanup is keyed on the target table, so it would also
-            // destroy another session key's in-progress load into the same target. Their lifetime
-            // is the session registry's job, not the orphan sweep's.
+            // Session-keyed tables are supposed to outlive their creating run. Dropping one here
+            // would delete the table a resume is about to adopt, and since this sweep is keyed on
+            // the target, another session key's in-progress load into the same target too.
             if (isResumableStreamTable(name, table, prefix)) continue;
             if (!isAutosqlStreamTable(name, table, prefix)) continue;
             if (this.activeStreamStagingTables.has(name)) continue; // live stream on this instance — not an orphan
