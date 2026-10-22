@@ -73,6 +73,17 @@
 - autosql owns no part of the resume point. It knows nothing about pagination, cursors, or job runs.
   Its contribution is that the staging table is still there and you may keep appending to it.
 
+### 🧹 Internal
+- **Comments across `src` condensed to the reasoning**, 1,979 lines down to 1,641 across 26 files. A
+  comment now carries what you cannot recover from reading the code; the mechanics live in this file
+  and the README. Out went stale refactor narration, restatement of the next line, decorative banner
+  dividers, and one comment that was simply wrong (it still said `openStream` was guarded on SQL
+  Server, which stopped being true in 2.5.0). The dialect traps all stay, because that is the
+  expensive knowledge: `tinyint(1)` having to be read from `COLUMN_TYPE`, `bigint` auto-increment
+  needing BIGSERIAL rather than SERIAL, SQL Server error 5074 on retyping an indexed column, and the
+  rest. No behaviour change, and none is possible: compiling before and after with `--removeComments`
+  leaves all 110 emitted `.js` and `.d.ts` files byte-identical.
+
 ## [2.6.0] - 2026-10-03
 
 > **Opt out of inferred `UNIQUE` constraints, and `createSchema` reports failures.** Two new options,
