@@ -816,19 +816,20 @@ await resumed.end();                    // promotes all three pages at once, the
 
 The key must identify the **load session, not one run of it** — derive it from something that outlives an attempt, such as a connection or destination id. Derive it from a run or attempt id and every retry gets a fresh table, so resuming silently becomes restarting. The key is hashed into the table name, so any string is safe to pass.
 
-⚠ **Always check `handle.adopted` before trusting a resume point you stored yourself.** `false` means the staging table was empty — first run for this key, or an earlier attempt's table is gone — so nothing was carried over and you must re-send from the beginning. Trusting a stored high-water mark against a non-adopted stream silently drops every row before that mark. Note also that a resume point stored elsewhere can expire independently of the staging table, so the table surviving is not by itself evidence that your pages are accounted for: reconcile both.
+⚠ **Always check `handle.adopted` before trusting a resume point you stored yourself.** `false` means there was no staging table to attach to — first run for this key, or an earlier attempt's table is gone — so nothing was carried over and you must re-send from the beginning. (A table that exists but holds no rows yet reports `true`: its column set was adopted.) Trusting a stored high-water mark against a non-adopted stream silently drops every row before that mark. Note also that a resume point stored elsewhere can expire independently of the staging table, so the table surviving is not by itself evidence that your pages are accounted for: reconcile both.
 
 Three terminal states, rather than two:
 
 | | merges staged rows | keeps staging table |
 |---|---|---|
-| `end()` | ✅ | ❌ (kept only if the merge failed, so you can retry) |
+| `end()` | ✅ | ❌ (kept only if the rows didn't reach the target, so you can retry) |
 | `suspend()` | ❌ | ✅ |
 | `abort()` | ❌ | ❌ |
 
 Other behaviour worth knowing:
 
 - **Shape changes are refused, not absorbed.** The adopted table's existing columns become the stream's column set, so a row carrying a column that table doesn't have fails loudly rather than being silently dropped. If your source has gained a column mid-load, `abort()` and start a fresh session.
+- ⚠ **Retrying `end()` is only safely idempotent under `insertType: 'UPDATE'` with a primary key**, where the merge upserts. Under `'INSERT'`, or with no primary key, a retry re-sends rows that the per-row fallback had already landed before failing, duplicating them in the target. If you can't guarantee a key, treat a failed `end()` as needing reconciliation rather than a blind retry.
 - **Inference sees every staged row.** `end()` re-reads the whole staging table, so types and lengths are inferred from the full accumulated dataset — not just the resumed run's chunk.
 - **Orphan cleanup leaves session-keyed tables alone**, including other session keys' tables for the same target. Only per-run staging tables are swept.
 - ⚠ **One writer per session key.** autosql does not serialise writers; two concurrent streams sharing a key both append and duplicate rows at merge.

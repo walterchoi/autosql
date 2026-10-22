@@ -29,11 +29,12 @@ export class AutoSQLStreamHandle {
     /**
      * Whether this stream attached to staging rows left by an earlier run.
      *
-     * ⚠ **Callers that track their own resume point MUST read this.** `false` means the staging table
-     * is empty — first run for this session key, or an earlier attempt's table is gone — so nothing
-     * was carried over and you must re-send from the beginning. Trusting a stored high-water mark
-     * against a non-adopted stream silently drops every row before that mark. Always `false` for a
-     * non-resumable (no `sessionKey`) stream.
+     * ⚠ **Callers that track their own resume point MUST read this.** `false` means there was no
+     * staging table to attach to — first run for this session key, or an earlier attempt's table is
+     * gone — so nothing was carried over and you must re-send from the beginning. Trusting a stored
+     * high-water mark against a non-adopted stream silently drops every row before that mark. A
+     * table that exists but holds no rows yet still reports `true`: its column set was adopted.
+     * Always `false` for a non-resumable (no `sessionKey`) stream.
      */
     public readonly adopted: boolean;
 
