@@ -2,9 +2,12 @@
 
 ## [2.7.0] - 2026-10-22
 
-> **Staging tables can survive between runs.** Give `openStream` a `sessionKey` and a later run picks
-> up the same staging table instead of starting over, so a load too large to finish in one run can
-> make progress without putting partial data in the target table. Nothing changes unless you pass one.
+> **Staging tables can survive between runs, and carry their own resume point.** Give `openStream` a
+> `sessionKey` and a later run picks up the same staging table instead of starting over, so a load too
+> large to finish in one run can make progress without putting partial data in the target table. Pass
+> a `cursor` with each `write()` and `stagingState()` tells the next run where to continue, so the
+> resume point lives in the same table as the rows it describes rather than somewhere that can expire
+> independently of them. Nothing changes unless you pass a `sessionKey`.
 
 ### ✨ Features
 - **Resumable stream staging: `openStream(table, schema?, primaryKey?, { sessionKey })`.** Staging
@@ -29,6 +32,22 @@
     to re-send from the start. A stored high-water mark trusted against a non-adopted stream silently
     drops every row before that mark. A table that exists but holds no rows yet reports `true`,
     because its column set was adopted.
+  - **A cursor, so the next run knows where to continue.** `write(chunk, { cursor })` records your
+    cursor beside the rows, and **`stagingState()`** returns
+    `{ stagedRows, cursors, lastCursor, firstStagedAt, lastStagedAt }`. It reads the staging table
+    rather than the handle, so it works on a stream whose rows a different process staged, which is
+    the case that matters after a lambda dies. Resume from `lastCursor` and **re-send that page**: a
+    run that died part way through one cannot know how much landed, so the duplicates are expected
+    and autosql collapses them at merge, keeping the last-staged row per key. That is why a cursor
+    requires a `primaryKey`: without one there is nothing to deduplicate on, so it is refused rather
+    than letting duplicates reach the target. Same at-least-once contract Singer and Fivetran use.
+
+    Three staging-only columns carry this, and none reaches the target: `_autosql_cursor`,
+    `_autosql_staged_at` (from the **database** clock, so hosts don't interleave clock skew) and
+    `_autosql_seq` (monotonic, and the actual ordering, because cursors are opaque strings and MySQL
+    `DATETIME` ties within a second). `_autosql_` is a reserved prefix. `_autosql_staged_at` is for
+    staleness, not sequence: if `lastStagedAt` is older than you will resume from, `abort()` instead
+    of appending this week's pages onto last month's.
   - **`handle.suspend()`** stops without merging and without dropping, leaving the table for a later
     run. `end()` merges and `abort()` discards, so neither of them covers "I got part of the way
     through, I'll be back". It throws on a stream opened without a `sessionKey`, where the table could
@@ -58,6 +77,11 @@
   key, where the merge upserts. Under `'INSERT'`, or with no key, a retry re-sends the rows the
   per-row fallback had already landed and duplicates them. Without a key, reconcile instead of
   retrying blind.
+- **A re-sent page no longer corrupts the inferred key.** Dedup had to happen before inference, not
+  only at merge. A resumed run re-sends the page it died on, so a key legitimately appears twice in
+  staging, and inference reading that decided the key was not unique and WIDENED it: re-sending rows
+  keyed on `id` produced a composite `(id, name)` primary key on the target. Staging rows are now
+  collapsed to the last-staged row per key before anything infers a schema from them.
 - **Orphan cleanup no longer drops a table a resume is about to adopt.** The sweep matches on target
   table and prefix, so it caught session-keyed tables as well, and not only the opening session's. It
   would also have dropped a different session key's in-progress load into the same target.

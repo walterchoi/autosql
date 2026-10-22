@@ -12,7 +12,27 @@ import {
     buildDropStreamStagingTableQuery,
     buildMergeFromStreamQuery,
     buildAddStreamStagingColumnsQuery,
+    buildStagingStateQuery,
+    isStagingMetaColumn,
+    STAGING_COLUMN_PREFIX,
+    STAGING_SEQ_COLUMN,
 } from '../helpers/streamHelpers';
+
+/**
+ * Collapse rows sharing a primary key to the one staged last, ordered by `_autosql_seq`.
+ * JSON-encodes the key tuple so a composite key can't be made ambiguous by a separator (A24).
+ */
+function dedupByKeyKeepingLast(rows: Record<string, any>[], primaryKey: string[]): Record<string, any>[] {
+    const bySeq = new Map<string, Record<string, any>>();
+    for (const row of rows) {
+        const key = JSON.stringify(primaryKey.map(k => row[k] ?? null));
+        const held = bySeq.get(key);
+        if (!held || Number(row[STAGING_SEQ_COLUMN] ?? 0) >= Number(held[STAGING_SEQ_COLUMN] ?? 0)) {
+            bySeq.set(key, row);
+        }
+    }
+    return [...bySeq.values()];
+}
 
 export class AutoSQLStreamHandle {
     private handler: AutoSQLHandler;
@@ -36,6 +56,8 @@ export class AutoSQLStreamHandle {
     public readonly adopted: boolean;
     /** Columns added to an adopted table mid-load. Reporting only; the load is correct either way. */
     public readonly widenedColumns: string[] = [];
+    /** Cursors this handle staged, for reporting. `stagingState()` reads the table for the truth. */
+    private cursorsWritten = new Set<string>();
 
     constructor(
         handler: AutoSQLHandler,
@@ -75,9 +97,19 @@ export class AutoSQLStreamHandle {
      * call {@link end} expecting the gap to be ignored; end() merges whatever is staged, so a lost
      * chunk becomes missing rows.
      */
-    async write(chunk: Record<string, any>[]): Promise<void> {
+    async write(chunk: Record<string, any>[], opts?: { cursor?: string }): Promise<void> {
         if (this.ended) throw new Error(`autoSQLStream: write() called after end()/abort()`);
         if (chunk.length === 0) return;
+        const cursor = opts?.cursor;
+        if (cursor !== undefined) {
+            if (!this.resumable) {
+                throw new Error(`autoSQLStream: a cursor is only meaningful on a stream opened with a sessionKey — a per-run staging table is dropped at the end of the run, so nothing could read the cursor back.`);
+            }
+            if (!this.primaryKey?.length) {
+                throw new Error(`autoSQLStream: a cursor requires a primaryKey — resuming re-sends the page that failed, and without a key those duplicate rows cannot be deduplicated at merge.`);
+            }
+            this.cursorsWritten.add(cursor);
+        }
         return this.db.runWithSchema(this.schema, async () => {
             const config = this.db.getConfig();
 
@@ -86,6 +118,11 @@ export class AutoSQLStreamHandle {
                 // silently drop a key first appearing in a later row of the same chunk (A18).
                 const cols = new Set<string>();
                 for (const row of chunk) for (const k of Object.keys(row)) cols.add(k);
+                // Reserved, or the injected column collides and the CREATE fails unhelpfully.
+                const reserved = [...cols].filter(isStagingMetaColumn);
+                if (reserved.length > 0) {
+                    throw new Error(`autoSQLStream: column(s) ${reserved.join(', ')} use the reserved '${STAGING_COLUMN_PREFIX}' prefix, which autosql uses for its own staging columns. Rename them.`);
+                }
                 this.columns = [...cols];
                 this.columnSet = cols;
                 const createQ = buildCreateStreamStagingTableQuery(this.stagingTable, this.columns, config);
@@ -129,12 +166,14 @@ export class AutoSQLStreamHandle {
 
             // SQL Server caps a request at 2,100 bound parameters, so split the chunk into sub-batches of
             // ≤ floor(2000 / colCount) rows (one request each). Other dialects send the whole chunk in one.
+            // A bound cursor is one more parameter per row, so it counts toward the cap.
+            const boundPerRow = this.columns!.length + (cursor !== undefined ? 1 : 0);
             const perStatement = config.sqlDialect === 'sqlserver'
-                ? Math.max(1, Math.floor(2000 / this.columns!.length))
+                ? Math.max(1, Math.floor(2000 / boundPerRow))
                 : chunk.length;
             for (let i = 0; i < chunk.length; i += perStatement) {
                 const sub = chunk.slice(i, i + perStatement);
-                const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, sub, config);
+                const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, sub, config, cursor);
                 const insertResult = await this.db.runTransaction([insertQ]);
                 if (!insertResult.success) {
                     throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error}`);
@@ -174,7 +213,19 @@ export class AutoSQLStreamHandle {
             if (!selectResult.success || !selectResult.results) {
                 throw new Error(`autoSQLStream: failed to read staging data: ${selectResult.error}`);
             }
-            const stagingRows: Record<string, any>[] = selectResult.results;
+            // Dedup BEFORE inference, not just at merge. A resumed run re-sends the page it died on,
+            // so a key legitimately appears twice in staging — and inference reading that decides the
+            // key is not unique and WIDENS it (an `id` re-send produced a composite `(id, name)` PK).
+            // Keep the last-staged row per key, matching the merge's own dedup.
+            const rawRows: Record<string, any>[] = this.resumable && this.primaryKey?.length
+                ? dedupByKeyKeepingLast(selectResult.results, this.primaryKey)
+                : selectResult.results;
+            // Strip after: `_autosql_*` describes the load, not the data.
+            const stagingRows: Record<string, any>[] = rawRows.map((r: Record<string, any>) => {
+                const out: Record<string, any> = {};
+                for (const k of Object.keys(r)) if (!isStagingMetaColumn(k)) out[k] = r[k];
+                return out;
+            });
             if (stagingRows.length === 0) {
                 // Nothing to lose by dropping an empty table, so don't leak it to the sweeper.
                 promoted = true;
@@ -233,7 +284,8 @@ export class AutoSQLStreamHandle {
             }
 
             const tLoad = perf();
-            const mergeQ = buildMergeFromStreamQuery(this.table, this.stagingTable, updatedMetaData, insertType as 'UPDATE' | 'INSERT', config);
+            // Any resumable stream, not just cursored ones: a resume can re-send staged rows.
+            const mergeQ = buildMergeFromStreamQuery(this.table, this.stagingTable, updatedMetaData, insertType as 'UPDATE' | 'INSERT', config, this.resumable);
             const mergeResult = await this.db.runTransaction([mergeQ]);
 
             let affectedRows = mergeResult.affectedRows ?? 0;
@@ -301,6 +353,47 @@ export class AutoSQLStreamHandle {
             this.table, rows, metaData, insertType, maxRetries, this.primaryKey, 'autoSQLStream'
         );
         return inserted;
+    }
+
+    /**
+     * What is currently staged, for a caller that lost its run. Reads the table, not this handle, so
+     * it is valid when another process staged the rows. See README.
+     */
+    async stagingState(): Promise<{
+        stagedRows: number;
+        cursors: string[];
+        lastCursor: string | null;
+        firstStagedAt: Date | null;
+        lastStagedAt: Date | null;
+    }> {
+        const empty = { stagedRows: 0, cursors: [], lastCursor: null, firstStagedAt: null, lastStagedAt: null };
+        if (!this.stagingCreated) return empty;
+        return this.db.runWithSchema(this.schema, async () => {
+            const result = await this.db.runQuery(buildStagingStateQuery(this.stagingTable, this.db.getConfig()));
+            if (!result.success || !result.results?.length) return empty;
+            const pick = (r: any, k: string) => r[k] ?? r[k.toUpperCase()];
+            const rows = result.results;
+            let stagedRows = 0;
+            const cursors: string[] = [];
+            const stamps: Date[] = [];
+            for (const r of rows) {
+                stagedRows += Number(pick(r, 'row_count')) || 0;
+                const c = pick(r, 'cursor_value');
+                if (c !== null && c !== undefined) cursors.push(String(c));
+                for (const k of ['first_staged_at', 'last_staged_at']) {
+                    const v = pick(r, k);
+                    if (v) stamps.push(v instanceof Date ? v : new Date(v));
+                }
+            }
+            stamps.sort((a, b) => a.getTime() - b.getTime());
+            return {
+                stagedRows,
+                cursors,
+                lastCursor: cursors.length ? cursors[cursors.length - 1] : null,
+                firstStagedAt: stamps.length ? stamps[0] : null,
+                lastStagedAt: stamps.length ? stamps[stamps.length - 1] : null,
+            };
+        });
     }
 
     /**

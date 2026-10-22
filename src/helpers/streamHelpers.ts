@@ -73,6 +73,22 @@ function schemaPrefixFor(config: DatabaseConfig): string {
 }
 
 /** CREATE TABLE DDL for the untyped (all TEXT) staging table. Columns come from the first chunk. */
+/**
+ * Staging-only bookkeeping, never merged into the target. `_autosql_seq` carries the ordering: an
+ * opaque cursor can't be sorted and `_autosql_staged_at` ties within MySQL's one-second resolution.
+ * See README, "Resuming across runs with a cursor".
+ */
+export const STAGING_CURSOR_COLUMN = '_autosql_cursor';
+export const STAGING_STAGED_AT_COLUMN = '_autosql_staged_at';
+export const STAGING_SEQ_COLUMN = '_autosql_seq';
+export const STAGING_COLUMN_PREFIX = '_autosql_';
+export const STAGING_META_COLUMNS = [STAGING_SEQ_COLUMN, STAGING_CURSOR_COLUMN, STAGING_STAGED_AT_COLUMN];
+
+/** True for a column autosql injects into staging, so callers' data columns can be told apart. */
+export function isStagingMetaColumn(column: string): boolean {
+    return column.startsWith(STAGING_COLUMN_PREFIX);
+}
+
 export function buildCreateStreamStagingTableQuery(
     stagingTable: string,
     columns: string[],
@@ -83,11 +99,38 @@ export function buildCreateStreamStagingTableQuery(
     const colType = dialect === 'mysql' ? 'LONGTEXT' : dialect === 'sqlserver' ? 'NVARCHAR(MAX)' : 'TEXT';
     const colDefs = columns.map(col => `${qi(col, dialect)} ${colType}`).join(',\n  ');
     const tableRef = `${schemaPrefix}${qi(stagingTable, dialect)}`;
+
+    // DB clock, not the JS clock: a load spread across hosts would interleave their skew.
+    const seq = qi(STAGING_SEQ_COLUMN, dialect);
+    const stagedAt = qi(STAGING_STAGED_AT_COLUMN, dialect);
+    const cursor = qi(STAGING_CURSOR_COLUMN, dialect);
+    const metaDefs = dialect === 'mysql'
+        ? `${seq} BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,\n  ${cursor} LONGTEXT NULL,\n  ${stagedAt} DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`
+        : dialect === 'sqlserver'
+        ? `${seq} BIGINT IDENTITY(1,1) PRIMARY KEY,\n  ${cursor} NVARCHAR(MAX) NULL,\n  ${stagedAt} DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()`
+        : `${seq} BIGSERIAL PRIMARY KEY,\n  ${cursor} TEXT NULL,\n  ${stagedAt} TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP`;
+
+    const allDefs = `${metaDefs},\n  ${colDefs}`;
     if (dialect === 'sqlserver') {
         // No CREATE TABLE IF NOT EXISTS — guard with IF OBJECT_ID.
-        return { query: `IF OBJECT_ID(${escapeLiteral(tableRef, 'sqlserver')}, 'U') IS NULL CREATE TABLE ${tableRef} (\n  ${colDefs}\n);`, params: [] };
+        return { query: `IF OBJECT_ID(${escapeLiteral(tableRef, 'sqlserver')}, 'U') IS NULL CREATE TABLE ${tableRef} (\n  ${allDefs}\n);`, params: [] };
     }
-    return { query: `CREATE TABLE IF NOT EXISTS ${tableRef} (\n  ${colDefs}\n);`, params: [] };
+    return { query: `CREATE TABLE IF NOT EXISTS ${tableRef} (\n  ${allDefs}\n);`, params: [] };
+}
+
+/** Cursors ordered by their first row's seq; staged_at alone ties on MySQL's one-second resolution. */
+export function buildStagingStateQuery(stagingTable: string, config: DatabaseConfig): QueryInput {
+    const dialect = config.sqlDialect;
+    const tableRef = `${schemaPrefixFor(config)}${qi(stagingTable, dialect)}`;
+    const seq = qi(STAGING_SEQ_COLUMN, dialect);
+    const cursor = qi(STAGING_CURSOR_COLUMN, dialect);
+    const stagedAt = qi(STAGING_STAGED_AT_COLUMN, dialect);
+    return {
+        query: `SELECT ${cursor} AS cursor_value, COUNT(*) AS row_count, MIN(${seq}) AS first_seq, `
+             + `MIN(${stagedAt}) AS first_staged_at, MAX(${stagedAt}) AS last_staged_at `
+             + `FROM ${tableRef} GROUP BY ${cursor} ORDER BY MIN(${seq})`,
+        params: []
+    };
 }
 
 /**
@@ -127,20 +170,25 @@ export function buildInsertIntoStreamStagingQuery(
     stagingTable: string,
     columns: string[],
     rows: Record<string, any>[],
-    config: DatabaseConfig
+    config: DatabaseConfig,
+    cursor?: string
 ): QueryInput {
     const dialect = config.sqlDialect;
     const tableRef = `${schemaPrefixFor(config)}${qi(stagingTable, dialect)}`;
-    const escapedCols = columns.map(c => qi(c, dialect)).join(', ');
+    // seq and staged_at are DB-defaulted, so the cursor is the only one ever bound.
+    const insertColumns = cursor !== undefined ? [...columns, STAGING_CURSOR_COLUMN] : columns;
+    const cellFor = (row: Record<string, any>, col: string) =>
+        col === STAGING_CURSOR_COLUMN ? cursor! : streamCell(row[col]);
+    const escapedCols = insertColumns.map(c => qi(c, dialect)).join(', ');
 
     const params: any[] = [];
     const rowPlaceholders: string[] = [];
 
     if (dialect === 'mysql') {
         for (const row of rows) {
-            rowPlaceholders.push(`(${columns.map(() => '?').join(', ')})`);
-            for (const col of columns) {
-                params.push(streamCell(row[col]));
+            rowPlaceholders.push(`(${insertColumns.map(() => '?').join(', ')})`);
+            for (const col of insertColumns) {
+                params.push(cellFor(row, col));
             }
         }
     } else if (dialect === 'sqlserver') {
@@ -148,19 +196,19 @@ export function buildInsertIntoStreamStagingQuery(
         // Server's 2,100-parameter cap.
         let paramIdx = 0;
         for (const row of rows) {
-            const holders = columns.map(() => `@p${paramIdx++}`);
+            const holders = insertColumns.map(() => `@p${paramIdx++}`);
             rowPlaceholders.push(`(${holders.join(', ')})`);
-            for (const col of columns) {
-                params.push(streamCell(row[col]));
+            for (const col of insertColumns) {
+                params.push(cellFor(row, col));
             }
         }
     } else {
         let paramIdx = 1;
         for (const row of rows) {
-            const holders = columns.map(() => `$${paramIdx++}`);
+            const holders = insertColumns.map(() => `$${paramIdx++}`);
             rowPlaceholders.push(`(${holders.join(', ')})`);
-            for (const col of columns) {
-                params.push(streamCell(row[col]));
+            for (const col of insertColumns) {
+                params.push(cellFor(row, col));
             }
         }
     }
@@ -299,7 +347,8 @@ export function buildMergeFromStreamQuery(
     stagingTable: string,
     metaData: MetadataHeader,
     insertType: 'UPDATE' | 'INSERT',
-    config: DatabaseConfig
+    config: DatabaseConfig,
+    dedupOnPrimaryKey?: boolean
 ): QueryInput {
     const dialect = config.sqlDialect;
     const schemaPrefix = schemaPrefixFor(config);
@@ -307,7 +356,19 @@ export function buildMergeFromStreamQuery(
     const columns = Object.keys(metaData);
     const primaryKeys = columns.filter(c => metaData[c].primary);
     const mainRef    = `${schemaPrefix}${qi(table, dialect)}`;
-    const stagingRef = `${schemaPrefix}${qi(stagingTable, dialect)}`;
+    const rawStagingRef = `${schemaPrefix}${qi(stagingTable, dialect)}`;
+
+    // A resumed run re-sends the page it died on, so staging can hold a key twice. Postgres and SQL
+    // Server reject duplicate source keys outright (only MySQL tolerates it), so collapse to the
+    // last-staged row per key: the re-run wins.
+    const dedupKeys = Object.keys(metaData).filter(c => metaData[c].primary);
+    const wantsDedup = !!dedupOnPrimaryKey && dedupKeys.length > 0;
+    const stagingRef = wantsDedup
+        ? `(SELECT * FROM (SELECT *, ROW_NUMBER() OVER (PARTITION BY `
+          + `${dedupKeys.map(k => qi(k, dialect)).join(', ')} ORDER BY ${qi(STAGING_SEQ_COLUMN, dialect)} DESC`
+          + `) AS ${qi('_autosql_rn', dialect)} FROM ${rawStagingRef}) ${qi('_autosql_d', dialect)} `
+          + `WHERE ${qi('_autosql_rn', dialect)} = 1) ${qi('_autosql_s', dialect)}`
+        : rawStagingRef;
     const colList  = columns.map(c => qi(c, dialect)).join(', ');
 
     if (dialect === 'mysql') {
