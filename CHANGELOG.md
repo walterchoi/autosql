@@ -1,68 +1,77 @@
 ## [Unreleased]
 
-> **Staging tables that survive between runs.** `openStream` accepts an optional `sessionKey`, so a
-> stream that stopped partway can be picked up by a later run and keep appending to the same staging
-> table instead of starting over. Nothing changes unless you pass one.
+## [2.7.0] - 2026-10-22
+
+> **Staging tables can survive between runs.** Give `openStream` a `sessionKey` and a later run picks
+> up the same staging table instead of starting over, so a load too large to finish in one run can
+> make progress without putting partial data in the target table. Nothing changes unless you pass one.
 
 ### ✨ Features
-- **`openStream(table, schema?, primaryKey?, { sessionKey })` — resumable staging.** Staging identity
-  was per-invocation by construction: `openStream` generated a run id and named the staging table from
-  it, and it *deleted* prior staging tables for that target first (`keepOrphanedStagingTables: false`).
-  So a retry destroyed the pages the failed attempt had already landed, and there was no way to attach
-  to an existing staging table — `keepOrphanedStagingTables: true` preserved one but left it
-  unreachable. That made "load a large object across several runs, promote once at the end"
-  impossible: the only alternative was committing pages straight to the target table, which puts
-  partial, visibly-wrong data in production on a failed run.
+- **Resumable stream staging: `openStream(table, schema?, primaryKey?, { sessionKey })`.** Staging
+  identity used to be per-invocation by construction. `openStream` generated a run id, named the
+  staging table from it, and dropped prior staging tables for that target first (default
+  `keepOrphanedStagingTables: false`). A retry therefore deleted the pages the failed attempt had
+  already landed. Nothing could attach to an existing staging table either:
+  `keepOrphanedStagingTables: true` kept the table but left it unreachable, because no later call
+  could work out its name.
 
-  Pass a `sessionKey` — a stable string identifying the **load session, not one run of it** (derive it
-  from something that outlives an attempt, like a connection or destination id) — and:
-  - The staging table name is a pure function of the key (hashed, so an arbitrary caller string can't
-    affect the identifier's shape), instead of embedding a generated run id.
-  - A later `openStream` with the same key **adopts** the existing table and keeps appending.
-  - **`handle.adopted`** reports whether anything was carried over. ⚠ Callers tracking their own
-    resume point **must** read it: `false` means the staging table was empty, so nothing carried over
-    and you must re-send from the start. Trusting a stored high-water mark against a non-adopted
-    stream silently drops every row before that mark.
-  - **`handle.suspend()`** is a third terminal state alongside `end()` (merge) and `abort()`
-    (discard): stop *without* promoting and *without* discarding, leaving the table for a later run.
-    It throws on a non-resumable stream, where the table could never be found again.
-  - **A drifted source widens the staging table** rather than failing the resume. The adopted
-    table's committed columns become the stream's, and a column that appears after the table was
-    created is added to it (`ALTER TABLE … ADD`) — the same thing autosql does everywhere else, and
-    the reason a drifted source is normally a non-event. Staging is all-text, so there is never a
-    type to widen, only columns to add; added columns are nullable, so rows staged by earlier runs
-    read `NULL` for them, which is what they were. `end()` infers over the whole staging table
-    afterwards, so the new column reaches the target through the ordinary DDL path. The columns added
-    this way are reported on `handle.widenedColumns`.
-    Widening respects **`safeMode`**, the existing switch for whether autosql performs DDL at all:
-    with `safeMode: true` there is no DDL available to widen with, so an unknown column is refused
-    loudly instead of being silently dropped. A per-run (keyless) stream keeps the established
-    refusal — its column set came from its own first chunk moments earlier, so an unknown key there
-    is a caller inconsistency rather than source drift across runs.
+  So a load too big for one run could never finish. The only other option was writing pages straight
+  to the target table, which leaves partial data live when a run fails.
+
+  `sessionKey` names the load session, not one run of it. Derive it from something that outlives an
+  attempt, such as a connection or destination id. Derive it from a run or attempt id and every retry
+  gets a fresh table, so resuming quietly becomes restarting.
+  - The staging table name is a pure function of the key. The key is hashed, so a caller-supplied
+    string cannot affect the identifier's shape or length.
+  - A later `openStream` with the same key adopts the existing table and keeps appending.
+  - **`handle.adopted`** reports whether anything was carried over. Read it if you track your own
+    resume point. `false` means there was no table to attach to, so nothing carried over and you need
+    to re-send from the start. A stored high-water mark trusted against a non-adopted stream silently
+    drops every row before that mark. A table that exists but holds no rows yet reports `true`,
+    because its column set was adopted.
+  - **`handle.suspend()`** stops without merging and without dropping, leaving the table for a later
+    run. `end()` merges and `abort()` discards, so neither of them covers "I got part of the way
+    through, I'll be back". It throws on a stream opened without a `sessionKey`, where the table could
+    never be found again.
+- **A drifted source widens the staging table.** A column that turns up after the staging table was
+  created gets added to it (`ALTER TABLE ... ADD`), which is what autosql does everywhere else.
+  Staging is all text, so there is never a type to widen, only columns to add. Added columns are
+  nullable, so rows staged by earlier runs read `NULL` for them, which is what they were. `end()`
+  infers over the whole staging table, so the new column reaches the target through the normal DDL
+  path. `handle.widenedColumns` lists what was added.
+
+  Widening obeys **`safeMode`**, the existing switch for whether autosql runs DDL at all. With
+  `safeMode: true` there is no DDL to widen with, so an unknown column is refused rather than dropped,
+  because dropping it loses data. A keyless stream keeps the old refusal: its column set came from its
+  own first chunk moments earlier, so an unknown key there is a caller inconsistency rather than a
+  source that changed between runs.
 
 ### 🐛 Bug Fixes
 - **A failed `end()` no longer destroys a resumable stream's accumulated rows.** `end()` dropped the
-  staging table in a `finally`, unconditionally. For a stream spanning runs, a *transient* merge
-  failure (lock timeout, connection blip) therefore threw away everything earlier runs had staged —
-  the exact loss the feature exists to prevent. A resumable stream whose rows were not promoted now
-  keeps its table and warns; retry `end()`, or `abort()` to discard deliberately. Per-run streams are
-  unchanged (their table is useless after the call, so it is always dropped).
-- **Orphan cleanup no longer drops a table a resume is about to adopt.** The sweep is keyed on the
-  target table and prefix, so it matched session-keyed tables too — and not only the opening session's:
-  it would also have destroyed a *different* session key's in-progress load into the same target.
-  Resumable tables are now skipped explicitly.
+  staging table in a `finally` with no condition on it. For a stream spanning runs, a merge failure
+  that a retry would have cleared (lock timeout, connection blip) threw away everything earlier runs
+  had staged. A resumable stream whose rows did not reach the target now keeps its table and warns.
+  Retry `end()`, or call `abort()` to discard on purpose. Per-run streams are unchanged, since their
+  table is no use after the call.
+
+  One caveat on that retry: `end()` is only safe to repeat under `insertType: 'UPDATE'` with a primary
+  key, where the merge upserts. Under `'INSERT'`, or with no key, a retry re-sends the rows the
+  per-row fallback had already landed and duplicates them. Without a key, reconcile instead of
+  retrying blind.
+- **Orphan cleanup no longer drops a table a resume is about to adopt.** The sweep matches on target
+  table and prefix, so it caught session-keyed tables as well, and not only the opening session's. It
+  would also have dropped a different session key's in-progress load into the same target.
 
 ### ⚠ Known gaps
-- **Staging lifetime is not yet bounded.** A table that survives between runs also survives a
-  connection being deleted or a sync being abandoned, which is storage in the customer's own warehouse
-  that nobody asked for. The agreed design is a session registry table
-  (`session_key, staging_table, target, created_at, last_write_at`) — chosen over a table-age TTL
-  because Postgres exposes no table creation time, so age-based cleanup can't be made even across
-  dialects. Until then, call `abort()` when a session is retired.
-- **autosql does not serialise writers.** The caller must guarantee a single writer per session key;
-  two concurrent streams sharing a key both append and duplicate rows at merge. autosql deliberately
-  owns no part of the resume point itself — it knows nothing about pagination, cursors or job runs,
-  and its only contribution is "this staging table is still here and you may keep appending".
+- **Staging lifetime is not bounded yet.** A table that survives between runs also survives a
+  connection being deleted or a sync being abandoned, which is storage in the target warehouse that
+  nobody asked for. The plan is a session registry table (`session_key`, `staging_table`, `target`,
+  `created_at`, `last_write_at`). A TTL based on table age will not work evenly, because Postgres does
+  not expose a table creation time. Until the registry lands, call `abort()` when you retire a session.
+- **autosql does not serialise writers.** One writer per session key is the caller's job. Two streams
+  sharing a key both append, and the rows duplicate at merge.
+- autosql owns no part of the resume point. It knows nothing about pagination, cursors, or job runs.
+  Its contribution is that the staging table is still there and you may keep appending to it.
 
 ## [2.6.0] - 2026-10-03
 
