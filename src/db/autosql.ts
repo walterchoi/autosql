@@ -23,6 +23,7 @@ import {
     isAutosqlStreamTable,
     isResumableStreamTable,
     buildStagingColumnsQuery,
+    isStagingMetaColumn,
     buildDropStreamStagingTableQuery,
     buildOrphanSearchQuery,
 } from '../helpers/streamHelpers';
@@ -1138,7 +1139,10 @@ export class AutoSQLHandler {
             throw new Error(`openStream: failed to inspect existing staging table '${stagingTable}': ${result.error}`);
         }
         if (!result.results?.length) return null;
-        return result.results.map((r: any) => r.column_name ?? r.COLUMN_NAME);
+        // The handle tracks the CALLER's shape; these would look like data downstream.
+        return result.results
+            .map((r: any) => r.column_name ?? r.COLUMN_NAME)
+            .filter((c: string) => !isStagingMetaColumn(c));
     }
 
     async _cleanupOrphanedStreamTables(table: string, prefix: string): Promise<void> {

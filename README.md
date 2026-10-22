@@ -683,7 +683,7 @@ This is the core interface for managing connections, generating queries, and exe
 - **`autoSQLChunked(table: string, iterable: AsyncIterable<Record<string, any>[]>, schema?: string, primaryKey?: string[])`** *(v1.0.5+)*
   Streaming-friendly variant of `autoSQL` that accepts an `AsyncIterable` of row chunks. Schema inference and DDL run once on the first non-empty chunk; subsequent chunks skip straight to insert. Compatible with `useSchemaLock` and `useStagingInsert`.
 
-- **`openStream(table: string, schema?: string, primaryKey?: string[], opts?: OpenStreamOptions)`** *(v1.1.0+; `opts.sessionKey` for staging that survives between runs)*
+- **`openStream(table: string, schema?: string, primaryKey?: string[], opts?: OpenStreamOptions)`** *(v1.1.0+; `opts.sessionKey` for staging that survives between runs, with `write(chunk, { cursor })` to record a resume point)*
   Opens a streaming session and returns an `AutoSQLStreamHandle`. See [Streaming Inserts](#-streaming-inserts) for full details.
 
 Each method is designed to work with the same `Database` instance.
@@ -837,7 +837,49 @@ Other behaviour worth knowing:
 - ⚠ **One writer per session key.** autosql does not serialise writers; two concurrent streams sharing a key both append and duplicate rows at merge.
 - ⚠ **Lifetime is the caller's responsibility for now.** A table that survives between runs also survives a connection being deleted or a sync being abandoned, which is storage in your warehouse that nothing will reclaim. Call `abort()` when you retire a session. A built-in session registry and sweeper is planned.
 
-autosql deliberately owns no part of the resume point itself — it knows nothing about pagination, cursors or job runs. Its contribution is only "this staging table is still here and you may keep appending to it".
+### Resuming across runs with a cursor
+
+Knowing the staging table survived is not the same as knowing *where to continue*. Pass a **cursor** with each `write()` and autosql records it alongside the rows, so the resume point lives in the same table as the data it describes and the two share one lifetime. Nothing external has to be kept in step.
+
+```ts
+const stream = await db.openStream('events', 'my_schema', ['id'], { sessionKey: `conn-${connectionId}` });
+
+// Where did the last run get to?
+const { lastCursor, stagedRows, lastStagedAt } = await stream.stagingState();
+
+let page = lastCursor ? pageAfter(lastCursor) : firstPage();
+// Re-send the page the previous run died on: it may have landed only part way through.
+if (lastCursor) page = lastCursor;
+
+for (; page; page = nextPage(page)) {
+  await stream.write(await fetchPage(page), { cursor: page });
+  if (outOfTime()) { await stream.suspend(); return; }   // come back next invocation
+}
+await stream.end();
+```
+
+`stagingState()` returns `{ stagedRows, cursors, lastCursor, firstStagedAt, lastStagedAt }`. It reads the staging table rather than the handle, so it works on a stream whose rows a *different* process staged — which is the whole point after a lambda dies.
+
+**Re-sending a page is safe, and expected.** This is the same at-least-once contract Singer and Fivetran use: a run that died part way through a page can't know how much of it landed, so it re-sends the whole page. autosql collapses the duplicates at merge, keeping the **last-staged** row for each primary key, so the re-run wins. That's also why a cursor **requires a `primaryKey`** — without one there is nothing to deduplicate on, so autosql refuses rather than letting duplicates reach your table.
+
+#### The three staging-only columns
+
+autosql adds these to the staging table. They never reach the target:
+
+| column | what it is |
+|---|---|
+| `_autosql_cursor` | the cursor you passed to `write()`, stored per row |
+| `_autosql_staged_at` | when autosql staged the row, from the **database** clock |
+| `_autosql_seq` | monotonic per row; the ordering that `stagingState()` and dedup rely on |
+
+`_autosql_` is a **reserved prefix** — a data column using it is refused, since it would collide with these.
+
+Two things worth knowing about them:
+
+- **`_autosql_seq` is the ordering, not the timestamp.** Cursors are opaque strings autosql can't sort, and a timestamp isn't enough on its own: MySQL `DATETIME` resolves to one second, so two pages staged in the same second would tie. Fivetran's `_fivetran_synced` is the cautionary tale here — it records when a record was *prepared*, not written, and rows don't arrive in its order, which quietly broke everyone who used it as a watermark. Don't order on `_autosql_staged_at`; it's for staleness, not sequence.
+- **`_autosql_staged_at` comes from the database clock**, not the process clock, so a load spread across several hosts doesn't interleave their clock skew. It also gives you staleness for free: if `lastStagedAt` is older than you're willing to resume from, `abort()` and start clean rather than appending this week's pages onto last month's.
+
+autosql still owns no part of *your* pagination: it doesn't know what a cursor means, only that it should keep it next to the rows it arrived with and hand it back.
 
 ### Rejected rows
 
