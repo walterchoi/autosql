@@ -331,6 +331,8 @@ AutoSQL supports SSH tunneling for connecting to remote MySQL or PostgreSQL serv
 
 Include the SSH configuration inside your `DatabaseConfig` object under the `sshConfig` key. AutoSQL will automatically establish the tunnel when `establishConnection()` is called.
 
+⚠ **MySQL and Postgres only.** `sshConfig` (or `sshStream`) with `sqlDialect: "sqlserver"` **throws**, because the `mssql` driver is never handed the tunnel's stream — the connection would be made directly and not through the tunnel. For SQL Server, reach the server by VPN or peering, and use `ssl` for encryption in transit.
+
 ```ts
 const config: DatabaseConfig = {
   ...

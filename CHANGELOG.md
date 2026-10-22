@@ -77,6 +77,15 @@
   key, where the merge upserts. Under `'INSERT'`, or with no key, a retry re-sends the rows the
   per-row fallback had already landed and duplicates them. Without a key, reconcile instead of
   retrying blind.
+- **`sshConfig` on SQL Server is now refused instead of silently not tunnelling.** The base
+  `establishConnection` opens the tunnel for every dialect, but only the mysql and pgsql drivers hand
+  the resulting stream to their driver. On SQL Server the tunnel was opened on the bastion and then
+  bypassed: the mssql pool connected **directly** while the caller believed the traffic was tunnelled.
+  If the server happened to be reachable directly, that meant an unencrypted connection nobody asked
+  for; if it was not, the failure pointed at the database rather than at the ignored tunnel. Setting
+  `sshConfig` or `sshStream` with `sqlDialect: "sqlserver"` now throws from `validateConfig`, before a
+  tunnel is opened, and the message says to use a VPN, peering, or `ssl` instead. MySQL and Postgres
+  are unaffected.
 - **A re-sent page no longer corrupts the inferred key.** Dedup had to happen before inference, not
   only at merge. A resumed run re-sends the page it died on, so a key legitimately appears twice in
   staging, and inference reading that decided the key was not unique and WIDENED it: re-sending rows
