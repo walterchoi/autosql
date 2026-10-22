@@ -24,6 +24,47 @@ export function isAutosqlStreamTable(tableName: string, table: string, prefix: s
     return /^[0-9a-f]{8}$/.test(suffix);
 }
 
+/** Marker segment separating a resumable (session-keyed) staging table from a per-run one. */
+const RESUMABLE_MARKER = 'rs_';
+
+/**
+ * Name a resumable staging table from a caller-owned session key.
+ *
+ * A pure function of the key, so a later run resolves the same table. Hashed rather than
+ * interpolated so a caller-owned string can never affect the identifier's shape or length.
+ */
+export function buildResumableStagingTableName(table: string, prefix: string, sessionKey: string): string {
+    const hash = crypto.createHash('sha256').update(sessionKey).digest('hex').slice(0, 8);
+    return `${prefix}${table}__${RESUMABLE_MARKER}${hash}`;
+}
+
+/**
+ * Orphan cleanup skips these: owned by a caller's session, so outliving the run that created one is
+ * its normal state, not evidence of a crash. Deliberately an explicit check rather than a side
+ * effect of {@link isAutosqlStreamTable}'s regex rejecting `rs_`, so the exclusion survives that
+ * regex changing.
+ */
+export function isResumableStreamTable(tableName: string, table: string, prefix: string): boolean {
+    const expected = `${prefix}${table}__${RESUMABLE_MARKER}`;
+    if (!tableName.startsWith(expected)) return false;
+    return /^[0-9a-f]{8}$/.test(tableName.slice(expected.length));
+}
+
+/**
+ * Columns of an existing staging table, so an adopted stream validates writes against the shape
+ * that is really there rather than one inferred from its own first chunk.
+ */
+export function buildStagingColumnsQuery(stagingTable: string, config: DatabaseConfig): QueryInput {
+    const schema = config.schema || config.database || '';
+    const where = config.sqlDialect === 'mysql' ? '? AND table_name = ?'
+        : config.sqlDialect === 'sqlserver' ? '@p0 AND table_name = @p1'
+        : '$1 AND table_name = $2';
+    return {
+        query: `SELECT column_name FROM information_schema.columns WHERE table_schema = ${where} ORDER BY ordinal_position`,
+        params: [schema, stagingTable]
+    };
+}
+
 // --- Identifier escaping. Column names come from arbitrary caller JSON keys and table/schema names
 //     from config, so every interpolated identifier must be quote-escaped (the rest of the query
 //     builders route through escape.ts; the streaming path did not). ---
@@ -53,6 +94,29 @@ export function buildCreateStreamStagingTableQuery(
         return { query: `IF OBJECT_ID(${escapeLiteral(tableRef, 'sqlserver')}, 'U') IS NULL CREATE TABLE ${tableRef} (\n  ${colDefs}\n);`, params: [] };
     }
     return { query: `CREATE TABLE IF NOT EXISTS ${tableRef} (\n  ${colDefs}\n);`, params: [] };
+}
+
+/**
+ * Widen an existing stream staging table.
+ *
+ * Staging is all-text, so there is never a type to widen, only columns to add. Added columns stay
+ * nullable because rows already staged genuinely had no value for them.
+ */
+export function buildAddStreamStagingColumnsQuery(
+    stagingTable: string,
+    newColumns: string[],
+    config: DatabaseConfig
+): QueryInput {
+    const dialect = config.sqlDialect;
+    const tableRef = `${schemaPrefixFor(config)}${qi(stagingTable, dialect)}`;
+    const colType = dialect === 'mysql' ? 'LONGTEXT' : dialect === 'sqlserver' ? 'NVARCHAR(MAX)' : 'TEXT';
+    // MySQL and SQL Server take several ADDs in one statement; Postgres needs ADD COLUMN per column.
+    const adds = dialect === 'pgsql'
+        ? newColumns.map(c => `ADD COLUMN ${qi(c, dialect)} ${colType}`).join(', ')
+        : dialect === 'sqlserver'
+        ? `ADD ${newColumns.map(c => `${qi(c, dialect)} ${colType}`).join(', ')}`
+        : newColumns.map(c => `ADD COLUMN ${qi(c, dialect)} ${colType}`).join(', ');
+    return { query: `ALTER TABLE ${tableRef} ${adds}`, params: [] };
 }
 
 /**

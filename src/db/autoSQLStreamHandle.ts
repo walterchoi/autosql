@@ -11,6 +11,7 @@ import {
     buildSelectFromStreamStagingQuery,
     buildDropStreamStagingTableQuery,
     buildMergeFromStreamQuery,
+    buildAddStreamStagingColumnsQuery,
 } from '../helpers/streamHelpers';
 
 export class AutoSQLStreamHandle {
@@ -24,6 +25,17 @@ export class AutoSQLStreamHandle {
     private columnSet: Set<string> | null = null;
     private stagingCreated = false;
     private ended = false;
+    /** Opened with a `sessionKey`, so staging may outlive this run. */
+    public readonly resumable: boolean;
+    /**
+     * Attached to rows an earlier run staged.
+     *
+     * ⚠ A caller with its own resume point must read this: trusting a stored high-water mark against
+     * a non-adopted stream silently drops every row before that mark.
+     */
+    public readonly adopted: boolean;
+    /** Columns added to an adopted table mid-load. Reporting only; the load is correct either way. */
+    public readonly widenedColumns: string[] = [];
 
     constructor(
         handler: AutoSQLHandler,
@@ -31,7 +43,8 @@ export class AutoSQLStreamHandle {
         table: string,
         stagingTable: string,
         schema: string | undefined,
-        primaryKey: string[] | undefined
+        primaryKey: string[] | undefined,
+        resume?: { resumable: boolean; adoptedColumns: string[] | null }
     ) {
         this.handler = handler;
         this.db = db;
@@ -39,6 +52,18 @@ export class AutoSQLStreamHandle {
         this.stagingTable = stagingTable;
         this.schema = schema;
         this.primaryKey = primaryKey;
+        this.resumable = resume?.resumable ?? false;
+
+        // Pre-set so write() doesn't try to create a table that's already there.
+        const adoptedColumns = resume?.adoptedColumns ?? null;
+        if (adoptedColumns && adoptedColumns.length > 0) {
+            this.columns = adoptedColumns;
+            this.columnSet = new Set(adoptedColumns);
+            this.stagingCreated = true;
+            this.adopted = true;
+        } else {
+            this.adopted = false;
+        }
     }
 
     /**
@@ -73,14 +98,34 @@ export class AutoSQLStreamHandle {
                 this.stagingCreated = true;
             }
 
-            // Staging columns are fixed at creation. A key first appearing in a LATER row/chunk has no
-            // column to land in and would be silently dropped (data loss) — fail loud so the caller
-            // keeps a stable column set or starts a separate load (A18).
+            // A key first appearing in a LATER row/chunk has no column to land in, and dropping it
+            // silently is data loss (A18).
+            const unknown: string[] = [];
             for (const row of chunk) {
                 for (const k of Object.keys(row)) {
-                    if (!this.columnSet!.has(k)) {
-                        throw new Error(`autoSQLStream: row has column '${k}' that was not present when the stream started (columns: ${this.columns!.join(', ')}). A stream requires a stable column set — include '${k}' in the first written rows, or use a separate stream/load for it.`);
+                    if (!this.columnSet!.has(k) && !unknown.includes(k)) unknown.push(k);
+                }
+            }
+            if (unknown.length > 0) {
+                // Widen rather than refuse: absorbing a drifted source is what autosql does
+                // everywhere else, and refusing would strand a resume mid-load. `safeMode` means no
+                // DDL, so there the only non-lossy option left is to refuse. A keyless stream keeps
+                // the established throw — its columns came from its own first chunk moments earlier,
+                // so an unknown key is caller inconsistency, not drift between runs.
+                if (this.resumable && !config.safeMode) {
+                    const alterQ = buildAddStreamStagingColumnsQuery(this.stagingTable, unknown, config);
+                    const alterResult = await this.db.runTransaction([alterQ]);
+                    if (!alterResult.success) {
+                        throw new Error(`autoSQLStream: failed to widen staging table '${this.stagingTable}' with new column(s) ${unknown.join(', ')}: ${alterResult.error}`);
                     }
+                    for (const k of unknown) { this.columns!.push(k); this.columnSet!.add(k); }
+                    this.widenedColumns.push(...unknown);
+                    this.db.warn(`autoSQLStream: staging table '${this.stagingTable}' widened with new column(s) ${unknown.join(', ')} that appeared after it was created.`);
+                } else {
+                    const why = this.resumable
+                        ? `safeMode is set, so the staging table cannot be altered to fit it`
+                        : `a stream requires a stable column set`;
+                    throw new Error(`autoSQLStream: row has column '${unknown[0]}' that was not present when the stream started (columns: ${this.columns!.filter(c => !unknown.includes(c)).join(', ')}). ${why} — include '${unknown[0]}' in the first written rows, or use a separate stream/load for it.`);
                 }
             }
 
@@ -120,6 +165,7 @@ export class AutoSQLStreamHandle {
         // staging + infer (prepare) → DDL (configure) → merge (load) — not the incremental write()s.
         const perf = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
         const phases: { prepare?: number; configure?: number; load?: number } = {};
+        let promoted = false; // gates the drop in `finally`
 
         try {
             if (!this.stagingCreated) {
@@ -135,6 +181,8 @@ export class AutoSQLStreamHandle {
             }
             const stagingRows: Record<string, any>[] = selectResult.results;
             if (stagingRows.length === 0) {
+                // Nothing to lose by dropping an empty table, so don't leak it to the sweeper.
+                promoted = true;
                 return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
             }
 
@@ -226,6 +274,7 @@ export class AutoSQLStreamHandle {
             };
             try { config.logger?.stats?.(stats); } catch { /* a metrics sink must never break a load */ }
             await writeRunAudit(this.db, { table: this.table, success: true, rows: stagingRows.length, affectedRows, durationMs, rowsPerSecond: stats.rowsPerSecond, phases: stats.phases, staged: true, bulkLoad: !!config.bulkLoad });
+            promoted = true;
             return { start, end, success: true, duration: durationMs, affectedRows, table: this.table, stats };
         } catch (error: any) {
             const end = new Date();
@@ -234,12 +283,17 @@ export class AutoSQLStreamHandle {
             await writeRunAudit(this.db, { table: this.table, success: false, rows: 0, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: true, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined });
             return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
         } finally {
-            // Always drop staging table
-            if (this.stagingCreated) {
+            // A resumable stream keeps its table when the rows didn't land: the failure may be
+            // transient, and dropping here would discard rows accumulated over earlier runs, the
+            // exact loss this feature exists to prevent. Per-run tables are useless after the call.
+            const keepForResume = this.resumable && !promoted;
+            if (this.stagingCreated && !keepForResume) {
                 const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
                 await this.db.runTransaction([dropQ]).catch(e =>
                     this.db.error(`autoSQLStream: failed to drop staging table '${this.stagingTable}': ${e.message}`)
                 );
+            } else if (keepForResume) {
+                this.db.warn(`autoSQLStream: end() did not promote staged rows for '${this.table}'; keeping resumable staging table '${this.stagingTable}' so the run can be retried. Call abort() to discard it.`);
             }
             this.handler.releaseStreamStaging(this.stagingTable);
         }
@@ -260,9 +314,28 @@ export class AutoSQLStreamHandle {
     }
 
     /**
+     * Stop without promoting and without discarding, so a later run can adopt the staging table.
+     *
+     * Throws on a non-resumable stream: its table name is per-invocation, so suspending would leak a
+     * table nothing can ever find again, and both that and silently dropping the rows are worse than
+     * a loud refusal.
+     */
+    async suspend(): Promise<void> {
+        if (!this.resumable) {
+            throw new Error(
+                `autoSQLStream: suspend() requires a stream opened with a sessionKey — a per-run staging table cannot be resumed, ` +
+                `so suspending it would leave an unreachable table behind. Use end() to merge or abort() to discard.`
+            );
+        }
+        this.ended = true;
+        this.handler.releaseStreamStaging(this.stagingTable);
+    }
+
+    /**
      * Discard the run: drop the staging table without merging. Safe to call even if {@link write}
-     * was never called, and the correct way to bail out after a failed write(). Returns a promise
-     * that should be awaited.
+     * was never called, and the correct way to bail out after a failed write(). On a resumable
+     * stream this discards work accumulated across earlier runs too — use {@link suspend} to keep it.
+     * Returns a promise that should be awaited.
      */
     async abort(): Promise<void> {
         this.ended = true;

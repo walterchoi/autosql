@@ -2,7 +2,7 @@ import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
 import { SqlServerDatabase } from "./sqlserver";
 import { Database } from "./database";
-import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig } from "../config/types";
+import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, OpenStreamOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults, restrictInferredUniques } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { resolveDatasetSeparators } from "../helpers/numberFormat";
@@ -19,7 +19,10 @@ import { buildCompensatingDDL } from "../helpers/compensatingDDL";
 import {
     generateRunId,
     buildStreamStagingTableName,
+    buildResumableStagingTableName,
     isAutosqlStreamTable,
+    isResumableStreamTable,
+    buildStagingColumnsQuery,
     buildDropStreamStagingTableQuery,
     buildOrphanSearchQuery,
 } from '../helpers/streamHelpers';
@@ -1122,11 +1125,15 @@ export class AutoSQLHandler {
      * connectivity check fails) and must be awaited. The returned handle's methods
      * (`write`/`end`/`abort`) follow the same reject-on-failure, must-await contract —
      * they are not fire-and-forget. See {@link AutoSQLStreamHandle.write}.
+     *
+     * `opts.sessionKey` opts into staging that survives between runs. See README, "Resuming a
+     * stream across runs".
      */
     async openStream(
         table: string,
         schema?: string,
-        primaryKey?: string[]
+        primaryKey?: string[],
+        opts?: OpenStreamOptions
     ): Promise<AutoSQLStreamHandle> {
       return this.db.runWithSchema(schema, async () => {
         // (openStream on SQL Server: guard removed in spec-4 slice B — the stream builders now emit T-SQL.)
@@ -1144,14 +1151,45 @@ export class AutoSQLHandler {
             await this._cleanupOrphanedStreamTables(table, prefix);
         }
 
-        const runId = generateRunId();
-        const stagingTable = buildStreamStagingTableName(table, prefix, runId);
+        const sessionKey = opts?.sessionKey;
+        if (sessionKey !== undefined && sessionKey.trim() === '') {
+            // Almost always an unset caller variable; accepting it would make every such caller
+            // share one staging table.
+            throw new Error(`openStream: sessionKey must be a non-empty string when provided.`);
+        }
+
+        if (!sessionKey) {
+            const runId = generateRunId();
+            const stagingTable = buildStreamStagingTableName(table, prefix, runId);
+            this.activeStreamStagingTables.add(stagingTable);
+
+            // The handle re-establishes this schema context for its own write()/end()/abort()
+            // calls, which run later in separate async invocations.
+            return new AutoSQLStreamHandle(this, this.db, table, stagingTable, schema, primaryKey);
+        }
+
+        const stagingTable = buildResumableStagingTableName(table, prefix, sessionKey);
         this.activeStreamStagingTables.add(stagingTable);
 
-        // The handle re-establishes this schema context for its own write()/end()/abort()
-        // calls, which run later in separate async invocations.
-        return new AutoSQLStreamHandle(this, this.db, table, stagingTable, schema, primaryKey);
+        // Null when the table isn't there yet, which is the normal first run for a key.
+        const adoptedColumns = await this._probeStagingColumns(stagingTable);
+
+        return new AutoSQLStreamHandle(
+            this, this.db, table, stagingTable, schema, primaryKey,
+            { resumable: true, adoptedColumns }
+        );
       });
+    }
+
+    /** Column names of an existing stream staging table, or `null` if it isn't there. */
+    async _probeStagingColumns(stagingTable: string): Promise<string[] | null> {
+        const config = this.db.getConfig();
+        const result = await this.db.runQuery(buildStagingColumnsQuery(stagingTable, config));
+        if (!result.success) {
+            throw new Error(`openStream: failed to inspect existing staging table '${stagingTable}': ${result.error}`);
+        }
+        if (!result.results?.length) return null;
+        return result.results.map((r: any) => r.column_name ?? r.COLUMN_NAME);
     }
 
     async _cleanupOrphanedStreamTables(table: string, prefix: string): Promise<void> {
@@ -1170,6 +1208,10 @@ export class AutoSQLHandler {
 
         for (const row of result.results) {
             const name: string = row.table_name || row.TABLE_NAME;
+            // Session-keyed tables are supposed to outlive their creating run. Dropping one here
+            // would delete the table a resume is about to adopt, and since this sweep is keyed on
+            // the target, another session key's in-progress load into the same target too.
+            if (isResumableStreamTable(name, table, prefix)) continue;
             if (!isAutosqlStreamTable(name, table, prefix)) continue;
             if (this.activeStreamStagingTables.has(name)) continue; // live stream on this instance — not an orphan
             this.db.warn(`autoSQLStream: dropping orphaned stream staging table '${name}' from a previous crashed run.`);
