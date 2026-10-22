@@ -20,6 +20,7 @@ export type {
     InsertResult,
     SSHKeys,
     AutoSQLOptions,
+    OpenStreamOptions,
     AutoSQLPreview,
     TablePreview
 } from "./config/types";

@@ -24,6 +24,53 @@ export function isAutosqlStreamTable(tableName: string, table: string, prefix: s
     return /^[0-9a-f]{8}$/.test(suffix);
 }
 
+/** Marker segment separating a resumable (session-keyed) staging table from a per-run one. */
+const RESUMABLE_MARKER = 'rs_';
+
+/**
+ * Name a *resumable* stream staging table from a caller-owned session key.
+ *
+ * Unlike {@link buildStreamStagingTableName}, which embeds a per-invocation run id and is therefore
+ * a new table every call, this is a pure function of the session key — so a second `openStream`
+ * with the same key resolves to the same table and can keep appending to it across runs/processes.
+ * The key is hashed (not interpolated) so an arbitrary caller-owned string can never affect the
+ * identifier's shape or length.
+ */
+export function buildResumableStagingTableName(table: string, prefix: string, sessionKey: string): string {
+    const hash = crypto.createHash('sha256').update(sessionKey).digest('hex').slice(0, 8);
+    return `${prefix}${table}__${RESUMABLE_MARKER}${hash}`;
+}
+
+/**
+ * Confirm a table name is a resumable (session-keyed) stream staging table.
+ *
+ * Orphan cleanup must skip these: they are owned by a caller's session and may be mid-resume, so
+ * "left behind by a previous run" is their normal state rather than evidence of a crash. Note this
+ * is deliberately an explicit check and not a side effect of {@link isAutosqlStreamTable}'s 8-hex
+ * regex rejecting the `rs_` prefix — the exclusion is intent, and must survive that regex changing.
+ */
+export function isResumableStreamTable(tableName: string, table: string, prefix: string): boolean {
+    const expected = `${prefix}${table}__${RESUMABLE_MARKER}`;
+    if (!tableName.startsWith(expected)) return false;
+    return /^[0-9a-f]{8}$/.test(tableName.slice(expected.length));
+}
+
+/**
+ * Build a query listing the columns of an existing staging table, in ordinal order.
+ * Used to adopt a resumable staging table: its committed column set becomes the stream's, so
+ * write()'s stable-shape check (A18) validates incoming rows against what is actually there.
+ */
+export function buildStagingColumnsQuery(stagingTable: string, config: DatabaseConfig): QueryInput {
+    const schema = config.schema || config.database || '';
+    const where = config.sqlDialect === 'mysql' ? '? AND table_name = ?'
+        : config.sqlDialect === 'sqlserver' ? '@p0 AND table_name = @p1'
+        : '$1 AND table_name = $2';
+    return {
+        query: `SELECT column_name FROM information_schema.columns WHERE table_schema = ${where} ORDER BY ordinal_position`,
+        params: [schema, stagingTable]
+    };
+}
+
 // --- Identifier escaping. Column names come from arbitrary caller JSON keys and table/schema names
 //     from config, so every interpolated identifier must be quote-escaped (the rest of the query
 //     builders route through escape.ts; the streaming path did not). ---

@@ -683,7 +683,7 @@ This is the core interface for managing connections, generating queries, and exe
 - **`autoSQLChunked(table: string, iterable: AsyncIterable<Record<string, any>[]>, schema?: string, primaryKey?: string[])`** *(v1.0.5+)*
   Streaming-friendly variant of `autoSQL` that accepts an `AsyncIterable` of row chunks. Schema inference and DDL run once on the first non-empty chunk; subsequent chunks skip straight to insert. Compatible with `useSchemaLock` and `useStagingInsert`.
 
-- **`openStream(table: string, schema?: string, primaryKey?: string[])`** *(v1.1.0+)*
+- **`openStream(table: string, schema?: string, primaryKey?: string[], opts?: OpenStreamOptions)`** *(v1.1.0+; `opts.sessionKey` for staging that survives between runs)*
   Opens a streaming session and returns an `AutoSQLStreamHandle`. See [Streaming Inserts](#-streaming-inserts) for full details.
 
 Each method is designed to work with the same `Database` instance.
@@ -776,10 +776,11 @@ await stream.abort();
 
 ### How it works
 
-1. **`openStream(table, schema?, primaryKey?)`** — runs a connectivity check and cleans up any orphaned staging tables from previous crashed runs (configurable with `keepOrphanedStagingTables`).
+1. **`openStream(table, schema?, primaryKey?, opts?)`** — runs a connectivity check and cleans up any orphaned staging tables from previous crashed runs (configurable with `keepOrphanedStagingTables`). Pass `opts.sessionKey` for a staging table that survives between runs — see [Resuming a stream across runs](#resuming-a-stream-across-runs).
 2. **`write(chunk)`** — on the first call, creates an all-text (`LONGTEXT` / `TEXT`) staging table unique to this run. Each subsequent call appends rows to it.
-3. **`end()`** — reads all staged rows, infers the schema with `getMetaData`, applies any necessary DDL via `configureTables`, then issues a bulk `INSERT … SELECT` with dialect-specific type casts. If the bulk merge fails, a per-row fallback fires — failed rows trigger a schema widening pass before each retry round (up to `streamMaxRetries`). The staging table is always dropped in the `finally` block.
+3. **`end()`** — reads all staged rows, infers the schema with `getMetaData`, applies any necessary DDL via `configureTables`, then issues a bulk `INSERT … SELECT` with dialect-specific type casts. If the bulk merge fails, a per-row fallback fires — failed rows trigger a schema widening pass before each retry round (up to `streamMaxRetries`). The staging table is then dropped in the `finally` block — except for a resumable stream whose rows did not reach the target, which keeps its table so the run can be retried.
 4. **`abort()`** — drops the staging table without merging. Safe to call even if `write()` was never called.
+5. **`suspend()`** — *(resumable streams only)* stops without merging **and** without dropping, so a later run can pick the table up. Throws on a non-resumable stream.
 
 ### Error handling & the async contract
 
@@ -791,6 +792,49 @@ A rejected `write()` leaves this run's staging table in an **indeterminate** sta
 - **`abort()`** — drop the staging table and discard the whole run.
 
 Do **not** call `end()` after a failed/un-awaited `write()` expecting the gap to be ignored: `end()` merges whatever is staged, so a lost chunk becomes missing rows.
+
+### Resuming a stream across runs
+
+By default a stream's staging table belongs to one `openStream` call: the name embeds a generated run id, and the next call starts a new one. That's right for a load that completes in a single run, but it means a load too large to finish in one run can never make progress — each attempt starts over, and the alternative (committing pages straight to the target table) puts partial, visibly-wrong data in production whenever a run fails.
+
+Pass a **`sessionKey`** to opt into a staging table that survives between runs:
+
+```ts
+// Run 1 — gets part way through, then stops without losing what it staged.
+const stream = await db.openStream('events', 'my_schema', ['id'], { sessionKey: `conn-${connectionId}` });
+if (!stream.adopted) resumePoint = 0;   // nothing carried over — send from the start
+await stream.write(page1);
+await stream.write(page2);
+await stream.suspend();                 // keep the staging table; do not merge
+
+// Run 2 — a later process picks up exactly where run 1 stopped.
+const resumed = await db.openStream('events', 'my_schema', ['id'], { sessionKey: `conn-${connectionId}` });
+console.log(resumed.adopted);           // true — page1 + page2 are still staged
+await resumed.write(page3);
+await resumed.end();                    // promotes all three pages at once, then drops staging
+```
+
+The key must identify the **load session, not one run of it** — derive it from something that outlives an attempt, such as a connection or destination id. Derive it from a run or attempt id and every retry gets a fresh table, so resuming silently becomes restarting. The key is hashed into the table name, so any string is safe to pass.
+
+⚠ **Always check `handle.adopted` before trusting a resume point you stored yourself.** `false` means the staging table was empty — first run for this key, or an earlier attempt's table is gone — so nothing was carried over and you must re-send from the beginning. Trusting a stored high-water mark against a non-adopted stream silently drops every row before that mark. Note also that a resume point stored elsewhere can expire independently of the staging table, so the table surviving is not by itself evidence that your pages are accounted for: reconcile both.
+
+Three terminal states, rather than two:
+
+| | merges staged rows | keeps staging table |
+|---|---|---|
+| `end()` | ✅ | ❌ (kept only if the merge failed, so you can retry) |
+| `suspend()` | ❌ | ✅ |
+| `abort()` | ❌ | ❌ |
+
+Other behaviour worth knowing:
+
+- **Shape changes are refused, not absorbed.** The adopted table's existing columns become the stream's column set, so a row carrying a column that table doesn't have fails loudly rather than being silently dropped. If your source has gained a column mid-load, `abort()` and start a fresh session.
+- **Inference sees every staged row.** `end()` re-reads the whole staging table, so types and lengths are inferred from the full accumulated dataset — not just the resumed run's chunk.
+- **Orphan cleanup leaves session-keyed tables alone**, including other session keys' tables for the same target. Only per-run staging tables are swept.
+- ⚠ **One writer per session key.** autosql does not serialise writers; two concurrent streams sharing a key both append and duplicate rows at merge.
+- ⚠ **Lifetime is the caller's responsibility for now.** A table that survives between runs also survives a connection being deleted or a sync being abandoned, which is storage in your warehouse that nothing will reclaim. Call `abort()` when you retire a session. A built-in session registry and sweeper is planned.
+
+autosql deliberately owns no part of the resume point itself — it knows nothing about pagination, cursors or job runs. Its contribution is only "this staging table is still here and you may keep appending to it".
 
 ### Rejected rows
 
