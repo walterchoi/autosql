@@ -828,7 +828,9 @@ Three terminal states, rather than two:
 
 Other behaviour worth knowing:
 
-- **Shape changes are refused, not absorbed.** The adopted table's existing columns become the stream's column set, so a row carrying a column that table doesn't have fails loudly rather than being silently dropped. If your source has gained a column mid-load, `abort()` and start a fresh session.
+- **A drifted source widens the staging table.** If your source gains a column part way through a multi-run load, the adopted staging table is altered to fit it (staging is all-text, so there's never a type to widen — only columns to add). Added columns are nullable, so rows staged by earlier runs read `NULL` for them, which is what they were, and `end()` infers over the whole staging table so the column reaches the target through the ordinary DDL path. Columns added this way are listed on `handle.widenedColumns`.
+
+  Widening respects **`safeMode`** — the existing switch for whether autosql performs DDL at all. With `safeMode: true` there is no DDL to widen with, so an unknown column is refused loudly rather than silently dropped. A per-run (keyless) stream also keeps the refusal: its column set came from its own first chunk moments earlier, so an unknown key there is a caller inconsistency, not source drift across runs.
 - ⚠ **Retrying `end()` is only safely idempotent under `insertType: 'UPDATE'` with a primary key**, where the merge upserts. Under `'INSERT'`, or with no primary key, a retry re-sends rows that the per-row fallback had already landed before failing, duplicating them in the target. If you can't guarantee a key, treat a failed `end()` as needing reconciliation rather than a blind retry.
 - **Inference sees every staged row.** `end()` re-reads the whole staging table, so types and lengths are inferred from the full accumulated dataset — not just the resumed run's chunk.
 - **Orphan cleanup leaves session-keyed tables alone**, including other session keys' tables for the same target. Only per-run staging tables are swept.

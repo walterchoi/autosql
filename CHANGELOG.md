@@ -26,9 +26,19 @@
   - **`handle.suspend()`** is a third terminal state alongside `end()` (merge) and `abort()`
     (discard): stop *without* promoting and *without* discarding, leaving the table for a later run.
     It throws on a non-resumable stream, where the table could never be found again.
-  - Adopting validates shape. The adopted table's committed columns become the stream's, so the
-    existing stable-shape check refuses a row carrying a column the table doesn't have, rather than
-    silently dropping it. The refusal is loud; there is no silent partial write.
+  - **A drifted source widens the staging table** rather than failing the resume. The adopted
+    table's committed columns become the stream's, and a column that appears after the table was
+    created is added to it (`ALTER TABLE … ADD`) — the same thing autosql does everywhere else, and
+    the reason a drifted source is normally a non-event. Staging is all-text, so there is never a
+    type to widen, only columns to add; added columns are nullable, so rows staged by earlier runs
+    read `NULL` for them, which is what they were. `end()` infers over the whole staging table
+    afterwards, so the new column reaches the target through the ordinary DDL path. The columns added
+    this way are reported on `handle.widenedColumns`.
+    Widening respects **`safeMode`**, the existing switch for whether autosql performs DDL at all:
+    with `safeMode: true` there is no DDL available to widen with, so an unknown column is refused
+    loudly instead of being silently dropped. A per-run (keyless) stream keeps the established
+    refusal — its column set came from its own first chunk moments earlier, so an unknown key there
+    is a caller inconsistency rather than source drift across runs.
 
 ### 🐛 Bug Fixes
 - **A failed `end()` no longer destroys a resumable stream's accumulated rows.** `end()` dropped the

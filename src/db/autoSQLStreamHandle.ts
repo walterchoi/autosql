@@ -11,6 +11,7 @@ import {
     buildSelectFromStreamStagingQuery,
     buildDropStreamStagingTableQuery,
     buildMergeFromStreamQuery,
+    buildAddStreamStagingColumnsQuery,
 } from '../helpers/streamHelpers';
 
 export class AutoSQLStreamHandle {
@@ -37,6 +38,14 @@ export class AutoSQLStreamHandle {
      * Always `false` for a non-resumable (no `sessionKey`) stream.
      */
     public readonly adopted: boolean;
+    /**
+     * Columns added to an adopted staging table because they appeared after it was created.
+     *
+     * Non-empty means the source's shape drifted mid-load and staging was widened to fit it. The
+     * load is correct either way — this is for reporting, since a drifted source is usually worth
+     * knowing about even when it was absorbed cleanly.
+     */
+    public readonly widenedColumns: string[] = [];
 
     constructor(
         handler: AutoSQLHandler,
@@ -100,14 +109,42 @@ export class AutoSQLStreamHandle {
                 this.stagingCreated = true;
             }
 
-            // Staging columns are fixed at creation. A key first appearing in a LATER row/chunk has no
-            // column to land in and would be silently dropped (data loss) — fail loud so the caller
-            // keeps a stable column set or starts a separate load (A18).
+            // A key first appearing in a LATER row/chunk has no column to land in, and dropping it
+            // silently is data loss (A18).
+            const unknown: string[] = [];
             for (const row of chunk) {
                 for (const k of Object.keys(row)) {
-                    if (!this.columnSet!.has(k)) {
-                        throw new Error(`autoSQLStream: row has column '${k}' that was not present when the stream started (columns: ${this.columns!.join(', ')}). A stream requires a stable column set — include '${k}' in the first written rows, or use a separate stream/load for it.`);
+                    if (!this.columnSet!.has(k) && !unknown.includes(k)) unknown.push(k);
+                }
+            }
+            if (unknown.length > 0) {
+                // On a RESUMABLE stream, widen staging to fit the new data — the same thing autosql
+                // does everywhere else, and the reason a drifted source is normally a non-event. The
+                // table is all-text, so there is no type to widen, only columns to add; the added
+                // columns are nullable, so rows staged by earlier runs read NULL for them, which is
+                // what they were. end() infers over the whole staging table afterwards, so the new
+                // column reaches the target through the ordinary DDL path.
+                //
+                // `safeMode` means "load, but no DDL", so there widening isn't available and the only
+                // honest options are refusing or losing the column. Refuse.
+                //
+                // A per-run stream keeps the established throw: its column set comes from its own
+                // first chunk moments earlier, so an unknown key is a caller inconsistency rather
+                // than source drift across runs, and changing that would alter shipped behaviour.
+                if (this.resumable && !config.safeMode) {
+                    const alterQ = buildAddStreamStagingColumnsQuery(this.stagingTable, unknown, config);
+                    const alterResult = await this.db.runTransaction([alterQ]);
+                    if (!alterResult.success) {
+                        throw new Error(`autoSQLStream: failed to widen staging table '${this.stagingTable}' with new column(s) ${unknown.join(', ')}: ${alterResult.error}`);
                     }
+                    for (const k of unknown) { this.columns!.push(k); this.columnSet!.add(k); }
+                    this.widenedColumns.push(...unknown);
+                    this.db.warn(`autoSQLStream: staging table '${this.stagingTable}' widened with new column(s) ${unknown.join(', ')} that appeared after it was created.`);
+                } else {
+                    const why = this.resumable
+                        ? `safeMode is set, so the staging table cannot be altered to fit it`
+                        : `a stream requires a stable column set`;
+                    throw new Error(`autoSQLStream: row has column '${unknown[0]}' that was not present when the stream started (columns: ${this.columns!.filter(c => !unknown.includes(c)).join(', ')}). ${why} — include '${unknown[0]}' in the first written rows, or use a separate stream/load for it.`);
                 }
             }
 

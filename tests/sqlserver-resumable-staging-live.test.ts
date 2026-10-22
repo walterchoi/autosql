@@ -82,14 +82,20 @@ describe("SQL Server resumable stream staging (live)", () => {
         expect(Number(Object.values(still.results![0])[0])).toBe(1);
     });
 
-    test("adopting a drifted shape refuses loudly", async () => {
+    test("a drifted source widens the adopted staging table (T-SQL ADD takes no COLUMN keyword)", async () => {
         const first: any = await db.openStream(TABLE, undefined, ["id"], { sessionKey: SESSION });
         await first.write([{ id: 1, name: "a" }]);
         await first.suspend();
 
         const second: any = await db.openStream(TABLE, undefined, ["id"], { sessionKey: SESSION });
         expect(second.adopted).toBe(true);
-        await expect(second.write([{ id: 2, name: "b", extra: "new" }])).rejects.toThrow(/stable column set/i);
-        await second.abort();
+        await second.write([{ id: 2, name: "b", extra: "new" }]);
+        expect(second.widenedColumns).toEqual(["extra"]);
+        expect((await second.end()).success).toBe(true);
+
+        const rows = await db.runQuery({ query: `SELECT id, extra FROM ${ref(TABLE)} ORDER BY id`, params: [] });
+        expect(rows.results!.map((r: any) => Number(r.id))).toEqual([1, 2]);
+        expect(rows.results![0].extra).toBeNull();
+        expect(rows.results![1].extra).toBe("new");
     });
 });

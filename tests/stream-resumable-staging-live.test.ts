@@ -114,17 +114,45 @@ Object.values(DB_CONFIG)
                 await retry.abort();
             });
 
-            test("adopting a table whose shape has drifted refuses loudly rather than writing mismatched columns", async () => {
+            test("a drifted source widens the adopted staging table instead of failing the resume", async () => {
                 const first: any = await db.openStream(TABLE, undefined, ["id"], { sessionKey: SESSION });
                 await first.write([{ id: 1, name: "a" }]);
                 await first.suspend();
 
-                // The caller's data has gained a column since the staging table was created. Adopting
-                // and writing anyway would silently drop `extra`; the stable-shape check must fire.
+                // The source has gained a column since the staging table was created. Dropping it
+                // silently would be data loss and refusing would strand the resume, so staging is
+                // widened to fit — autosql's standard behaviour everywhere else.
                 const second: any = await db.openStream(TABLE, undefined, ["id"], { sessionKey: SESSION });
                 expect(second.adopted).toBe(true);
-                await expect(second.write([{ id: 2, name: "b", extra: "new" }])).rejects.toThrow(/stable column set/i);
-                await second.abort();
+                await second.write([{ id: 2, name: "b", extra: "new" }]);
+                expect(second.widenedColumns).toEqual(["extra"]);
+                expect((await second.end()).success).toBe(true);
+
+                // Both runs' rows landed, the new column reached the target, and the row staged
+                // before the widening reads NULL for it — which is what it was.
+                // `??` would be wrong here: `null ?? r.EXTRA` yields undefined and the null assertion
+                // passes for the wrong reason. Pick the key, then read it.
+                const cell = (r: any, k: string) => (k in r ? r[k] : r[k.toUpperCase()]);
+                const rows = await db.runQuery({ query: `SELECT id, extra FROM ${ref} ORDER BY id`, params: [] });
+                expect(rows.results!.map((r: any) => Number(cell(r, "id")))).toEqual([1, 2]);
+                expect(cell(rows.results![0], "extra")).toBeNull();
+                expect(cell(rows.results![1], "extra")).toBe("new");
+            });
+
+            test("under safeMode a drifted source refuses, since DDL is not available to widen staging", async () => {
+                const safeDb = Database.create({ ...config, schema: "test_schema", useWorkers: false, safeMode: true });
+                await safeDb.establishConnection();
+                try {
+                    const first: any = await safeDb.openStream(TABLE, undefined, ["id"], { sessionKey: SESSION });
+                    await first.write([{ id: 1, name: "a" }]);
+                    await first.suspend();
+
+                    const second: any = await safeDb.openStream(TABLE, undefined, ["id"], { sessionKey: SESSION });
+                    await expect(second.write([{ id: 2, name: "b", extra: "new" }])).rejects.toThrow(/safeMode/i);
+                    await second.abort();
+                } finally {
+                    await safeDb.closeConnection();
+                }
             });
 
             test("inference at end() sees every staged row, not just the resumed run's chunk", async () => {

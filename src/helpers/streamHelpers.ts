@@ -103,6 +103,30 @@ export function buildCreateStreamStagingTableQuery(
 }
 
 /**
+ * Build ALTER TABLE … ADD to widen an existing stream staging table with columns that appeared
+ * after it was created.
+ *
+ * Staging is all-text, so there is never a type to widen — only columns to add. Added columns are
+ * nullable, so rows already staged read as NULL for them, which is what they were.
+ */
+export function buildAddStreamStagingColumnsQuery(
+    stagingTable: string,
+    newColumns: string[],
+    config: DatabaseConfig
+): QueryInput {
+    const dialect = config.sqlDialect;
+    const tableRef = `${schemaPrefixFor(config)}${qi(stagingTable, dialect)}`;
+    const colType = dialect === 'mysql' ? 'LONGTEXT' : dialect === 'sqlserver' ? 'NVARCHAR(MAX)' : 'TEXT';
+    // MySQL and SQL Server take several ADDs in one statement; Postgres needs ADD COLUMN per column.
+    const adds = dialect === 'pgsql'
+        ? newColumns.map(c => `ADD COLUMN ${qi(c, dialect)} ${colType}`).join(', ')
+        : dialect === 'sqlserver'
+        ? `ADD ${newColumns.map(c => `${qi(c, dialect)} ${colType}`).join(', ')}`
+        : newColumns.map(c => `ADD COLUMN ${qi(c, dialect)} ${colType}`).join(', ');
+    return { query: `ALTER TABLE ${tableRef} ${adds}`, params: [] };
+}
+
+/**
  * Build INSERT for a single chunk of rows into the stream staging table.
  * All values are cast to strings (TEXT columns) and parameter-bound.
  */
