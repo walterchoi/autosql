@@ -2,7 +2,6 @@ import crypto from 'crypto';
 import { MetadataHeader, DatabaseConfig, QueryInput, supportedDialects } from '../config/types';
 import { escapeIdentifier, escapeLiteral, assertSafeLength } from '../db/utils/escape';
 
-// Generate an 8-char hex run ID for unique staging table names
 export function generateRunId(): string {
     return crypto.randomBytes(4).toString('hex');
 }
@@ -11,7 +10,6 @@ export function buildStreamStagingTableName(table: string, prefix: string, runId
     return `${prefix}${table}__${runId}`;
 }
 
-/** Pattern to identify autosql-owned stream staging tables for a given table */
 export function orphanPattern(table: string, prefix: string): string {
     return `${prefix}${table}__%`;
 }
@@ -66,8 +64,7 @@ export function buildStagingColumnsQuery(stagingTable: string, config: DatabaseC
 }
 
 // --- Identifier escaping. Column names come from arbitrary caller JSON keys and table/schema names
-//     from config, so every interpolated identifier must be quote-escaped (the rest of the query
-//     builders route through escape.ts; the streaming path did not). ---
+//     from config, so every interpolated identifier must be quote-escaped. ---
 function qi(name: string, dialect: supportedDialects): string {
     return escapeIdentifier(name, dialect);
 }
@@ -75,10 +72,7 @@ function schemaPrefixFor(config: DatabaseConfig): string {
     return config.schema ? `${escapeIdentifier(config.schema, config.sqlDialect)}.` : '';
 }
 
-/**
- * Build CREATE TABLE DDL for the untyped (all TEXT) stream staging table.
- * Columns come from the first write() chunk.
- */
+/** CREATE TABLE DDL for the untyped (all TEXT) staging table. Columns come from the first chunk. */
 export function buildCreateStreamStagingTableQuery(
     stagingTable: string,
     columns: string[],
@@ -119,10 +113,7 @@ export function buildAddStreamStagingColumnsQuery(
     return { query: `ALTER TABLE ${tableRef} ${adds}`, params: [] };
 }
 
-/**
- * Build INSERT for a single chunk of rows into the stream staging table.
- * All values are cast to strings (TEXT columns) and parameter-bound.
- */
+/** INSERT one chunk. Values are cast to strings (TEXT columns) and parameter-bound. */
 // Objects/arrays must serialise to JSON, not String()'s "[object Object]" / "a,b,c" (A18) — matching
 // sqlize's JSON handling on the batch path, so a JSON-bearing source round-trips the same via
 // openStream as via autoSQL.
@@ -179,9 +170,6 @@ export function buildInsertIntoStreamStagingQuery(
     };
 }
 
-/**
- * Build SELECT * FROM stream staging table query (for reading all rows at end()).
- */
 export function buildSelectFromStreamStagingQuery(
     stagingTable: string,
     config: DatabaseConfig
@@ -190,9 +178,6 @@ export function buildSelectFromStreamStagingQuery(
     return { query: `SELECT * FROM ${tableRef}`, params: [] };
 }
 
-/**
- * Build DROP TABLE for a stream staging table.
- */
 export function buildDropStreamStagingTableQuery(
     stagingTable: string,
     config: DatabaseConfig
@@ -201,9 +186,6 @@ export function buildDropStreamStagingTableQuery(
     return { query: `DROP TABLE IF EXISTS ${tableRef}`, params: [] };
 }
 
-/**
- * Build query to find orphaned stream staging tables matching the pattern.
- */
 export function buildOrphanSearchQuery(
     table: string,
     prefix: string,
@@ -311,10 +293,7 @@ function sqlserverCast(col: string, colDef: { type: string | null; length?: numb
     return q; // text-like: NVARCHAR(MAX), no cast
 }
 
-/**
- * Build INSERT INTO main SELECT ... FROM stagingTable with type casts.
- * This is the primary merge query used at end().
- */
+/** The merge used at end(): INSERT INTO main SELECT ... FROM staging, with per-dialect casts. */
 export function buildMergeFromStreamQuery(
     table: string,
     stagingTable: string,
@@ -377,9 +356,6 @@ export function buildMergeFromStreamQuery(
     }
 }
 
-/**
- * Build CREATE TABLE + INSERT for the rejected rows table (opt-in).
- */
 export function buildBootstrapRejectedRowsQuery(config: DatabaseConfig): QueryInput[] {
     const dialect   = config.sqlDialect;
     const schema    = config.rejectedRowsSchema || config.schema;

@@ -5,14 +5,11 @@ import { escapeIdentifier, assertSafeTypeToken, assertSafeLength } from '../db/u
 /**
  * Builds best-effort compensating DDL to reverse a failed ALTER TABLE.
  *
- * PostgreSQL: DDL is transactional — `runTransaction` already ROLLED BACK, so no schema changes
- * applied and no compensating queries are emitted. Warnings are still returned for irreversible
- * changes (e.g. dropped columns) so callers can inform the user.
+ * Postgres DDL is transactional, so `runTransaction` already rolled back and no compensating queries
+ * are emitted; warnings still go out for irreversible changes like dropped columns.
  *
- * MySQL: the single `ALTER TABLE` is atomic — if it fails the schema is unchanged (pre-UPDATE data
- * transforms may have committed via MySQL's implicit COMMIT on DDL, but the schema stays consistent).
- * Compensating queries are emitted as a safety net; `IF EXISTS` / `IF NOT EXISTS` guards make them
- * no-ops when no partial changes were applied.
+ * MySQL's single ALTER is atomic, so a failure leaves the schema unchanged. Compensating queries are
+ * emitted anyway as a safety net, with `IF EXISTS` / `IF NOT EXISTS` making them no-ops.
  */
 export function buildCompensatingDDL(
     table: string,

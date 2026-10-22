@@ -26,21 +26,17 @@ import {
     buildDropStreamStagingTableQuery,
     buildOrphanSearchQuery,
 } from '../helpers/streamHelpers';
-// AutoSQLStreamHandle extracted to its own module (R1 Slice 1). Imported so `openStream` can
-// construct it, re-exported below to keep the public `index.ts` export path stable.
 import { AutoSQLStreamHandle } from "./autoSQLStreamHandle";
 export { AutoSQLStreamHandle };
 
 export class AutoSQLHandler {
     private db: Database;
-    // R1 Slice 2 collaborators (behaviour-preserving extraction; each holds a back-ref to this handler).
     private history: HistoryCoordinator;
     private degradation: DegradationPolicy;
     private staging: StagingPipeline;
     private strategy: RowStoreLoadStrategy;
-    // Staging tables of streams that are currently open on this instance. Orphan cleanup must
-    // never drop these — a concurrent stream to the same table would otherwise destroy a live
-    // run's staging data (both share the `${prefix}${table}__` name pattern).
+    // Staging tables of streams open on this instance. Orphan cleanup must never drop these: a
+    // concurrent stream to the same table shares the `${prefix}${table}__` pattern.
     private activeStreamStagingTables = new Set<string>();
 
     constructor(dbInstance: MySQLDatabase | PostgresDatabase | SqlServerDatabase) {
@@ -51,10 +47,7 @@ export class AutoSQLHandler {
         this.strategy = new RowStoreLoadStrategy(this, dbInstance, this.staging, this.history);
     }
 
-    /**
-     * Delegator kept on the handler so AutoSQLStreamHandle (which calls handler.perRowInsertWithRetry)
-     * and any other caller reach the shared per-row degradation engine unchanged (R1 Slice 2, PR 2c).
-     */
+    /** Delegator so AutoSQLStreamHandle reaches the shared per-row degradation engine. */
     async perRowInsertWithRetry(
         table: string,
         rows: Record<string, any>[],
@@ -72,15 +65,13 @@ export class AutoSQLHandler {
     }
 
     /**
-     * Dataset-level number-format consensus (self-contained — reads only `data`, no DB queries).
-     * When neither explicit separators nor `numberFormat` were supplied, infer ONE {thousands,
-     * decimal} pair from structural evidence pooled across all columns, so a decisive column
-     * resolves ambiguous siblings. Meant to run under `db.runWithSeparators(...)`, which overlays it
-     * on `getConfig()` for both inference and load-time sqlize (and worker dispatch).
+     * Infer ONE dataset-level {thousands, decimal} pair from structural evidence pooled across all
+     * columns, so a decisive column resolves ambiguous siblings. Reads only `data`. Meant to run
+     * under `db.runWithSeparators(...)`, which overlays it for inference, load-time sqlize and
+     * worker dispatch.
      *
-     * Returns undefined (no override — load uses the assume-decimal default + the A24c per-column
-     * warning) when separators are already configured, there is no data/evidence, or the evidence is
-     * genuinely contradictory (warns loudly in that last case).
+     * Returns undefined (load keeps the assume-decimal default plus the A24c per-column warning)
+     * when separators are already configured, or evidence is absent or contradictory.
      */
     private resolveSeparatorConsensus(data: Record<string, any>[]): { thousands: string; decimal: string } | undefined {
         const config = this.db.getConfig();
@@ -99,10 +90,8 @@ export class AutoSQLHandler {
     }
 
     /**
-     * Dry run: compute what an `autoSQL(table, data, …)` load WOULD do — inferred schema, create/alter
-     * decision, exact DDL, and any changes blocked without opting in — **without writing anything**.
-     * Only reads the current schema (to diff against). Mirrors the `autoSQL` signature. Contrast with
-     * `safeMode`, which runs a load but skips DDL; `preview` runs no load and executes no DDL.
+     * Dry run: what an `autoSQL` load WOULD do, without writing anything. Only the current schema is
+     * read, to diff against. Contrast with `safeMode`, which runs the load but skips DDL.
      */
     async preview(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<AutoSQLPreview> {
         const separators = this.resolveSeparatorConsensus(data);
@@ -113,9 +102,8 @@ export class AutoSQLHandler {
                 ? { thousands: config.thousandsSeparator, decimal: config.decimalSeparator }
                 : undefined;
 
-            // blockedChanges surfaces the destructive-change gates (from `changes` + config).
-            // TODO: also surface the per-column A24c ambiguity warning here — it's emitted to
-            // logger.warn during inference; capturing it needs a log-capture seam (an ALS channel,
+            // TODO: also surface the per-column A24c ambiguity warning here. It is emitted to
+            // logger.warn during inference, so capturing it needs a log-capture seam (an ALS channel
             // like schemaContext), deferred to keep v1 free of that infra.
             const tables: TablePreview[] = [];
             for (const input of insertInput) {
@@ -165,7 +153,6 @@ export class AutoSQLHandler {
 
     async autoCreateTable(table: string, newMetaData: MetadataHeader, tableExists?: boolean, runQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
         try {
-            // Skip table existence check if already known
             if (tableExists === undefined) {
                 const checkTableExistsQuery = this.db.getTableExistsQuery(this.db.getConfig().schema || this.db.getConfig().database || "", table);
                 const checkTableExists = await this.db.runQuery(checkTableExistsQuery);
@@ -179,7 +166,6 @@ export class AutoSQLHandler {
                 throw new Error("Table already exists");
             }
     
-            // Create the table
             const createQuery = this.db.getCreateTableQuery(table, newMetaData);
             if(!runQuery) {
                 return createQuery
@@ -195,7 +181,6 @@ export class AutoSQLHandler {
     
     async autoAlterTable(table: string, tableChanges: AlterTableChanges, tableExists?: boolean, runQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
         try {
-            // Skip table existence check if already known
             if (tableExists === undefined) {
                 const checkTableExistsQuery = this.db.getTableExistsQuery(this.db.getConfig().schema || this.db.getConfig().database || "", table);
                 const checkTableExists = await this.db.runQuery(checkTableExistsQuery);
@@ -209,7 +194,6 @@ export class AutoSQLHandler {
                 throw new Error("Table doesn't exist");
             }
     
-            // Alter the table
             const alterQuery = await this.db.getAlterTableQuery(table, tableChanges);
             if(!runQuery) {
                 return alterQuery
@@ -239,7 +223,6 @@ export class AutoSQLHandler {
                 newMetaData = inputOrTable.metaData;
                 runQuery = inputOrTable.runQuery ?? inputRunQuery ?? true
             } else {
-                // Handle case where `input` is a `string` (table name)
                 table = inputOrTable;
                 data = inputData ?? null;
                 currentMetaDataOrTableChanges = inputCurrentMetaData ?? null;
@@ -275,7 +258,6 @@ export class AutoSQLHandler {
                 if (inferredHere) updatedMetadata = restrictInferredUniques(updatedMetadata, currentMetaData, this.db.getConfig());
 
                 if (currentMetaData) {
-                    // Compare metadata if table exists
                     const { changes, updatedMetaData: mergedMetadata } = compareMetaData(
                         currentMetaData,
                         updatedMetadata,
@@ -289,7 +271,6 @@ export class AutoSQLHandler {
             }
             else if(isMetadataHeader(currentMetaDataOrTableChanges)) {
                 this.db.log("Comparing metadata for changes...");
-                // If provided with metadata, compare changes
                 if (inferredHere) newMetaData = restrictInferredUniques(newMetaData, currentMetaDataOrTableChanges, this.db.getConfig());
                 const { changes, updatedMetaData: mergedMetadata } = compareMetaData(currentMetaDataOrTableChanges, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
                 tableChanges = changes;
@@ -297,7 +278,6 @@ export class AutoSQLHandler {
                 tableExists = true;
             } else {
                 this.db.log("Precomputed table changes detected, using them directly.");
-                // If provided with precomputed table changes, use directly
                 tableChanges = currentMetaDataOrTableChanges as AlterTableChanges;
                 updatedMetadata = newMetaData; // No merging needed
                 tableExists = true;
@@ -308,11 +288,9 @@ export class AutoSQLHandler {
                 return await this.autoCreateTable(table, updatedMetadata, false, runQuery);
             }
 
-            // R8 (opt-in): migrate a pre-existing table's text columns to the target charset
-            // (utf8mb4) so externally-created 3-byte utf8 columns accept 4-byte chars. Real table
-            // only (staging temp tables are throwaway CTAS copies that already match), before any
-            // other ALTER/insert, even with no other schema changes. Best-effort: a failed CONVERT
-            // (e.g. an over-long index) is logged and skipped. Convergent once every column is utf8mb4.
+            // R8 (opt-in): migrate a pre-existing table's text columns to utf8mb4 so externally
+            // created 3-byte utf8 columns accept 4-byte chars. Real table only, before any other
+            // ALTER. Best-effort: a failed CONVERT (e.g. an over-long index) is logged and skipped.
             const stagingPrefix = this.db.getConfig().stagingPrefix ?? "temp_staging__";
             if (this.db.getConfig().upgradeCharset && !table.startsWith(stagingPrefix)) {
                 try {
@@ -326,7 +304,6 @@ export class AutoSQLHandler {
                 }
             }
 
-            // If table exists but no changes, return success
             if (!tableChanges || !tableChangesExist(tableChanges)) {
                 this.db.log(`Table exists, no changes detected. Skipping ALTER TABLE.`);
                 const end = new Date();
@@ -342,7 +319,6 @@ export class AutoSQLHandler {
                 };
             }
     
-            // If table exists and changes exist, alter it
             this.db.log(`Altering table: ${table} with changes: ${JSON.stringify(tableChanges)}`);
             return await this.autoAlterTable(table, tableChanges, true, runQuery);
         } catch (error) {
@@ -361,10 +337,8 @@ export class AutoSQLHandler {
     }
 
     async fetchTableMetadata(table: string): Promise<{ currentMetaData: MetadataHeader | null; tableExists: boolean; }> {
-        // One introspection round-trip, not two: the column-metadata query already tells us whether
-        // the table exists (a non-existent table returns 0 rows from INFORMATION_SCHEMA/sys), so skip
-        // the separate exists query. INFORMATION_SCHEMA lookups are slow, so halving them shaves
-        // latency off every non-cached load (the existingSchema fast path skips this entirely).
+        // One introspection round-trip, not two: the column-metadata query already says whether the
+        // table exists (a missing table returns 0 rows), and INFORMATION_SCHEMA lookups are slow.
         const schema = this.db.getConfig().schema || this.db.getConfig().database || "";
         const currentMetaDataQuery = this.db.getTableMetaDataQuery(schema, table);
         const currentMetaDataResults = await this.db.runQuery(currentMetaDataQuery);
@@ -383,7 +357,6 @@ export class AutoSQLHandler {
             if (!parsedMetadata) {
                 currentMetaData = null;
             } else if (typeof parsedMetadata === "object" && !Array.isArray(parsedMetadata)) {
-                // Ensure that we only get MetadataHeader, not multiple tables
                 currentMetaData = parsedMetadata as MetadataHeader;
             } else {
                 throw new Error("Unexpected metadata format: Multiple tables returned for a single-table query.");
@@ -442,14 +415,11 @@ export class AutoSQLHandler {
         let runQuery: boolean;
         let insertType: "UPDATE" | "INSERT"
 
-        // Fall back to configured insertType (then "UPDATE") when none is set on the input, so the
-        // direct-insert path honours `config.insertType` (staging-population callers pass an explicit
-        // insertType, unaffected). Previously defaulted straight to "UPDATE", so
-        // `config.insertType: "INSERT"` was silently ignored for the bulk batch while the per-row
-        // fallback honoured it — an inconsistency.
+        // Fall back to configured insertType (then "UPDATE") so the direct-insert path honours
+        // `config.insertType`. It previously defaulted straight to "UPDATE", so an "INSERT" config
+        // was silently ignored for the bulk batch while the per-row fallback honoured it.
         const configInsertType = this.db.getConfig().insertType;
 
-        // Support InsertInput object
         if (typeof inputOrTable === "object" && "table" in inputOrTable && "data" in inputOrTable) {
           table = inputOrTable.table;
           data = inputOrTable.data;
@@ -459,7 +429,6 @@ export class AutoSQLHandler {
           runQuery = inputOrTable.runQuery ?? true;
           insertType = inputOrTable?.insertType ?? configInsertType ?? "UPDATE"
         } else {
-          // Support individual parameters
           table = inputOrTable;
           data = inputData ?? [];
           if (!inputMetaData) throw new Error(`autoInsertData: metaData is required when called with individual parameters`);
@@ -492,18 +461,15 @@ export class AutoSQLHandler {
     }
 
     async handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[], options?: AutoSQLOptions) {
-        // Existing table schema. With `existingSchema` (N1 fast path), trust it and skip live
-        // introspection — the main per-run DB round-trip for a stable, no-drift pipeline. Must be a
-        // prior run's resolved schema (see AutoSQLOptions), so it already carries the managed
-        // dwh_*/surrogate columns and the timestamp step won't re-add them.
+        // With `existingSchema` (N1 fast path) trust the caller and skip live introspection, the main
+        // per-run round-trip for a stable pipeline. It must be a prior run's RESOLVED schema, so it
+        // already carries the managed dwh_*/surrogate columns and the timestamp step won't re-add them.
         const currentMetaData = options?.existingSchema
             ?? (await this.fetchTableMetadata(table)).currentMetaData;
 
-        // A-4 fast path: a caller-provided schema (assumeSchema) is authoritative. If it declares
-        // every data column, skip per-value inference entirely; if it covers only some, infer the
-        // rest and let the provided definitions win (fallback). Main compute win for recurring
-        // pipelines; side-steps inference footguns (e.g. small ints mis-typed as boolean) for
-        // declared columns.
+        // A-4 fast path: `assumeSchema` is authoritative. Declaring every data column skips per-value
+        // inference entirely; partial coverage infers the rest and lets the provided definitions win.
+        // Also side-steps inference footguns (e.g. small ints mis-typed as boolean).
         let newMetaData: MetadataHeader;
         const assumeSchema = options?.assumeSchema;
         if (assumeSchema && Object.keys(assumeSchema).length > 0) {
@@ -534,12 +500,10 @@ export class AutoSQLHandler {
             this.db.updateTableMetadata(table, mergedMetaData, "metaData");
         }
 
-        // Add the dwh_* timestamp columns AFTER comparison, so they carry the calculatedDefault that
-        // populates them on insert (comparison would otherwise merge in the value-less introspected
-        // definition on re-ingest, inserting NULL). For an existing table, a dwh column not already
-        // on the real table is genuinely new and must be folded into the ALTER (addColumns) — else
-        // the real table never gets it and the staging copy fails. Columns already on the table are
-        // left untouched (re-adding would duplicate). No-op when addTimestamps is off.
+        // Add the dwh_* timestamps AFTER comparison so they carry the calculatedDefault that
+        // populates them on insert; comparing first would merge in the value-less introspected
+        // definition on re-ingest and insert NULL. On an existing table a dwh column not already
+        // there is genuinely new and must join addColumns, or the staging copy fails.
         const beforeTimestamps = new Set(Object.keys(mergedMetaData));
         mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData, new Date());
         if (currentMetaData && initialComparedMetaData) {
@@ -602,7 +566,7 @@ export class AutoSQLHandler {
     
         let configuredTables: (QueryResult | QueryInput[])[];
     
-        // 🔹 Step 1: Auto-configure tables (with Workers or Directly). Only fan out to workers when
+        // Step 1: Auto-configure tables (with Workers or Directly). Only fan out to workers when
         // there's more than one table to configure — a single table isn't worth a worker pool (A8).
         if (this.db.getConfig().useWorkers && insertInput.length > 1) {
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
@@ -633,7 +597,7 @@ export class AutoSQLHandler {
             configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[];
         }
     
-        // 🔹 Step 2: Split immediate results from deferred DDL queries, preserving
+        // Step 2: Split immediate results from deferred DDL queries, preserving
         //    index correspondence with insertInput for rollback correlation.
         const initialResults: QueryResult[] = [];
         const pendingDDL: Array<{ queries: QueryInput[]; inputIndex: number }> = [];
@@ -646,16 +610,15 @@ export class AutoSQLHandler {
             }
         });
 
-        // 🔹 Step 3: Execute DDL transactions and attempt compensating rollback on failure
+        // Step 3: Execute DDL transactions and attempt compensating rollback on failure
         let allResults: QueryResult[];
         if (pendingDDL.length > 0) {
             const transactionResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(
                 pendingDDL.map(d => d.queries)
             );
 
-            // Attempt best-effort compensating DDL for any failed transactions.
-            // For PostgreSQL this is a no-op (transactional DDL already rolled back).
-            // For MySQL this reverses any partial schema changes as a safety net.
+            // Best-effort compensating DDL for failed transactions. No-op on Postgres (transactional
+            // DDL already rolled back); on MySQL it reverses partial schema changes.
             const failedDDL = transactionResults
                 .map((result, j) => (!result.success ? pendingDDL[j] : null))
                 .filter((x): x is { queries: QueryInput[]; inputIndex: number } => x !== null);
@@ -686,7 +649,7 @@ export class AutoSQLHandler {
             allResults = [...initialResults];
         }
 
-        // 🔹 Step 4: Handle failures
+        // Step 4: Handle failures
         throwIfFailedResults(allResults, "table configuring queries")
     
         this.db.log("All tables configured and executed successfully.");
@@ -700,13 +663,13 @@ export class AutoSQLHandler {
     
         let insertQueries: (QueryResult | QueryInput[])[];
     
-        // 🔹 Step 1: Handle single insert separately
+        // Step 1: Handle single insert separately
         if (insertInput.length === 1) {
             insertQueries = [
                 await this.autoInsertData({ ...insertInput[0], runQuery: false })
             ];
         } else {
-            // 🔹 Step 2: Defer execution & modify inputs
+            // Step 2: Defer execution & modify inputs
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
 
             if (this.db.getConfig().useWorkers && insertInput.length > 1) {
@@ -742,16 +705,14 @@ export class AutoSQLHandler {
             }
         }
     
-        // 🔹 Step 3: Execute Insert Transactions
+        // Step 3: Execute Insert Transactions
         const insertTransactionInputs: QueryInput[][] = insertQueries as QueryInput[][];
         const allInsertResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(insertTransactionInputs);
     
-        // 🔹 Step 4: Handle Failures
+        // Step 4: Handle Failures
         // Graceful degradation is opt-in and only for the non-atomic direct-insert path: the caller
-        // passes perRowFallback and the user configured rejectedRowsTable (the same opt-in the
-        // streaming path uses). Without it, a failed batch throws — failing loud is the correct
-        // default when the caller hasn't said where bad rows should go. The staging population path
-        // (insertData without options) is unaffected and stays all-or-nothing.
+        // passes perRowFallback and the user configured rejectedRowsTable. Without it a failed batch
+        // throws, which is right when the caller hasn't said where bad rows should go.
         const config = this.db.getConfig();
         if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r?.success)) {
             return await this.degradation.applyPerRowFallback(insertInput, allInsertResults);
@@ -777,7 +738,6 @@ export class AutoSQLHandler {
           for (const row of data) {
             for (const [key, value] of Object.entries(row)) {
                 const nestedTable = `${table}_${key}`;
-                // Check if the key is a nested table
                 if(!this.db.getConfig().nestedTables?.includes(nestedTable)) { continue; }
               if (value && typeof value === "object") {
 
@@ -791,7 +751,6 @@ export class AutoSQLHandler {
                       ...Object.fromEntries(primaryKeys.map(pk => [pk, row[pk]]))
                     };
                 
-                    // Group by nested table name
                     if (!nestedMap[nestedTable]) {
                         nestedMap[nestedTable] = [];
                     }
@@ -910,8 +869,7 @@ export class AutoSQLHandler {
             // cache it and skip re-introspection next load — the `existingSchema` fast path.
             const resolvedMetaData = insertInput[0]?.comparedMetaData?.updatedMetaData || insertInput[0]?.metaData;
 
-            // Per-run metrics: attach to the result (so the caller can store them) and emit to the
-            // structured stats sink if one is configured.
+            // Attach metrics to the result and emit to the structured stats sink if configured.
             const durationMs = end.getTime() - start.getTime();
             const stats: QueryStats = {
                 table,
@@ -943,12 +901,9 @@ export class AutoSQLHandler {
     /**
      * Insert data from an async iterable of chunks into a table.
      *
-     * The first chunk drives full schema inference and table configuration.
-     * Subsequent chunks reuse the schema established by the first chunk,
-     * bypassing inference and DDL entirely — making them significantly faster.
-     *
-     * When `useSchemaLock: true`, the advisory lock is held only during the
-     * first-chunk schema inference + DDL phase, then released before inserts begin.
+     * The first chunk drives full schema inference and table configuration; later chunks reuse that
+     * schema, bypassing inference and DDL. With `useSchemaLock: true` the advisory lock is held only
+     * for the first-chunk inference and DDL, then released before inserts begin.
      *
      * @param table     Target table name
      * @param chunks    Async iterable of row arrays (each array is one chunk)
@@ -978,10 +933,9 @@ export class AutoSQLHandler {
                     if (firstValue !== null) yield firstValue;
                     let r; while (!(r = await iterator.next()).done) yield r.value;
                 } finally {
-                    // Forward early termination (an error mid-load, or a break/return in the consuming
-                    // loop) to the SOURCE iterator so a cursor/stream-backed `chunks` runs its own
-                    // cleanup. We took over manual iteration for the first-chunk peek, so the for-await's
-                    // automatic `.return()` reaches this wrapper, not the underlying source iterator.
+                    // Forward early termination to the SOURCE iterator so a cursor-backed `chunks`
+                    // runs its own cleanup. We took over manual iteration for the first-chunk peek,
+                    // so the for-await's automatic `.return()` reaches this wrapper, not the source.
                     await iterator.return?.();
                 }
             }
@@ -1025,13 +979,11 @@ export class AutoSQLHandler {
                     }
                     lockedInsertInput = chunkInsertInput;
                 } else {
-                    // Subsequent chunks: reuse the locked schema, but GUARD AGAINST DRIFT. Locking the
-                    // first chunk's inferred types means a later chunk can carry a value the locked
-                    // column can't hold (e.g. ids 1..100 -> tinyint, then id 128 overflows). Re-infer
-                    // this chunk (cheap) and compare ONLY the chunk's data columns against the locked
-                    // schema — the managed columns (dwh_* timestamps, a surrogate) aren't in the chunk
-                    // and must not be seen as "to drop". Widen (ALTER + update the lock) only when a
-                    // column actually needs it; a no-drift chunk skips the DDL entirely.
+                    // Later chunks reuse the locked schema but must GUARD AGAINST DRIFT: locking the
+                    // first chunk's types means a later chunk can carry a value the column can't hold
+                    // (ids 1..100 infer tinyint, then id 128 overflows). Re-infer this chunk and
+                    // compare ONLY its data columns, since the managed columns aren't in the chunk and
+                    // must not read as "to drop". Widen only when a column needs it.
                     const lockedMeta = lockedInsertInput[0].metaData as MetadataHeader;
                     const tPrepare = perf();
                     const inferred = await getMetaData(config, chunk, primaryKey);
@@ -1041,10 +993,9 @@ export class AutoSQLHandler {
                     for (const col of Object.keys(inferred)) if (lockedMeta[col]) lockedDataOnly[col] = lockedMeta[col];
                     const { changes } = compareMetaData(lockedDataOnly, inferred, this.db.getDialectConfig(), config.logger);
 
-                    // Drift for a chunked load means only "the locked column can't hold this chunk's
-                    // data": a widened/nullable-relaxed column (modifyColumns) or a brand-new column
-                    // (addColumns). Keys are locked from the first chunk — a later chunk's per-chunk
-                    // uniqueness/primary re-evaluation must NOT drive DDL.
+                    // Drift here means only "the locked column can't hold this chunk's data": a
+                    // widened column (modifyColumns) or a new one (addColumns). Keys are locked from
+                    // the first chunk, so a later chunk's re-evaluation must NOT drive DDL.
                     const drift = Object.keys(changes.modifyColumns).length > 0 || Object.keys(changes.addColumns).length > 0;
                     if (drift) {
                         this.db.warn(`autoSQLChunked: schema drift in a later chunk for '${table}' — widening the table to fit.`);
@@ -1136,7 +1087,6 @@ export class AutoSQLHandler {
         opts?: OpenStreamOptions
     ): Promise<AutoSQLStreamHandle> {
       return this.db.runWithSchema(schema, async () => {
-        // (openStream on SQL Server: guard removed in spec-4 slice B — the stream builders now emit T-SQL.)
         // Connectivity check — surfaces auth/connection errors before first write
         const ping = await this.db.runQuery({ query: 'SELECT 1', params: [] });
         if (!ping.success) {
@@ -1146,7 +1096,6 @@ export class AutoSQLHandler {
         const config = this.db.getConfig();
         const prefix = config.streamingStagingPrefix ?? defaults.streamingStagingPrefix;
 
-        // Clean up orphaned staging tables unless configured to keep them
         if (!config.keepOrphanedStagingTables) {
             await this._cleanupOrphanedStreamTables(table, prefix);
         }

@@ -12,11 +12,8 @@ import {
 } from "../helpers/schemaHistory";
 
 /**
- * Row-level history collaborator (R1 Slice 2, PR 2a). Builds the per-table history inputs and
- * populates the history tables. Behaviour-preserving extraction from `AutoSQLHandler`; holds a
- * back-ref to the handler (like `AutoSQLStreamHandle`) because table configuration is
- * worker-dispatched and `configureTables`/`fetchTableMetadata` stay on the handler. `AutoSQLHandler`
- * imported type-only to avoid a runtime import cycle.
+ * Row-level history collaborator: builds the per-table history inputs and populates the history
+ * tables. Holds a back-ref to the handler because table configuration is worker-dispatched.
  */
 export class HistoryCoordinator {
     private handler: AutoSQLHandler;
@@ -37,9 +34,8 @@ export class HistoryCoordinator {
     }
 
     /**
-     * Build the per-table history inputs (cleaned metadata + `dwh_as_at` PK) for the tables in
-     * `historyTables`. Shared by `insertHistory` (non-atomic path) and `configureHistoryTables`
-     * (atomic path). Returns [] when history is off or no eligible table is present.
+     * Build the per-table history inputs (cleaned metadata + `dwh_as_at` PK). Shared by the atomic
+     * and non-atomic paths. Returns [] when history is off or no eligible table is present.
      */
     private async buildHistoryInputs(insertInput: InsertInput[]): Promise<InsertInput[]> {
         const config = this.db.getConfig();
@@ -55,7 +51,6 @@ export class HistoryCoordinator {
               const matchingInput = insertInput.find(i => i.table === table);
               const historyName = getHistoryTableName(table, matchingInput?.historyTableSuffix);
 
-              // Run both metadata fetches in parallel
               const [currentStatus, historyStatus] = await Promise.all([
                 this.handler.fetchTableMetadata(table),
                 this.handler.fetchTableMetadata(historyName),
@@ -68,7 +63,6 @@ export class HistoryCoordinator {
                 throw new Error(`Could not find structure of ${table} for history table creation`);
               }
 
-              // Clean up metaData for history table
               const cleanedMeta: MetadataHeader = {};
               for (const col in currentMetaData) {
                 const def = { ...currentMetaData[col] };
@@ -77,7 +71,6 @@ export class HistoryCoordinator {
                 cleanedMeta[col] = def;
               }
 
-              // Add as_at column
               cleanedMeta["dwh_as_at"] = { type: "datetime", allowNull: false, primary: true };
 
               const automatedColumns = ['dwh_created_at', 'dwh_modified_at', 'dwh_loaded_at']
@@ -109,10 +102,8 @@ export class HistoryCoordinator {
     }
 
     /**
-     * Create the history tables (DDL only) and return their inputs, for the ATOMIC history path — the
-     * before-image INSERT itself is deferred into the merge transaction (see
-     * `insertFromStagingTablesAtomic`). Works on all three dialects (SQL Server's atomic pkFilter path
-     * landed in spec-4 §3.8; the former SQL Server guard is gone).
+     * Create the history tables (DDL only) for the ATOMIC path; the before-image INSERT itself is
+     * deferred into the merge transaction (see `insertFromStagingTablesAtomic`).
      */
     async configureHistoryTables(insertInput: InsertInput[]): Promise<InsertInput[]> {
         const historyInputs = await this.buildHistoryInputs(insertInput);
@@ -122,9 +113,6 @@ export class HistoryCoordinator {
     }
 
     // --- Schema-history / drift (thin wrappers over helpers/schemaHistory) ---
-    // Behaviour-preserving: the `if (config.schemaHistory)` / `tableChangesExist` gates stay at each
-    // entry point, so which entry points record (autoSQL full, stream partial, chunked none) is
-    // unchanged — only the helper calls are centralized here.
 
     async detectDrift(table: string): Promise<void> {
         await detectSchemaDrift(this.db, table);

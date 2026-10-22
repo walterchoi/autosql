@@ -78,7 +78,6 @@ export class MySQLTableQueryBuilder {
 
         sqlQueries.push({query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
     
-        // Create indexes separately
         const limitedIndexes = indexes.slice(0, remainingIndexSlots);
         for (const index of limitedIndexes) {
             const indexName = generateSafeConstraintName(table, index, "index");

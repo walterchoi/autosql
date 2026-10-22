@@ -2,10 +2,9 @@ import { Worker } from "worker_threads";
 import { resolve } from "path";
 import { existsSync } from "fs";
 
-// Config reaches a worker via `workerData` (structured clone), which can't serialise functions or live
-// handles. Strip them (A8): `logger` (function) or a live `sshClient`/`sshStream` would throw
-// DataCloneError and crash the default-on worker path. The worker re-derives from `sshConfig` and runs
-// without the custom logger.
+// Config reaches a worker via `workerData` (structured clone), which can't serialise functions or
+// live handles, so strip them (A8): a `logger` or live `sshClient`/`sshStream` would throw
+// DataCloneError and crash the default-on worker path. The worker re-derives from `sshConfig`.
 export function stripNonCloneable(config: any): any {
   if (!config || typeof config !== "object") return config;
   const { logger, sshClient, sshStream, ...cloneable } = config;
@@ -40,10 +39,9 @@ class WorkerPool {
     this.dbConfig = stripNonCloneable(dbConfig);
     this.workerFile = workerFile ?? resolve(__dirname, "worker.js");
 
-    // Per-task timeout (config in SECONDS -> ms). 0/undefined disables it. The no-hang guarantee
-    // does NOT depend on this ('error'/'exit' handlers always catch worker death); this only guards
-    // an alive-but-wedged worker (e.g. a DB call that never returns). Off by default so a legitimately
-    // long-running batch isn't spuriously failed.
+    // Per-task timeout (config in SECONDS -> ms), 0/undefined disables. The no-hang guarantee does
+    // NOT depend on this, since 'error'/'exit' always catch worker death; this only guards an
+    // alive-but-wedged worker. Off by default so a long batch isn't spuriously failed.
     const timeoutSec = Number(this.dbConfig?.workerTaskTimeout) || 0;
     this.taskTimeoutMs = timeoutSec > 0 ? timeoutSec * 1000 : 0;
 
@@ -67,7 +65,6 @@ class WorkerPool {
     worker.on("message", (msg) => {
       // Ignore the graceful-shutdown ack — it's handled by gracefulTerminate, not a task result (A14).
       if (msg && msg.__closed__) return;
-      // Task finished normally: settle it, then hand this worker its next task.
       this.settleWorker(worker, msg);
       this.assignNextTask(worker);
     });
@@ -91,8 +88,7 @@ class WorkerPool {
   }
 
   /**
-   * Resolve a worker's in-flight task exactly once and clear its timeout.
-   * Returns true if there was a pending task to settle (idempotent thereafter).
+   * Resolve a worker's in-flight task exactly once. Returns true if there was one to settle.
    */
   private settleWorker(worker: Worker, value: any): boolean {
     const entry = this.workerPending.get(worker);
@@ -134,15 +130,13 @@ class WorkerPool {
   }
 
   /**
-   * A worker died (or timed out). Settle its in-flight task with a failure
-   * envelope, drop it from rotation, and — if no workers remain — fail every
-   * queued task so a caller can never hang waiting on a dead pool. Idempotent:
-   * safe to call for both the 'error' and the following 'exit'.
+   * Settle a dead or timed-out worker's in-flight task, drop it from rotation, and if no workers
+   * remain fail every queued task so a caller can never hang on a dead pool. Idempotent, because
+   * 'error' is followed by 'exit'.
    */
   private failWorker(worker: Worker, reason: string): void {
-    // Settle whatever this worker was running (no-op if already settled).
+    // No-op if already settled.
     this.settleWorker(worker, { success: false, error: reason });
-    // Drop it from rotation.
     this.workers = this.workers.filter((w) => w !== worker);
     this.idleWorkers = this.idleWorkers.filter((w) => w !== worker);
     // Ensure the OS thread is gone (no-op if it already exited).

@@ -1,10 +1,8 @@
 /**
  * Serialization for the bulk-load path (Postgres `COPY` / MySQL `LOAD DATA LOCAL INFILE`).
  *
- * Both dialects consume the same tab-delimited text format: TAB-separated fields, newline rows, `\N`
- * for NULL, backslash-escaping of specials (`\` `\t` `\n` `\r`). Values are already dialect-sqlized
- * (same as the parameterised INSERT path binds), so numbers, booleans (0/1) and normalised dates are
- * load-ready — this layer only handles the text framing.
+ * Both dialects consume the same tab-delimited text format, and values arrive already
+ * dialect-sqlized, so this layer only handles the text framing.
  */
 
 /** Escape one already-sqlized value for the COPY / LOAD DATA text format. */

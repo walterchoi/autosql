@@ -59,7 +59,6 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             return "varchar";
         }
 
-        // Detect and normalize numbers
         if (regexPatterns.number.test(strData) || regexPatterns.decimal.test(strData)) {
             strData = normalizeNumber(strData, thousandsSeparator, decimalSeparator, onAmbiguousSeparator);
 
@@ -91,11 +90,9 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         }
         } // end string-path branch (native number/boolean took the fast path above)
 
-        // Handle integer type differentiation
         if (currentType === "int") {
             const numValue = Number(strData);
 
-            // Check if the number is within JavaScript's safe integer range
             if(strData.split('.').length > 1) {
                 currentType = "decimal"
             } else if (!isNaN(numValue) && Number.isSafeInteger(numValue)) {
@@ -109,7 +106,6 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
                     currentType = "bigint";
                 }
             } else {
-                // Use BigInt for checking larger values safely
                 try {
                     const bigIntValue = BigInt(strData);
                     if (bigIntValue <= 9223372036854775807n && bigIntValue >= -9223372036854775808n) {
@@ -123,7 +119,6 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             }
         }
 
-        // Handle text-based types
         if (currentType === "json") {
             if (strData.length > 4294967295) {
                 throw new Error("data_too_long: Data is too long for JSON field");
@@ -145,7 +140,6 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             }
         }
 
-        // Handle invalid date cases
         if (["datetime", "date", "time"].includes(currentType) && strData === "Invalid Date") {
             return null;
         }
@@ -162,7 +156,6 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
             return 'varchar'
         }
         let types: string[]
-        // Convert set to array and filter out nulls
         if (typeSetOrArray instanceof Set) {
             types = setToArray(typeSetOrArray).filter((t): t is string => t !== null);
         } else {
@@ -173,7 +166,6 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
             return "varchar"; // Default fallback if all inputs were null
         }
 
-        // If there's only one unique type, return it
         const uniqueTypes = [...new Set(types)];
         if (uniqueTypes.length === 1) {
             return uniqueTypes[0]!;
@@ -194,7 +186,6 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
             let currentTypeGroup: string | null = null;
             let overallTypeGroup: string | null = null;
 
-            // Identify the type grouping
             if (currentType) {
                 if (groupings.intGroup.includes(currentType)) currentTypeGroup = "int";
                 else if (groupings.specialIntGroup.includes(currentType)) currentTypeGroup = "specialInt";
@@ -231,7 +222,6 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
                 continue;
             }
 
-            // Handle different groupings
             if (currentTypeGroup !== overallTypeGroup) {
                 if ((currentType === "exponent" && overallTypeGroup === "int") || (overallType === "exponent" && currentTypeGroup === "int")) {
                     collatedType = "exponent";
@@ -254,7 +244,6 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
                 continue;
             }
 
-            // Handle similar groupings
             if (overallTypeGroup === currentTypeGroup) {
                 if (overallTypeGroup === "specialInt") {
                     // Widen toward the later group entry (decimal < double < exponent). Resolves

@@ -5,9 +5,7 @@ import { MetadataHeader, DatabaseConfig, QueryResult } from '../config/types';
 import { SchemaDriftError } from '../errors';
 import { escapeIdentifier, escapeLiteral } from '../db/utils/escape';
 
-// ---------------------------------------------------------------------------
-// Stable JSON stringify (key-sorted, recursive) for deterministic checksums
-// ---------------------------------------------------------------------------
+// --- Stable JSON stringify (key-sorted, recursive) for deterministic checksums ---
 function stableStringify(val: unknown): string {
     if (Array.isArray(val)) return `[${val.map(stableStringify).join(',')}]`;
     if (val !== null && typeof val === 'object') {
@@ -36,9 +34,7 @@ function historyTableRef(config: DatabaseConfig): string {
     return schema ? `${escapeIdentifier(schema, dialect)}.${t}` : t;
 }
 
-// ---------------------------------------------------------------------------
-// Bootstrap — CREATE TABLE IF NOT EXISTS (dialect-aware via dialect on config)
-// ---------------------------------------------------------------------------
+// --- Bootstrap: CREATE TABLE IF NOT EXISTS, dialect-aware ---
 export async function bootstrapSchemaHistoryTable(db: Database): Promise<void> {
     const ref = historyTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
@@ -98,10 +94,7 @@ CREATE TABLE ${ref} (
     }
 }
 
-// ---------------------------------------------------------------------------
-// Record start of migration (status = 'pending')
-// Returns the inserted record id.
-// ---------------------------------------------------------------------------
+// --- Record start of migration (status = 'pending'); returns the inserted record id ---
 // A `pending` start older than this is treated as orphaned (a crashed run) and swept to `failed`,
 // so it can't linger forever. Comfortably longer than any real migration.
 const STALE_PENDING_MS = 60 * 60 * 1000;
@@ -210,9 +203,8 @@ RETURNING id`;
         const id = Number(result.results?.[0]?.id ?? 0);
         if (id > 0) return id;
         if (attempt < maxAttempts && UNIQUE_VIOLATION.test(result.error ?? '')) continue;
-        // Failed to record the start — warn (change proceeds, just untracked) and return undefined so
-        // callers' `id !== undefined` guard skips the follow-up UPDATE (a 0 would run WHERE id = 0).
-        // Previously returned silently (A19).
+        // Failed to record the start: warn (the change proceeds, just untracked) and return undefined
+        // so the caller's `id !== undefined` guard skips the UPDATE, since 0 would run WHERE id = 0 (A19).
         db.warn(`schemaHistory: could not record migration start for '${table}' (${result.error ?? 'unknown error'}); the schema change will proceed but won't be recorded in history.`);
         return undefined;
     }
@@ -220,9 +212,7 @@ RETURNING id`;
     return undefined;
 }
 
-// ---------------------------------------------------------------------------
-// Update status after migration completes
-// ---------------------------------------------------------------------------
+// --- Update status after migration completes ---
 async function updateHistoryStatus(
     db: Database,
     id: number,
@@ -232,13 +222,11 @@ async function updateHistoryStatus(
 ): Promise<void> {
     const ref = historyTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
-    // The drift baseline must match the drift-time check, which reads the LIVE (introspected) schema.
-    // So checksum the introspected `checksumSchema` when the caller re-introspects post-migration (A6):
-    // both sides are then introspection-derived and match for an unchanged table (inferred-vs-
-    // introspected would false-positive on legitimate type round-trips). `undefined` (no re-introspect)
-    // falls back to `newSchema`; explicit `null` (introspection read nothing) stores a null checksum →
-    // "no baseline" at drift time, not a false positive. `new_schema` stays the inferred schema (used
-    // for point-in-time reconstruction).
+    // The drift baseline must match the drift-time check, which reads the LIVE schema. So checksum
+    // the introspected `checksumSchema` when the caller re-introspects post-migration (A6): both
+    // sides are then introspection-derived, where inferred-vs-introspected would false-positive on
+    // legitimate type round-trips. `undefined` falls back to `newSchema`; explicit `null` stores a
+    // null checksum, meaning "no baseline" at drift time rather than a false positive.
     const checksumSource = checksumSchema !== undefined ? checksumSchema : newSchema;
     const checksum = checksumSource ? computeChecksum(checksumSource) : null;
 
@@ -275,14 +263,9 @@ export async function recordMigrationFailed(db: Database, id: number): Promise<v
     await updateHistoryStatus(db, id, 'failed');
 }
 
-// ---------------------------------------------------------------------------
-// Drift detection
-// ---------------------------------------------------------------------------
+// --- Drift detection ---
 
-/**
- * Compare the live schema checksum to the last 'applied' record.
- * Returns { drifted: false } if no history exists yet (first run).
- */
+/** Compare the live schema checksum to the last 'applied' record. No history yet means no drift. */
 export async function detectSchemaDrift(
     db: Database,
     table: string
@@ -337,14 +320,11 @@ export async function detectSchemaDrift(
     return { drifted, expected, actual };
 }
 
-// ---------------------------------------------------------------------------
-// Point-in-time schema reconstruction
-// ---------------------------------------------------------------------------
+// --- Point-in-time schema reconstruction ---
 
 /**
- * Returns the MetadataHeader that was in effect at `at` by reading the last
- * 'applied' history record with applied_at <= at.
- * Returns null if no applied record exists before that date.
+ * The MetadataHeader in effect at `at`, from the last 'applied' record with applied_at <= at.
+ * Null when no applied record precedes that date.
  */
 export async function getSchemaAt(
     db: Database,

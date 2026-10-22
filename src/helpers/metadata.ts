@@ -34,8 +34,7 @@ export function initializeMetaData(headers: string[]): Record<string, any>[] {
 
 /**
  * Provided-schema ("assumeSchema", A-4) helpers. A caller that already knows the schema hands it in
- * so AutoSQL skips per-value type inference (expensive predictType/sqlize regex) and its footguns
- * (e.g. small ints mis-typed as boolean).
+ * so autosql skips per-value inference and its footguns (e.g. small ints mis-typed as boolean).
  */
 
 /** Every distinct column key present across the data rows. Cheap — key iteration, no per-value regex. */
@@ -62,8 +61,8 @@ export function overlaySchema(inferred: MetadataHeader, provided: MetadataHeader
 
 /**
  * Fill a provided (possibly sparse) schema with `ColumnDefinition` defaults so DDL builders get
- * complete definitions. Provided values win; only `type` is required. A length-requiring type
- * (varchar/decimal) with no length gets a default so the DDL stays valid.
+ * complete definitions. Provided values win; only `type` is required, and a length-requiring type
+ * with no length gets a default so the DDL stays valid.
  */
 export function fillColumnDefaults(schema: MetadataHeader): MetadataHeader {
     const result: MetadataHeader = {};
@@ -122,9 +121,8 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     // Cap uniqueSet per column at sampled rows + 1: enough to observe every distinct sample value
-    // and confirm 100% uniqueness, bounded to in-memory data. A cap tied to the pseudounique ratio
-    // (ceil(0.9 * N)) saturated a truly-unique column at ~0.9N rows, so `unique` was never
-    // confirmable for a dense column of ~10+ rows — always mislabeled pseudounique.
+    // and confirm 100% uniqueness. A cap tied to the pseudounique ratio saturated a truly-unique
+    // column at ~0.9N rows, so `unique` was never confirmable past ~10 rows.
     const uniqueSetCap = sampleData.length + 1;
     const forceStringSet = new Set<string>(databaseConfig.forceStringColumns ?? []);
     const booleanSet = new Set<string>(databaseConfig.booleanColumns ?? []);
@@ -142,9 +140,8 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     };
 
     // A24c: track columns with a lone-separator number ambiguous between thousands-grouping and a
-    // decimal (e.g. "1,234"). normalizeNumber() flags these via the callback below; we assume decimal
-    // but warn once per run so the caller can disambiguate via thousandsSeparator/decimalSeparator.
-    // Single hoisted closure (no per-value alloc) records the current column, set before each predictType().
+    // decimal ("1,234"). We assume decimal but warn once per run so the caller can disambiguate.
+    // One hoisted closure (no per-value alloc) records the current column before each predictType().
     const ambiguousSeparatorColumns = new Set<string>();
     let ambiguitySeparatorColumn: string | null = null;
     const noteAmbiguousSeparator = () => {
@@ -317,13 +314,11 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         }
     }
 
-    // Sampling caveat: the unique/pseudounique flags above are sample-only. A column 100% unique in
-    // the sample but with duplicates in the unsampled remainder would get a UNIQUE constraint (and
-    // possibly PK) at CREATE TABLE, then fail on insert of the full data. Re-validate the columns
-    // still flagged `unique` against the full dataset and demote any that aren't. Only runs when
-    // sampling split the data (else remainingData is empty and flags already reflect the full set).
-    // A truly-unique column is never saturated (distinct == sampleSize < cap), so its uniqueSet holds
-    // every sampled value and the continuation below is exact.
+    // The unique/pseudounique flags above are sample-only. A column 100% unique in the sample but
+    // duplicated in the remainder would get a UNIQUE constraint (and maybe a PK) at CREATE TABLE,
+    // then fail on insert. Re-validate the still-`unique` columns against the full dataset and
+    // demote. Only runs when sampling split the data. A truly-unique column is never saturated, so
+    // its uniqueSet holds every sampled value and this continuation is exact.
     if (remainingData.length > 0) {
         const isNullish = (v: any) => v === '' || v === null || v === undefined || v === '\\N' || v === 'null';
         for (const column in metaData) {
@@ -435,12 +430,11 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         }
     }
 
-    // An all-null column has no data to infer a type, so it is deferred: NOT added to the schema now,
-    // created (correctly typed) when a later batch first carries data. A guessed type is wrong — a
-    // `varchar` guess locks the column so later int/date data collates back to varchar, and a bare
-    // `varchar` is invalid DDL on MySQL. A column already in the table is unaffected (comes through the
-    // old metadata during comparison, still inserted as null). Deferral is now unconditional; it was
-    // previously gated on `excludeBlankColumns` (a footgun that could enable the type-guess). See D-C.
+    // An all-null column has no data to infer from, so it is DEFERRED rather than guessed: not added
+    // now, created correctly typed when a later batch carries data. A `varchar` guess would lock the
+    // column so later int/date data collates back to varchar, and a bare `varchar` is invalid DDL on
+    // MySQL. A column already in the table is unaffected. Unconditional now; gating it on
+    // `excludeBlankColumns` was a footgun that could re-enable the guess. See D-C.
     const emptyOrNullKeys = Object.entries(metaDataInterim)
         .filter(([_, meta]) => meta.uniqueSet.size === 0 && meta.valueCount === 0 && meta.nullCount > 0)
         .map(([key]) => key);
@@ -449,9 +443,8 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     // A24c: warn once per run for columns that resolved to numeric AND carried an ambiguous
-    // lone-separator value. Suppressed when the caller supplied explicit separators (normalizeNumber
-    // takes the override path and never flags), and filtered to numeric columns so a text column that
-    // merely contained "1,234" stays silent.
+    // lone-separator value. Suppressed when the caller gave explicit separators, and limited to
+    // numeric columns so a text column that merely contained "1,234" stays silent.
     if (ambiguousSeparatorColumns.size > 0
         && databaseConfig.thousandsSeparator === undefined
         && databaseConfig.decimalSeparator === undefined) {
@@ -472,7 +465,6 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
         let dbInstance: Database | undefined;
         let dialectConfig: DialectConfig;
 
-        // Determine if input is a Database instance or a config object
         if (databaseOrConfig instanceof Database) {
             dbInstance = databaseOrConfig;
             validatedConfig = validateConfig(dbInstance.getConfig()); // Use existing Database config
@@ -516,11 +508,10 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
 }
 
 /**
- * `inferAdditionalUniques: false` for an existing table: an inferred `unique` survives only where the live
- * column is already unique. Keeping those stops compareMetaData reading them as `noLongerUnique`;
- * everything else (a newly 100%-distinct column, a brand-new column) loses the flag. Apply to
- * INFERRED metadata only, never a caller's assumeSchema. No-op for a new table (no or empty
- * current metadata) or with the option off. Never mutates the input.
+ * `inferAdditionalUniques: false` on an existing table: an inferred `unique` survives only where the
+ * live column is already unique, which stops compareMetaData reading it as `noLongerUnique`.
+ * Everything else loses the flag. Applies to INFERRED metadata only, never a caller's assumeSchema,
+ * and never mutates the input.
  */
 export function restrictInferredUniques(inferred: MetadataHeader, current: MetadataHeader | null | undefined, config: DatabaseConfig): MetadataHeader {
     if (config.inferAdditionalUniques !== false) return inferred;
@@ -562,22 +553,19 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
     let primaryKeyChanges: string[] = [];
     let renamedPrimaryKeys: { oldName: string; newName: string }[] = [];
 
-    // Identify removed columns
     for (const oldColumnName of Object.keys(oldHeaders)) {
         if (!newHeaders.hasOwnProperty(oldColumnName)) {
             dropColumns.push(oldColumnName);
         }
     }
 
-    // Identify renamed columns — O(n) fingerprint approach. A rename is inferred only when exactly
-    // one removed column matches exactly one added column by definition; ambiguous cases (identical
-    // definitions on either side) stay drop+add to avoid wrong-column renames.
+    // Identify renamed columns. A rename is inferred only when exactly one removed column matches
+    // exactly one added column by definition; ambiguous cases stay drop+add to avoid wrong-column
+    // renames.
     //
-    // Deliberately conservative: a rename can't be known from metadata alone (data just carries a new
-    // key), and DB-parsed `oldHeaders` vs inferred `newHeaders` rarely match exactly, so most
-    // evolutions fall through to drop+add. That's the fidelity-first outcome — `deleteColumns` defaults
-    // to false, preserving the old column and its data rather than moving data under another name. Do
-    // not loosen the match to type-only — that reintroduces wrong-column data association.
+    // Deliberately conservative: a rename cannot be known from metadata alone, and DB-parsed
+    // `oldHeaders` rarely match inferred `newHeaders` exactly, so most evolutions fall through to
+    // drop+add. Do NOT loosen the match to type-only; that reintroduces wrong-column data association.
     const fingerprint = (col: ColumnDefinition): string =>
         JSON.stringify(Object.fromEntries(Object.entries(col).sort()));
 
@@ -611,14 +599,12 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
         delete newHeaders[newColumnName];
     }
 
-    // Identify added & modified columns
     for (const [columnName, newColumn] of Object.entries(newHeaders)) {
         if (!oldHeaders.hasOwnProperty(columnName)) {
-            // New column added to an EXISTING table (branch only runs when oldHeaders is present).
-            // Pre-existing rows have no value, so it must be nullable — a NOT NULL add fails on
-            // Postgres ("column contains null values") and silently back-fills 0/'' on MySQL (a
-            // data-quality trap). A back-fillable column — a calculated timestamp (dwh_*, DEFAULT
-            // CURRENT_TIMESTAMP) or one with an explicit default — keeps its NOT NULL. (R11 / D-A.)
+            // Pre-existing rows have no value for a column added to an EXISTING table, so it must be
+            // nullable: a NOT NULL add fails on Postgres and silently back-fills 0/'' on MySQL. A
+            // back-fillable column (calculated timestamp, or an explicit default) keeps its NOT NULL.
+            // (R11 / D-A.)
             const canBackfill = newColumn.calculated === true || newColumn.default !== undefined;
             addColumns[columnName] = canBackfill ? newColumn : { ...newColumn, allowNull: true };
         } else {
@@ -629,7 +615,6 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
             const oldType = oldColumn.type ?? "varchar";
             const newType = newColumn.type ?? "varchar";
 
-            // Use `collateTypes()` to determine the best compatible type
             const recommendedType = collateTypes([oldType, newType]);
 
             if (recommendedType !== oldType) {
@@ -642,20 +627,17 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
                 modifiedColumn.previousType = oldType;
             }
 
-            // Merge column lengths safely
             const oldLength = oldColumn.length ?? 0;
             const newLength = newColumn.length ?? 0;
             const oldDecimal = oldColumn.decimal ?? 0;
             const newDecimal = newColumn.decimal ?? 0;
             
-            // Remove `length` if the new type is in `no_length`
             if (dialectConfig?.noLength.includes(modifiedColumn.type || newColumn.type || oldColumn.type || "varchar")) {
                 delete modifiedColumn.length;
                 delete modifiedColumn.decimal;
             } else {
 
                 if (dialectConfig?.decimals.includes(modifiedColumn.type || newColumn.type || oldColumn.type || "varchar")) {
-                    // If type supports decimals, merge decimal values correctly
                     const oldPreDecimal = oldLength - oldDecimal;
                     const newPreDecimal = newLength - newDecimal;
 
@@ -665,7 +647,6 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
                     modifiedColumn.length = maxPreDecimal + maxDecimal;
                     modifiedColumn.decimal = maxDecimal;
                 } else {
-                    // If type does not support decimals, just merge length
                     modifiedColumn.length = Math.max(oldLength, newLength);
                     delete modifiedColumn.decimal;
                 }                
@@ -678,27 +659,22 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
                 modified = true;
             }
 
-            // Remove unique constraint if it's no longer unique
             if (oldColumn.unique && !newColumn.unique) {
                 noLongerUnique.push(columnName);
             }
 
-            // Ensure a type is set
             if(!modifiedColumn.type) {
                 throw new Error(`Missing type for column ${columnName}`);
             }
 
-            // Remove `length` if it's 0 and not required
             if (modifiedColumn.length === 0) {
                 delete modifiedColumn.length;
             }
 
-            // Ensure decimals only exist where applicable
             if (!dialectConfig?.decimals.includes(modifiedColumn.type)) {
                 delete modifiedColumn.decimal;
             }
 
-            // Only set modified flag if the length or decimal has changed
             if(modifiedColumn.length && oldColumn.length && modifiedColumn.length > oldColumn.length) {
                 modified = true;
             }
@@ -723,7 +699,6 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
     // Identify true primary key changes (excluding length-only modifications)
     const structuralPrimaryKeyChanges = newPrimaryKeys.filter(pk => !oldPrimaryKeys.includes(pk));
 
-    // Only update primaryKeyChanges if there's an actual key change
     if (structuralPrimaryKeyChanges.length > 0 || renamedPrimaryKeys.length > 0) {
     primaryKeyChanges = [...new Set([...oldPrimaryKeys, ...newPrimaryKeys])];
 
@@ -744,17 +719,14 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
         ...addColumns
     };
     
-    // Apply modifications
     for (const col in modifyColumns) {
         updatedMetaData[col] = modifyColumns[col];
     }
 
-    // Remove dropped columns
     for (const col of dropColumns) {
         delete updatedMetaData[col];
     }
 
-    // Apply renames
     for (const { oldName, newName } of renameColumns) {
         updatedMetaData[newName] = updatedMetaData[oldName];
         delete updatedMetaData[oldName];

@@ -20,7 +20,6 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             throw new Error("Please provide a sqlDialect (such as pgsql, mysql) as part of the configuration object.");
         }
 
-        // Define default values
         const defaultConfig: DatabaseConfig = {
             sqlDialect: config.sqlDialect, // Keep required field
             pseudoUnique: defaults.pseudoUnique,
@@ -66,10 +65,8 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             keepOrphanedStagingTables: defaults.keepOrphanedStagingTables,
         };
 
-        // Merge provided config with defaults
         const merged = { ...defaultConfig, ...config };
 
-        // Validate numeric bounds
         if (merged.insertStack !== undefined && merged.insertStack <= 0) {
             throw new Error("insertStack must be greater than 0.");
         }
@@ -129,11 +126,6 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
                 throw new Error(`Invalid sourceTimeZone "${merged.sourceTimeZone}": must be a valid IANA time zone name (e.g. "America/New_York", "Australia/Sydney", "UTC").`);
             }
         }
-        // (SQL Server: rejectedRowsTable and schemaHistory guards removed in spec-2 slices 3 & 4 — the
-        // rejected-rows builders (streamHelpers.ts) and schema-history bootstrap (schemaHistory.ts) now
-        // emit T-SQL. openStream stays guarded (autosql.ts) until the streaming builders are ported, slice 5.)
-        // (rejectedRowsTable + addHistory on SQL Server is now supported — the atomic before-image+merge
-        // path incl. the per-PK pkFilter form landed in spec-4 §3.8; the combo guard is removed.)
         if (merged.surrogateKey) {
             // A surrogate is unique per physical insert, so these features are incoherent with it:
             // history diffs join on the primary key (nothing to match), nested extraction keys
@@ -183,11 +175,9 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         const unusedThousands = THOUSANDS_INDICATORS.filter(ind => ind !== usedThousands && ind !== usedDecimal)[0];
         const unusedDecimal = DECIMAL_INDICATORS.filter(ind => ind !== usedThousands && ind !== usedDecimal)[0];
         overridden = true
-        // Temporarily replace thousands and decimal indicators with placeholders
         let tempinputStr = inputStr.replaceAll(usedThousands, unusedThousands);
         tempinputStr = tempinputStr.replaceAll(usedDecimal, unusedDecimal);
 
-        // Replace placeholders with final characters (comma for thousands, dot for decimal)
         tempinputStr = tempinputStr.replaceAll(unusedThousands, ",").replaceAll(unusedDecimal, ".");
 
         inputStr = tempinputStr;
@@ -216,7 +206,6 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
 
     inputStr = inputStr.replace(/ /g, "");
 
-    // Reject cases
     if (
         !/\d/.test(inputStr) || // No digits present
         (dotCount > 1 && commaCount > 1) || // Too many of both
@@ -226,7 +215,6 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         return null;
     }
 
-    // Check incorrect ordering of separators
     const firstComma = inputStr.indexOf(",");
     const lastComma = inputStr.lastIndexOf(",")
     const firstDot = inputStr.indexOf(".");
@@ -244,7 +232,6 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         return null;
     }
 
-    // Determine thousands and decimal indicators
     let thousandsIndicator = "";
     let decimalIndicator = "";
 
@@ -264,10 +251,9 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         // Only one separator exists, assume it is the decimal separator
         thousandsIndicator = "";
         decimalIndicator = dotCount === 1 ? "." : ",";
-        // A24c: a lone separator + exactly 3 trailing digits (1–3 leading) is the one shape that could
-        // equally be a Western/Indian thousands group ("1,234" -> 1234); in both, the trailing group is
-        // 3 digits (Indian 2-digit groups are only ever middle, never trailing). We assume decimal but
-        // signal the ambiguity so the caller can warn. Anything else is unambiguous decimal — stays silent.
+        // A24c: a lone separator with exactly 3 trailing digits is the one shape that could equally be
+        // a Western or Indian thousands group ("1,234" -> 1234), since Indian 2-digit groups are only
+        // ever middle. We assume decimal but signal the ambiguity so the caller can warn.
         if (onAmbiguousSeparator) {
             const [before, after] = inputStr.split(decimalIndicator);
             if (after !== undefined && after.length === 3 && before.length >= 1 && before.length <= 3) {
@@ -283,7 +269,6 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
     let preDecimal = decimalSplit[0];
     let postDecimal = decimalSplit[1] || ""; // Optional decimal part
 
-    // Validate thousands separator formatting
     if (thousandsIndicator) {
         const thousandsSplit = preDecimal.split(thousandsIndicator);
     
@@ -361,10 +346,9 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
 
         const lengthInfo = parseDatabaseLength(String(normalizedRow["length"]));
         const serverType = normalizedRow["data_type"].toLowerCase();
-        // MySQL has no native boolean: `tinyint(1)` is the boolean convention, plain `tinyint` is a
-        // small integer (autosql stores 0–255 as `tinyint`). DATA_TYPE is "tinyint" for both, so
-        // serverToLocal mapped every tinyint to boolean — a spurious boolean→int conversion on re-ingest
-        // that collapsed values to 0/1. Use COLUMN_TYPE (display width) to map only `tinyint(1)` to boolean.
+        // MySQL has no native boolean: `tinyint(1)` is the convention, plain `tinyint` is a small
+        // integer. DATA_TYPE is "tinyint" for both, so mapping on it made every tinyint boolean, a
+        // spurious conversion that collapsed values to 0/1. Use COLUMN_TYPE's display width instead.
         const columnType = String(normalizedRow["column_type"] || "").toLowerCase();
         const isNonBooleanTinyint = serverType === "tinyint" && columnType !== "" && columnType !== "tinyint(1)";
         const dataType = isNonBooleanTinyint
@@ -475,7 +459,6 @@ export function isMetadataHeader(input: any): input is MetadataHeader {
             return false;
         }
 
-        // Optional fields must match expected types
         if (
             ("length" in column && column.length != null && typeof column.length !== "number") ||
             ("allowNull" in column && column.allowNull != null && typeof column.allowNull !== "boolean") ||
@@ -567,17 +550,13 @@ export const normalizeKeysArray = (data: Record<string, any>[]): Record<string, 
 export function organizeSplitTable(table: string, newMetaData: MetadataHeader, currentMetaData: Record<string, any>[] | MetadataHeader | Record<string, MetadataHeader>, dialectConfig: DialectConfig) : Record<string, MetadataHeader> {
     let normalizedMetaData: Record<string, MetadataHeader>;
 
-    // Check if currentMetaData is already in structured format
     if (typeof currentMetaData === "object" && !Array.isArray(currentMetaData)) {
         if (Object.values(currentMetaData).some(value => typeof value === "object" && !Array.isArray(value))) {
-            // Already `Record<string, MetadataHeader>`, use it directly
             normalizedMetaData = currentMetaData as Record<string, MetadataHeader>;
         } else {
-            // If it's `MetadataHeader`, wrap it in `{ table: MetadataHeader }`
             normalizedMetaData = { [table]: currentMetaData as MetadataHeader };
         }
     } else {
-        // Otherwise assume raw DB results and parse
         const parsedMetadata = parseDatabaseMetaData(currentMetaData as Record<string, any>[], dialectConfig);
         if (!parsedMetadata) {
             normalizedMetaData = { [table]: {} }; // Ensure valid structure
@@ -625,7 +604,6 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
     const unallocatedColumns = { ...newColumns };
 
     while (Object.keys(unallocatedColumns).length > 0) {
-        // Check the row size before adding new columns
         for (var i = 0; i < Object.keys(unallocatedColumns).length; i++) {
             const currentTableData = newGroupedByTable[tableName] || { ...primaryKeys };
             const columnName = Object.keys(unallocatedColumns)[i]
@@ -636,7 +614,6 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 
             const { exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
             if (!nearlyExceedsLimit && !exceedsColumnLimit) {
-                // Add the column if within limits
                 if (!newGroupedByTable[tableName]) {
                     newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table
                 }
@@ -667,7 +644,6 @@ export function organizeSplitData(data: Record<string, any>[], splitMetaData: Re
                 }
             });
 
-            // Only add to groupedData if it has at least one column
             if (Object.keys(rowDataByTable[tableName]).length > 0) {
                 if (!groupedData[tableName]) {
                     groupedData[tableName] = [];
@@ -695,9 +671,8 @@ export function splitInsertData(data: Record<string, any>[], config: DatabaseCon
 
 /**
  * Remove characters a SQL text column cannot store, so garbage-byte free text doesn't hard-fail the
- * insert. Strips NUL (U+0000, illegal in Postgres text + truncation risk elsewhere) and replaces
- * unpaired UTF-16 surrogates (can't encode to valid UTF-8) with U+FFFD. Well-formed text (incl. emoji,
- * whose surrogates are paired) is unchanged. Opt-in via `databaseConfig.sanitizeInvalidChars`.
+ * insert: NUL (illegal in Postgres text) and unpaired UTF-16 surrogates (replaced with U+FFFD, since
+ * they can't encode to valid UTF-8). Well-formed text including emoji is unchanged. Opt-in.
  */
 export function sanitizeString(value: string): string {
     return value
@@ -707,11 +682,10 @@ export function sanitizeString(value: string): string {
 
 export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig?: DialectConfig, databaseConfig?: DatabaseConfig, sqlizeValues: boolean = false): any[] {
     const sanitize = databaseConfig?.sanitizeInvalidChars === true;
-    // In surrogate-key mode the auto-increment column is DB-generated with no data value, so omit it
-    // from the value list (Postgres rejects NULL into a BIGSERIAL NOT NULL). Gated on `surrogateKey`:
-    // a genuine AUTO_INCREMENT/SERIAL PK on an ordinary table is also autoIncrement:true and callers
-    // legitimately upsert values for it — those must NOT be dropped. Insert builders gate the column
-    // list the same way, keeping columns and params aligned.
+        // In surrogate-key mode the auto-increment column is DB-generated, so omit it from the value
+        // list (Postgres rejects NULL into a BIGSERIAL NOT NULL). Gated on `surrogateKey` because a
+        // genuine AUTO_INCREMENT PK is also autoIncrement:true and callers legitimately upsert values
+        // for it. Insert builders gate the column list the same way, keeping columns and params aligned.
     const excludeAutoIncrement = databaseConfig?.surrogateKey === true;
     const newRow = Object.entries(metaData)
       .filter(([, meta]) => !(excludeAutoIncrement && meta.autoIncrement === true))
@@ -719,7 +693,6 @@ export function getInsertValues(metaData: MetadataHeader, row: Record<string, an
       let value = row[column];
 
       if (value === null || value === undefined) {
-        // Use calculated default if provided
         if (meta.calculatedDefault !== undefined) {
           value = meta.calculatedDefault;
         } else if(meta.default !== undefined) {

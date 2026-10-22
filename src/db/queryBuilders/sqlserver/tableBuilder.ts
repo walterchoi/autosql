@@ -187,12 +187,11 @@ export class SqlServerTableQueryBuilder {
             // modify is intentionally NOT emitted to avoid an invalid `ALTER COLUMN ... SET DEFAULT`.
             const nullability = wantsNull ? "NULL" : "NOT NULL";
 
-            // SQL Server rejects ALTER COLUMN that changes a column's TYPE while an index/unique
-            // constraint depends on it (err 5074). Length/nullability changes are fine (spec-4 §3.6).
-            // So for a real type change, wrap the ALTER: dynamically drop the single-column indexes /
-            // unique constraints on the column, alter, then recreate them (one batch — DDL is
-            // transactional). No-op for non-indexed columns (the discovery finds none). Composite indexes
-            // are left alone (their ALTER still fails, unchanged) — a documented edge.
+            // SQL Server rejects an ALTER COLUMN that changes a column's TYPE while an index or
+            // unique constraint depends on it (err 5074); length and nullability changes are fine.
+            // So a real type change is wrapped: dynamically drop the single-column indexes on the
+            // column, alter, recreate, all in one batch since DDL is transactional. Composite indexes
+            // are left alone and still fail, a documented edge (spec-4 §3.6).
             const isTypeChange = !!(column.type && column.previousType && column.type !== column.previousType);
             if (isTypeChange) {
                 const qcol = q(columnName);
