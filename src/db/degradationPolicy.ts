@@ -7,11 +7,9 @@ import { buildBootstrapRejectedRowsQuery, buildInsertRejectedRowsQuery } from ".
 import { defaults } from "../config/defaults";
 
 /**
- * Graceful-degradation collaborator (R1 Slice 2, PR 2c). Owns the four fallback variants: the shared
- * per-row retry engine plus the direct-insert, staging non-atomic, and staging atomic-per-PK adapters.
- * Behaviour-preserving move out of AutoSQLHandler; holds a back-ref because schema widening is
- * worker-dispatched (configureTables). `perRowInsertWithRetry` stays reachable on the handler via a
- * thin delegator so AutoSQLStreamHandle is untouched. AutoSQLHandler imported type-only.
+ * Graceful-degradation collaborator: the shared per-row retry engine plus the direct-insert,
+ * staging non-atomic, and staging atomic-per-PK adapters. Holds a back-ref to the handler because
+ * schema widening is worker-dispatched (configureTables).
  */
 export class DegradationPolicy {
     private handler: AutoSQLHandler;
@@ -23,11 +21,9 @@ export class DegradationPolicy {
     }
 
     /**
-     * Graceful-degradation fallback for the direct-insert path: for each input whose bulk insert
-     * failed, retry its rows one at a time (widening schema between rounds) and divert still-failing
-     * rows to `rejectedRowsTable`. Only reached when `perRowFallback` AND `rejectedRowsTable` are set
-     * (see insertData). The failed batch ran as a transaction and rolled back, so re-inserting every
-     * row is safe (no double-insert).
+     * Per-row fallback for the direct-insert path: retry each row of a failed batch, widening the
+     * schema between rounds, and divert still-failing rows to `rejectedRowsTable`. The failed batch
+     * ran as a transaction and rolled back, so re-inserting every row cannot double-insert.
      */
     async applyPerRowFallback(insertInput: InsertInput[], allInsertResults: QueryResult[]): Promise<QueryResult[]> {
         const config = this.db.getConfig();
@@ -55,11 +51,9 @@ export class DegradationPolicy {
     }
 
     /**
-     * Insert `rows` one at a time as a graceful-degradation fallback after a bulk insert failed:
-     * insert each row individually, and between rounds widen the table schema to fit the rows that
-     * failed (up to `maxRetries`). Rows still failing after the last round are diverted to
-     * `rejectedRowsTable` if configured, otherwise this throws. Returns the number of rows inserted.
-     * Shared by the streaming end() flush and the non-streaming direct-insert path.
+     * Insert `rows` one at a time after a bulk insert failed, widening the table between rounds to
+     * fit whatever failed (up to `maxRetries`). Rows still failing divert to `rejectedRowsTable`, or
+     * this throws. Shared by the streaming end() flush and the direct-insert path.
      */
     async perRowInsertWithRetry(
         table: string,
@@ -81,11 +75,9 @@ export class DegradationPolicy {
             const failures: { row: Record<string, any>; error: string }[] = [];
 
             for (const row of pendingRows) {
-                // Pre-sqlize the row like the bulk direct path (getInsertValues, sqlizeValues=true) so
-                // this fallback normalizes values (number separators, decimal rounding,
-                // datetime/timezone, boolean canonicalization) instead of binding raw. Without it the
-                // fallback would store different values (e.g. resolved "1,234" -> 1234 rejected as raw),
-                // and locale-formatted numbers could never land via degradation/streaming.
+                // Pre-sqlize like the bulk path so this fallback normalizes values (separators,
+                // decimal rounding, timezone, booleans) instead of binding raw. Without it a
+                // locale-formatted number could never land via degradation or streaming.
                 const normalisedRow = getInsertValues(workingMeta, row, this.db.getDialectConfig(), this.db.getConfig(), true);
                 const insertQ = this.db.getInsertStatementQuery(table, [normalisedRow], workingMeta, insertType);
                 // Single attempt: this loop already retries across rounds, so the internal retry is
@@ -153,10 +145,8 @@ export class DegradationPolicy {
     }
 
     /**
-     * Graceful-degradation fallback for the STAGING path WITHOUT row-level history (opt-in, see
-     * insertFromStagingTables): the atomic merge rolled back, so nothing from a failed table landed.
-     * Re-run that table's rows one at a time as an upsert into the real table (matching the merge's
-     * UPDATE semantics), diverting unrecoverable rows to `rejectedRowsTable`.
+     * Per-row fallback for the STAGING path without row-level history. The atomic merge rolled back,
+     * so nothing from the failed table landed; re-run its rows as upserts to match merge semantics.
      */
     async applyStagingPerRowFallback(insertInput: InsertInput[], allInsertResults: QueryResult[]): Promise<QueryResult[]> {
         const config = this.db.getConfig();
@@ -181,11 +171,10 @@ export class DegradationPolicy {
     }
 
     /**
-     * Per-PK fallback for the atomic history path: per row, run [before-image for that PK, single-PK
-     * merge] in ONE transaction. A PK whose merge violates a constraint rolls back (no history, no
-     * data) and diverts to `rejectedRowsTable`. No schema widening here (unlike `perRowInsertWithRetry`):
-     * `configureTables` already fitted the schema to every row, so a failure is a data/constraint issue
-     * re-inference can't fix.
+     * Per-PK fallback for the atomic history path: [before-image, single-PK merge] in ONE
+     * transaction, so a PK whose merge violates a constraint rolls back with no history and no data.
+     * No widening here, because `configureTables` already fitted the schema to every row, so a
+     * failure is a data problem re-inference cannot fix.
      */
     async perPkAtomicStagingMerge(input: InsertInput, stagingInput: InsertInput, historyInput?: InsertInput): Promise<QueryResult> {
         const config = this.db.getConfig();
