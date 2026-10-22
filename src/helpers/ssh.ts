@@ -76,7 +76,6 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
 
   const sshClient = new SSHClient();
 
-  // Wrap ssh connection & forwardOut into a single promise
   const stream: ClientChannel = await new Promise((resolve, reject) => {
     sshClient
       .on("ready", () => {

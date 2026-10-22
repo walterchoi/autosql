@@ -2,11 +2,10 @@ import { MetadataHeader, ColumnDefinition } from "../config/types";
 import { isNumeric, isDate, isBoolean } from "../config/groupings";
 
 /**
- * Physical "column profile" — input a semantic-layer generator (the platform / Roots, see
- * `prompt/autosql-improvements/06-semantic-layer-osi-placement.md`) uses to *suggest* measures,
- * dimensions and relationships. Derived purely from AutoSQL's resolved metadata (type/key/cardinality
- * signals); describes the *data*, not business meaning, and does no DB access. AutoSQL stops here —
- * turning these physical signals into a semantic model is the platform's job.
+ * Physical column profile: the input a semantic-layer generator uses to SUGGEST measures, dimensions
+ * and relationships. Derived purely from autosql's resolved metadata, with no DB access. It describes
+ * the data, not business meaning, and autosql stops here: turning these signals into a semantic model
+ * is the platform's job.
  */
 
 export type ColumnRole = "primary" | "unique" | "index" | "none";

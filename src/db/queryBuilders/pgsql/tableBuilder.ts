@@ -29,7 +29,6 @@ export class PostgresTableQueryBuilder {
             assertSafeTypeToken(columnType);
             let columnDef = `${q(columnName)} ${columnType}`;
 
-            // Handle column lengths
             if (column.length && dialectConfig.requireLength.includes(columnType)) {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
@@ -77,7 +76,6 @@ export class PostgresTableQueryBuilder {
         sqlQuery = sqlQuery.slice(0, -2) + "\n);";
         sqlQueries.push({ query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
     
-        // Create indexes separately
         const limitedIndexes = indexes.slice(0, remainingIndexSlots);
         for (const index of limitedIndexes) {
             if (!index) continue; // Skip empty index names
@@ -96,7 +94,6 @@ export class PostgresTableQueryBuilder {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
-        // Handle `DROP COLUMN`
         if(databaseConfig?.deleteColumns) {
             changes.dropColumns.forEach(columnName => {
                 alterStatements.push(`DROP COLUMN ${q(columnName)}`);
@@ -111,7 +108,6 @@ export class PostgresTableQueryBuilder {
             queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} RENAME COLUMN ${q(oldName)} TO ${q(newName)};`, params: [] });
         });
     
-        // Handle `ADD COLUMN`
         for (const [columnName, column] of Object.entries(changes.addColumns)) {
 
             if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
@@ -194,7 +190,6 @@ export class PostgresTableQueryBuilder {
             }
         });
 
-        // Combine all `ALTER TABLE` statements
         if (alterStatements.length > 0) {
             queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} ${alterStatements.join(", ")};`, params: [] });
         }

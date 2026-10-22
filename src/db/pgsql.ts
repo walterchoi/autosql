@@ -191,7 +191,6 @@ export class PostgresDatabase extends Database {
                 query.trim().toLowerCase().startsWith("update") ||
                 query.trim().toLowerCase().startsWith("delete")
             ) {
-                // Use PREPARE for DML queries
                 await client.query(`PREPARE validate_stmt AS ${query}`);
                 await client.query(`DEALLOCATE validate_stmt`); // Cleanup
             } else {
@@ -289,7 +288,6 @@ export class PostgresDatabase extends Database {
         const alterPrimaryKey = (this.config.updatePrimaryKey ?? false) && !isStagingTable;
 
         if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
-                    // If old headers are provided in MetadataHeader format, compare them with newHeaders
                     if (!newHeaders) {
                         throw new Error("Missing new headers for ALTER TABLE query");
                     }
@@ -312,7 +310,6 @@ export class PostgresDatabase extends Database {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 
-        // Only fetch unique indexes if there are columns to remove uniqueness from
         let indexesToDrop: string[] = [];
         // Only drop the unique when the caller opted in (A10); off (default) keeps it and the load
         // fails loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
