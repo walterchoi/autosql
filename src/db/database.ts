@@ -15,7 +15,6 @@ function driverErrorCode(err: any): string | undefined {
     return code != null && code !== "" ? String(code) : undefined;
 }
 
-// Abstract database class to define common methods.
 export abstract class Database {
     protected connection: any | null = null;
     protected config: DatabaseConfig;
@@ -25,11 +24,9 @@ export abstract class Database {
     // context so concurrent calls with different schemas stay isolated instead of racing on a shared,
     // mutated this.config.schema.
     private schemaContext = new AsyncLocalStorage<string>();
-    // Per-operation number-format override. Dataset-level separator consensus resolves ONE
-    // {thousands, decimal} pair and runs the whole load inside this context, so inference, load-time
-    // sqlize, and worker dispatch (clones getConfig() inside the scope) all see the resolved
-    // separators without mutating shared config. Isolated per-load like schemaContext. Consumed via
-    // getConfig().thousandsSeparator/decimalSeparator.
+    // Per-operation number-format override. Separator consensus resolves ONE {thousands, decimal}
+    // pair and runs the whole load inside this context, so inference, load-time sqlize and worker
+    // dispatch all see it without mutating shared config. Isolated per-load like schemaContext.
     private separatorContext = new AsyncLocalStorage<{ thousands: string; decimal: string }>();
 
     constructor(config: DatabaseConfig) {
@@ -50,10 +47,9 @@ export abstract class Database {
     }
 
     /**
-     * Run `fn` with `schema` as the effective config schema for the duration of the async
-     * operation (and everything it awaits), without mutating the shared instance config.
-     * Concurrent operations with different schemas do not interfere. A falsy schema runs
-     * `fn` unchanged against the configured schema.
+     * Run `fn` with `schema` as the effective config schema for the whole async operation, without
+     * mutating shared config, so concurrent operations on different schemas cannot interfere. A
+     * falsy schema runs `fn` unchanged.
      */
     public runWithSchema<T>(schema: string | undefined, fn: () => T): T {
         if (!schema) return fn();
@@ -61,10 +57,9 @@ export abstract class Database {
     }
 
     /**
-     * Run `fn` with resolved number-format separators as the effective config for the duration of
-     * the async operation (and everything it awaits, including worker dispatch), without mutating
-     * the shared instance config. Used by dataset-level separator consensus. A falsy pair runs `fn`
-     * unchanged (no override).
+     * Run `fn` with resolved number-format separators as the effective config for the whole async
+     * operation (including worker dispatch), without mutating shared config. A falsy pair runs `fn`
+     * unchanged.
      */
     public runWithSeparators<T>(separators: { thousands: string; decimal: string } | undefined, fn: () => T): T {
         if (!separators) return fn();
@@ -91,11 +86,10 @@ export abstract class Database {
     public error(msg: string): void { this.config.logger?.error?.(msg); }
 
     /**
-     * Make blocked schema changes observable (R9): `deleteColumns`/`updatePrimaryKey` default to
-     * false, so `compareMetaData` can compute a drop/PK change that is then silently not executed —
-     * warn (once, real-table only; caller guards on `isStagingTable`) naming the columns and the flag
-     * to flip. `primaryKeyChanges` is only populated on a genuine structural/rename delta and
-     * `dropColumns` is the rename-folded list, so neither warns spuriously on an unchanged re-ingest.
+     * Make blocked schema changes observable (R9). `deleteColumns`/`updatePrimaryKey` default to
+     * false, so compareMetaData can compute a drop or PK change that is then silently not executed.
+     * Warn once, naming the columns and the flag to flip. `primaryKeyChanges` is only populated on a
+     * genuine delta and `dropColumns` is rename-folded, so neither warns on an unchanged re-ingest.
      */
     protected warnBlockedSchemaChanges(table: string, changes: AlterTableChanges): void {
         if (changes.dropColumns?.length && !this.config.deleteColumns) {
@@ -110,9 +104,9 @@ export abstract class Database {
     }
 
     /**
-     * Opt-in charset upgrade (R8): detect text columns whose charset differs from the target and
-     * return the DDL to convert them. Base impl is a no-op — only MySQL has the 3-byte `utf8`/`utf8mb3`
-     * vs 4-byte `utf8mb4` split; Postgres `UTF8` already stores 4-byte chars. See `upgradeCharset`.
+     * Opt-in charset upgrade (R8): return DDL converting text columns whose charset differs from the
+     * target. No-op in the base impl, because only MySQL has the 3-byte `utf8` vs 4-byte `utf8mb4`
+     * split; Postgres `UTF8` already stores 4-byte chars.
      */
     public async getCharsetUpgradeQueries(_table: string): Promise<QueryInput[]> {
         return [];
@@ -193,7 +187,6 @@ export abstract class Database {
         throw new Error("Database connection failed after multiple attempts.");
     }
 
-    // Test database connection.
     public async testConnection(): Promise<boolean> {
         try {
             const result = await this.runQuery({ query: "SELECT 1 AS solution;"});
@@ -204,7 +197,6 @@ export abstract class Database {
         }
     }
 
-    // Check if schema(s) exist.
     public async checkSchemaExists(schemaName: string | string[]): Promise<Record<string, boolean>> {
         const QueryInput = this.getCheckSchemaQuery(schemaName);
         const result = await this.runQuery(QueryInput);
@@ -229,10 +221,9 @@ export abstract class Database {
     }
 
     /**
-     * Create the schema if it doesn't exist. Resolves `{ [schemaName]: true }` (same shape as
-     * checkSchemaExists), plus a deprecated `success: true`. Throws when the CREATE fails, e.g. a login without create rights, with the
-     * driver code on `error.code` (Postgres `42501`, MySQL `ER_DBACCESS_DENIED_ERROR`) so the caller
-     * sees the real cause rather than a later "schema does not exist".
+     * Create the schema if it doesn't exist. Resolves `{ [schemaName]: true }`, plus a deprecated
+     * `success: true`. THROWS when the CREATE fails, with the driver code on `error.code`, so a
+     * login without create rights surfaces the real cause rather than a later "schema not found".
      */
     public async createSchema(schemaName: string): Promise<Record<string, boolean>> {
         let result: QueryResult;
@@ -383,16 +374,14 @@ export abstract class Database {
         let end: Date;
         let _error: any;
 
-        // Convert string queries into QueryInput
         const queries = queriesOrStrings.map(query =>
             typeof query === "string" ? { query, params: [] } : query
         );
 
-        // Retry the whole transaction (not individual statements) on transient errors: a
-        // deadlock/serialization failure aborts the entire transaction, so a per-statement retry on
-        // the same connection can't succeed. DDL-containing transactions run exactly once — MySQL
-        // implicitly commits before each DDL, so re-running a mixed DDL+DML batch would re-apply the
-        // already-committed (non-idempotent) DML.
+        // Retry the whole transaction, not individual statements: a deadlock or serialization failure
+        // aborts the entire transaction, so a per-statement retry on the same connection cannot
+        // succeed. A DDL-containing transaction runs exactly once, because MySQL implicitly commits
+        // before each DDL and re-running would re-apply the already-committed DML.
         const containsDDL = queries.some(q => /^\s*(create|alter|drop|truncate|rename)\b/i.test(q.query || ""));
         const maxAttempts = containsDDL ? 1 : (maxQueryAttempts || 3);
 
@@ -402,10 +391,9 @@ export abstract class Database {
             let results: any[] = [];
             let totalAffectedRows = 0;
             try {
-                // Acquire INSIDE the try: pool exhaustion, acquire timeout, or a conn dropped between
-                // establish and acquire must become a {success:false} QueryResult, not an unhandled
-                // rejection escaping this method — callers invoke it bare and rely on the "always
-                // resolves, never rejects" contract (A16).
+                // Acquire INSIDE the try: pool exhaustion, an acquire timeout, or a connection
+                // dropped between establish and acquire must become a {success:false} QueryResult
+                // rather than an unhandled rejection, since callers rely on never-rejects (A16).
                 client = await this.acquireConnection();
                 await this.startTransaction(client);
 
@@ -502,16 +490,13 @@ export abstract class Database {
             };
           }
       
-          // Recursively trigger the next task when one finishes
           await runNext();
         };
       
-        // Start the first N (poolSize) tasks
         for (let i = 0; i < Math.min(poolSize, queryGroups.length); i++) {
           running.push(runNext());
         }
       
-        // Wait for all active tasks to complete
         await Promise.all(running);
       
         return results;
@@ -541,7 +526,6 @@ export abstract class Database {
     
             const parsedMetadata = parseDatabaseMetaData(result.results, this.getDialectConfig());
     
-            // Ensure return type is always MetadataHeader | null
             if (!parsedMetadata) return null;
             if (typeof parsedMetadata === "object" && !Array.isArray(parsedMetadata)) {
                 return parsedMetadata as MetadataHeader; // Single table case
@@ -581,32 +565,27 @@ export abstract class Database {
     public abstract getMaxConnections(): number;
 
     /**
-     * How many schema locks this instance currently holds. Each pins a pool connection (mysql/pgsql) or a
-     * transaction (sqlserver), so those aren't available for concurrent work — `runTransactionsWithConcurrency`
-     * subtracts this from the pool size to avoid over-subscribing the pool while locks are held (A25b).
+     * How many schema locks this instance holds. Each pins a pool connection (mysql/pgsql) or a
+     * transaction (sqlserver), so `runTransactionsWithConcurrency` subtracts them from the pool size
+     * to avoid over-subscribing while locks are held (A25b).
      */
     protected getHeldSchemaLockCount(): number { return 0; }
 
     /**
-     * Bulk-load already-sqlized value rows into `table` using the dialect's native mechanism
-     * (Postgres `COPY FROM STDIN` / MySQL `LOAD DATA LOCAL INFILE`). `columns` is the ordered column
-     * list each row's values align to. Returns a QueryResult; throws on failure so the caller can
-     * fall back to parameterised INSERT.
+     * Bulk-load already-sqlized value rows using the dialect's native mechanism. `columns` is the
+     * ordered list each row's values align to. Throws on failure so the caller can fall back to
+     * parameterised INSERT.
      */
     public abstract bulkLoadRows(table: string, columns: string[], rows: any[][], header?: MetadataHeader): Promise<QueryResult>;
 
     /**
-     * Acquire a database-native advisory lock scoped to the given table.
-     * MySQL: uses GET_LOCK on a dedicated pool connection.
-     * PostgreSQL: uses pg_try_advisory_lock on a dedicated pool client.
-     * The lock is held until `releaseSchemaLock` is called.
+     * Acquire a database-native advisory lock scoped to the given table (MySQL `GET_LOCK` on a
+     * dedicated pool connection, Postgres `pg_try_advisory_lock` on a dedicated client). Held until
+     * `releaseSchemaLock`.
      */
     public abstract acquireSchemaLock(table: string, timeoutSeconds: number): Promise<void>;
 
-    /**
-     * Release the advisory lock previously acquired by `acquireSchemaLock`.
-     * Safe to call even if no lock is held (no-op).
-     */
+    /** Release the lock from `acquireSchemaLock`. Safe to call when none is held. */
     public abstract releaseSchemaLock(table: string): Promise<void>;
 
     get autoSQL() {
