@@ -91,6 +91,16 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         if (merged.streamMaxRetries !== undefined && merged.streamMaxRetries < 1) {
             throw new Error("streamMaxRetries must be at least 1.");
         }
+        // The base establishConnection opens the tunnel for every dialect, but only the mysql and
+        // pgsql drivers hand the stream to their driver. On SQL Server the tunnel was opened and then
+        // bypassed, so the connection went direct while the caller believed it was tunnelled.
+        if (merged.sqlDialect === "sqlserver" && (merged.sshConfig || merged.sshStream)) {
+            throw new Error(
+                "SSH tunnelling is not supported on SQL Server: the mssql driver is not given the tunnel's stream, "
+                + "so the connection would be made directly and NOT through the tunnel. Remove `sshConfig`/`sshStream` "
+                + "and reach the server another way (VPN, peering, or `ssl` for encryption in transit)."
+            );
+        }
         if (merged.numberFormatMinEvidence !== undefined
             && (!Number.isInteger(merged.numberFormatMinEvidence) || merged.numberFormatMinEvidence < 1)) {
             throw new Error("numberFormatMinEvidence must be a positive integer (>= 1).");
