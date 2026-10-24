@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import type { Pool, PoolClient } from "pg";
+import type * as pg from "pg";
 import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
 import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
@@ -25,7 +26,7 @@ export class PostgresDatabase extends Database {
     }
 
     async establishDatabaseConnection(): Promise<void> {
-        let Pg: typeof import("pg");
+        let Pg: typeof pg;
         try {
             Pg = require("pg");
         } catch {
