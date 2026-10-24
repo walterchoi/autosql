@@ -1,6 +1,6 @@
-import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig, ColumnDefinition } from "../../../config/types";
+import type { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig, ColumnDefinition } from "../../../config/types";
 import { sqlServerConfig } from "../../config/sqlServerConfig";
-import { DialectConfig } from "../../../config/types";
+import type { DialectConfig } from "../../../config/types";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, escapeLiteral, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
 

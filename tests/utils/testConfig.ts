@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { Database } from "../../src/db/database";
-import { DatabaseConfig } from "../../src/config/types";
+import type { DatabaseConfig } from "../../src/config/types";
 import { isValidSingleQuery } from "../../src/db/utils/validateQuery";
 
 const CONFIG_PATH = path.resolve(__dirname, "./config.local.json");

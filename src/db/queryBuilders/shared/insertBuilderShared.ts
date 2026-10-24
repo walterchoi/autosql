@@ -1,4 +1,4 @@
-import { MetadataHeader, DatabaseConfig, InsertInput, QueryInput } from "../../../config/types";
+import type { MetadataHeader, DatabaseConfig, InsertInput, QueryInput } from "../../../config/types";
 import { getInsertValues, getTempTableName, getHistoryTableName, getTrueTableName } from "../../../helpers/utilities";
 
 // Shared, dialect-agnostic logic for the three insert builders (R2). SQL assembly diverges too much to

@@ -1,6 +1,6 @@
 import { AutoSQLStreamHandle } from "../src/db/autosql";
 import { buildStreamStagingTableName, isAutosqlStreamTable, buildMergeFromStreamQuery } from "../src/helpers/streamHelpers";
-import { MetadataHeader, DatabaseConfig, QueryWithParams } from "../src/config/types";
+import type { MetadataHeader, DatabaseConfig, QueryWithParams } from "../src/config/types";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
 
 // ---------------------------------------------------------------------------

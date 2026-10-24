@@ -1,4 +1,4 @@
-import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
+import type { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";

@@ -1,8 +1,8 @@
-import { MySQLDatabase } from "./mysql";
-import { PostgresDatabase } from "./pgsql";
-import { SqlServerDatabase } from "./sqlserver";
-import { Database } from "./database";
-import { InsertInput, MetadataHeader, AlterTableChanges, QueryResult, QueryInput, AutoSQLOptions, OpenStreamOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig } from "../config/types";
+import type { MySQLDatabase } from "./mysql";
+import type { PostgresDatabase } from "./pgsql";
+import type { SqlServerDatabase } from "./sqlserver";
+import type { Database } from "./database";
+import type { InsertInput, MetadataHeader, AlterTableChanges, QueryResult, QueryInput, AutoSQLOptions, OpenStreamOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults, restrictInferredUniques } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { resolveDatasetSeparators } from "../helpers/numberFormat";

@@ -1,5 +1,5 @@
 import { estimateRowSize } from "../src/helpers/utilities";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 describe("estimateRowSize", () => {
   it("calculates row size correctly for basic columns", () => {

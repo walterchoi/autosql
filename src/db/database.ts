@@ -1,9 +1,9 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { isValidSingleQuery } from './utils/validateQuery';
-import { QueryInput, DatabaseConfig, DialectConfig, AlterTableChanges, MetadataHeader, QueryResult, InsertInput } from '../config/types';
+import type { QueryInput, DatabaseConfig, DialectConfig, AlterTableChanges, MetadataHeader, QueryResult, InsertInput } from '../config/types';
 import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
 import { maxQueryAttempts } from "../config/defaults";
-import { AutoSQLHandler } from "./autosql";
+import type { AutoSQLHandler } from "./autosql";
 import { setSSH } from '../helpers/ssh';
 
 /**

@@ -1,4 +1,4 @@
-import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
+import type { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { mysqlConfig } from "../../config/mysqlConfig";
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";

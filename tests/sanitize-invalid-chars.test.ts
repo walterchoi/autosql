@@ -1,5 +1,5 @@
 import { sanitizeString, getInsertValues } from "../src/helpers/utilities";
-import { MetadataHeader, DatabaseConfig } from "../src/config/types";
+import type { MetadataHeader, DatabaseConfig } from "../src/config/types";
 
 // Opt-in `sanitizeInvalidChars` removes characters a SQL text column cannot store — NUL
 // bytes (which hard-fail Postgres) and unpaired UTF-16 surrogates — while leaving

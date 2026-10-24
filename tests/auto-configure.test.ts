@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { MetadataHeader, AlterTableChanges, InsertInput, QueryInput } from "../src/config/types";
+import type { MetadataHeader, AlterTableChanges, InsertInput, QueryInput } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_auto_configure_table";
 

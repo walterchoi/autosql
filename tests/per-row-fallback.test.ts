@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // Graceful degradation on the non-streaming direct-insert path (and the shared streaming flush):
 // perRowInsertWithRetry re-inserts a failed batch one row at a time, then diverts rows that still

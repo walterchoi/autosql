@@ -2,7 +2,7 @@ import { getDataHeaders } from "../src/helpers/metadata";
 import { sqlize } from "../src/helpers/utilities";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
 import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 const BASE_CONFIG: DatabaseConfig = {
     sqlDialect: "mysql",

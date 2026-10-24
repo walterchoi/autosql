@@ -6,8 +6,8 @@
  * methods — verifying call counts and sequencing rather than SQL output.
  */
 import { AutoSQLHandler } from "../src/db/autosql";
-import { InsertInput, QueryResult } from "../src/config/types";
-import { Database } from "../src/db/database";
+import type { InsertInput, QueryResult } from "../src/config/types";
+import type { Database } from "../src/db/database";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
 
 // ---------------------------------------------------------------------------

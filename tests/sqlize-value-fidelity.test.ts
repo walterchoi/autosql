@@ -2,7 +2,7 @@ import { sqlize, validateConfig } from "../src/helpers/utilities";
 import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
 import { sqlServerConfig } from "../src/db/config/sqlServerConfig";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 // sqlize() produces the exact literal that gets parameter-bound and stored. Two silent-corruption
 // bugs lived here (both invisible to UTC-only, default-cap CI):

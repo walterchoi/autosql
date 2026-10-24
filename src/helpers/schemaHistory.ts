@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import os from 'os';
-import { Database } from '../db/database';
-import { MetadataHeader, DatabaseConfig, QueryResult } from '../config/types';
+import type { Database } from '../db/database';
+import type { MetadataHeader, DatabaseConfig, QueryResult } from '../config/types';
 import { SchemaDriftError } from '../errors';
 import { escapeIdentifier, escapeLiteral } from '../db/utils/escape';
 

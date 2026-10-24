@@ -9,7 +9,7 @@ jest.mock("../src/helpers/utilities", () => {
 });
 
 import { getDataHeaders } from "../src/helpers/metadata";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 // sampleSize = max(round(100 * 0.1), 10) = 10 → rows 0-9 sampled, 10-99 are the remainder.
 const config = { sqlDialect: "mysql", sampling: 0.1, samplingMinimum: 10 } as DatabaseConfig;

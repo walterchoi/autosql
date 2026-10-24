@@ -1,5 +1,5 @@
 import { buildCompensatingDDL } from "../src/helpers/compensatingDDL";
-import { AlterTableChanges, MetadataHeader, QueryWithParams } from "../src/config/types";
+import type { AlterTableChanges, MetadataHeader, QueryWithParams } from "../src/config/types";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
 import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
 

@@ -1,6 +1,6 @@
 import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
-import { InsertInput, QueryResult, QueryInput, AlterTableChanges } from "../config/types";
+import type { InsertInput, QueryResult, QueryInput, AlterTableChanges } from "../config/types";
 import { getTempTableName, getInsertValues, throwIfFailedResults, normalizeResultKeys, getTrueTableName } from "../helpers/utilities";
 import { defaults } from "../config/defaults";
 

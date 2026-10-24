@@ -1,5 +1,5 @@
 import { predictIndexes } from "../src/helpers/keys";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 import { getMetaData } from "../src/helpers/metadata";
 import { DB_CONFIG } from "./utils/testConfig";
 

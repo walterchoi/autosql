@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // N1 / v1b: when the caller supplies `existingSchema`, AutoSQL trusts it and skips live introspection
 // of the target table — the main per-run DB round-trip for a stable pipeline. Proven here by running

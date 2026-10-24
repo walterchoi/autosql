@@ -1,5 +1,5 @@
 import WorkerPool from "./workerPool";
-import { DatabaseConfig } from "../config/types";
+import type { DatabaseConfig } from "../config/types";
 import { defaults } from "../config/defaults";
 
 class WorkerHelper {

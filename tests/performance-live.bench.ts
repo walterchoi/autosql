@@ -31,7 +31,6 @@ Object.values(DB_CONFIG).forEach((config) => {
             const t0 = process.hrtime.bigint();
             await fn();
             const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-            // eslint-disable-next-line no-console
             console.log(`  ⏱  ${config.sqlDialect} ${label}: ${ms.toFixed(0)}ms  (${Math.round((N / ms) * 1000).toLocaleString()} rows/s)`);
             return ms;
         };

@@ -1,5 +1,5 @@
 import { buildInsertIntoStreamStagingQuery } from "../src/helpers/streamHelpers";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 // A18: the streaming staging insert used String(v), turning objects/arrays into "[object Object]" /
 // "a,b,c" — a JSON source that round-trips via autoSQL corrupted via openStream. It now JSON-stringifies.

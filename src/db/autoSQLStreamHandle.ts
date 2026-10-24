@@ -1,6 +1,6 @@
 import type { Database } from "./database";
 import type { AutoSQLHandler } from "./autosql";
-import { MetadataHeader, QueryResult, QueryStats } from "../config/types";
+import type { MetadataHeader, QueryResult, QueryStats } from "../config/types";
 import { getMetaData, compareMetaData, restrictInferredUniques } from "../helpers/metadata";
 import { writeRunAudit } from "../helpers/runAudit";
 import { tableChangesExist } from "../helpers/utilities";

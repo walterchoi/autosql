@@ -1,5 +1,5 @@
 import { getDataHeaders } from "../src/helpers/metadata";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 const BASE_CONFIG: DatabaseConfig = {
     sqlDialect: "mysql",

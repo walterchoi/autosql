@@ -4,7 +4,7 @@ import { validateConfig } from "../src/helpers/utilities";
 import { MySQLInsertQueryBuilder } from "../src/db/queryBuilders/mysql/insertBuilder";
 import { PostgresInsertQueryBuilder } from "../src/db/queryBuilders/pgsql/insertBuilder";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
-import { ColumnDefinition, MetadataHeader, DatabaseConfig } from "../src/config/types";
+import type { ColumnDefinition, MetadataHeader, DatabaseConfig } from "../src/config/types";
 import { DB_CONFIG, Database } from "./utils/testConfig";
 
 const col = (o: Partial<ColumnDefinition> = {}): ColumnDefinition => ({

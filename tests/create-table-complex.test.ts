@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { QueryWithParams, MetadataHeader } from "../src/config/types";
+import type { QueryWithParams, MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "create_table_complex_test_table";
 

@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { InsertInput, MetadataHeader } from "../src/config/types";
+import type { InsertInput, MetadataHeader } from "../src/config/types";
 
 // R1 Slice 2, PR 2g (spec-1 §5.b): the plain addHistory case (row-level history WITHOUT the
 // rejectedRowsTable degradation opt-in) used to run insertHistory and then the merge as TWO separate

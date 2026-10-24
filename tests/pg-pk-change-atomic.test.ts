@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { AlterTableChanges } from "../src/config/types";
+import type { AlterTableChanges } from "../src/config/types";
 
 // A9: the Postgres adapter injected literal COMMIT;/BEGIN; around a primary-key change, splitting one
 // logical migration into three transactions — a failure after the first COMMIT left the table with no

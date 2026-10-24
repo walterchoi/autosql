@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { QueryWithParams } from "../src/config/types";
+import type { QueryWithParams } from "../src/config/types";
 jest.setTimeout(10000);
 
 Object.values(DB_CONFIG).forEach((config) => {

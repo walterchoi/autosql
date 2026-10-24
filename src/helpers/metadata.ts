@@ -1,4 +1,4 @@
-import { DatabaseConfig } from '../config/types';
+import type { DatabaseConfig } from '../config/types';
 import { normalizeNumber, validateConfig, shuffleArray, sqlize } from './utilities';
 import { groupings, isNumeric } from '../config/groupings';
 import { collateTypes } from './columnTypes';
@@ -6,7 +6,7 @@ import { predictType } from './columnTypes';
 import { defaults, nonCategoricalTypes, DEFAULT_LENGTHS } from '../config/defaults';
 import { predictIndexes } from './keys';
 import { Database } from '../db/database';
-import { DialectConfig, ColumnDefinition, MetadataHeader, metaDataInterim, AlterTableChanges } from '../config/types';
+import type { DialectConfig, ColumnDefinition, MetadataHeader, metaDataInterim, AlterTableChanges } from '../config/types';
 import { mysqlConfig } from "../db/config/mysqlConfig";
 import { pgsqlConfig } from "../db/config/pgsqlConfig";
 import { sqlServerConfig } from "../db/config/sqlServerConfig";

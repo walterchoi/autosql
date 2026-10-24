@@ -1,6 +1,6 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
 import { escapeIdentifier } from "../src/db/utils/escape";
-import { AlterTableChanges, MetadataHeader, QueryInput } from "../src/config/types";
+import type { AlterTableChanges, MetadataHeader, QueryInput } from "../src/config/types";
 
 // Staging temp tables (CREATE TABLE AS SELECT — columns only, no keys) were run through the
 // normal alter path, so with updatePrimaryKey:true a DROP/ADD PRIMARY KEY was emitted on a

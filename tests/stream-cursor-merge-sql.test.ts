@@ -1,5 +1,5 @@
 import { buildMergeFromStreamQuery } from "../src/helpers/streamHelpers";
-import { DatabaseConfig, MetadataHeader } from "../src/config/types";
+import type { DatabaseConfig, MetadataHeader } from "../src/config/types";
 
 // The dedup wrapper is what makes re-staging a page safe, and it only works if it actually reaches
 // the SQL. Assert on the generated statement so a regression shows up here rather than as duplicate

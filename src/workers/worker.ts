@@ -1,6 +1,6 @@
 import { parentPort, workerData } from "worker_threads";
 import { Database } from "../db/database";
-import { AutoSQLHandler } from "../db/autosql";
+import type { AutoSQLHandler } from "../db/autosql";
 
 // Fire-and-forget: this IIFE is the whole worker_thread entry script. Nothing in this file awaits
 // it (there is no caller to await it against) — every path inside already reports its outcome via

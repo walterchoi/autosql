@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { DatabaseConfig, MetadataHeader } from "../src/config/types";
+import type { DatabaseConfig, MetadataHeader } from "../src/config/types";
 import { escapeIdentifier } from "../src/db/utils/escape";
 
 // Spec-4 slice C — bulk-copy (request.bulk / TDS) on SQL Server (live). bulkLoadRows was a hard throw

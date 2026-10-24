@@ -1,4 +1,4 @@
-import { MetadataHeader, ColumnDefinition } from "../config/types";
+import type { MetadataHeader, ColumnDefinition } from "../config/types";
 import { isNumeric, isDate, isBoolean } from "../config/groupings";
 
 /**

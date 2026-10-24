@@ -1,5 +1,5 @@
 import { defaults } from "../config/defaults";
-import { MetadataHeader, ColumnDefinition, DatabaseConfig } from "../config/types";
+import type { MetadataHeader, ColumnDefinition, DatabaseConfig } from "../config/types";
 import { groupings } from "../config/groupings";
 import { generateCombinations, isCombinationUnique } from "../helpers/utilities";
 

@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Database } from "./database";
 import { sqlServerPermanentErrors } from "./permanentErrors/sqlserver";
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import type { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { sqlServerConfig } from "./config/sqlServerConfig";
 import { isValidSingleQuery } from "./utils/validateQuery";
 import { escapeIdentifier, escapeLiteral } from "./utils/escape";

@@ -1,4 +1,4 @@
-import { QueryInput } from "../../../config/types";
+import type { QueryInput } from "../../../config/types";
 import { getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier } from "../../utils/escape";
 

@@ -1,4 +1,4 @@
-import { DialectConfig } from "../../config/types";
+import type { DialectConfig } from "../../config/types";
 
 export const mysqlConfig: DialectConfig = {
   dialect: "mysql",

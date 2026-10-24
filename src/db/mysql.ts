@@ -2,7 +2,7 @@ import crypto from "crypto";
 import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
 import { serializeRowsToCopyText } from "../helpers/bulkLoad";
 import { mysqlConfig } from "./config/mysqlConfig";

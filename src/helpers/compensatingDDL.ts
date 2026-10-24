@@ -1,5 +1,5 @@
-import { AlterTableChanges, MetadataHeader, QueryInput } from '../config/types';
-import { DialectConfig } from '../config/types';
+import type { AlterTableChanges, MetadataHeader, QueryInput } from '../config/types';
+import type { DialectConfig } from '../config/types';
 import { escapeIdentifier, assertSafeTypeToken, assertSafeLength } from '../db/utils/escape';
 
 /**
