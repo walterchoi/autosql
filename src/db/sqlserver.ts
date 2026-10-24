@@ -130,9 +130,7 @@ export class SqlServerDatabase extends Database {
             return options;
         }
         options.trustServerCertificate = ssl.rejectUnauthorized === false;
-        if (options.trustServerCertificate) {
-            this.config.logger?.warn?.("autosql: ssl.rejectUnauthorized is false — TLS certificate verification is DISABLED (use only for dev/self-signed).");
-        }
+        this.warnInsecureTlsAndTunnelConflict(ssl);
         const cc: Record<string, any> = {};
         if (ssl.ca) cc.ca = ssl.ca;
         if (ssl.cert) cc.cert = ssl.cert;

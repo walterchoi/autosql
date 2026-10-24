@@ -570,6 +570,45 @@ export abstract class Database {
     protected getHeldSchemaLockCount(): number { return 0; }
 
     /**
+     * The `ssl.rejectUnauthorized:false` warning and the `ssl`+`sshConfig` conflict warning were
+     * copy-pasted verbatim across mysql.ts and pgsql.ts (and that drift was itself a bug once: SQL
+     * Server's copy was missing the conflict warning, see PR #79 / the sshConfig refusal in
+     * validateConfig). sqlserver.ts also calls this for its own rejectUnauthorized warning; its
+     * `sshConfig` conflict branch is a no-op there in practice since `sshConfig`/`sshStream` on SQL
+     * Server already throws in validateConfig before any connection code runs — this just means
+     * every dialect goes through one copy of the message instead of three.
+     */
+    protected warnInsecureTlsAndTunnelConflict(ssl: unknown): void {
+        if (ssl && typeof ssl === "object" && (ssl as { rejectUnauthorized?: boolean }).rejectUnauthorized === false) {
+            this.config.logger?.warn?.("autosql: ssl.rejectUnauthorized is false — TLS certificate verification is DISABLED (use only for dev/self-signed).");
+        }
+        if (ssl && (this.config.sshConfig || this.config.sshStream)) {
+            this.config.logger?.warn?.("autosql: both `ssl` and `sshConfig` are set — pick one encrypted path (direct TLS OR an SSH tunnel); TLS over an SSH stream is not a supported combination.");
+        }
+    }
+
+    /**
+     * acquireSchemaLock's "register the newly-acquired connection" step, identical across mysql.ts
+     * and pgsql.ts: release whatever stale connection was already registered for this table (a
+     * leftover entry would otherwise leak a pooled connection) before pointing the map at the new
+     * one.
+     */
+    protected registerSchemaLockConnection<T extends { release(): void }>(connections: Map<string, T>, table: string, client: T): void {
+        const stale = connections.get(table);
+        if (stale && stale !== client) stale.release();
+        connections.set(table, client);
+    }
+
+    /**
+     * acquireSchemaLock's catch-path cleanup, identical across mysql.ts and pgsql.ts: if the map
+     * was never updated to point at `client` (the lock wasn't acquired, or acquiring threw before
+     * registration), release it — the one place that owns `client` at this point.
+     */
+    protected releaseSchemaLockConnectionOnError<T extends { release(): void }>(connections: Map<string, T>, table: string, client: T | undefined): void {
+        if (client && connections.get(table) !== client) client.release();
+    }
+
+    /**
      * Bulk-load already-sqlized value rows using the dialect's native mechanism. `columns` is the
      * ordered list each row's values align to. Throws on failure so the caller can fall back to
      * parameterised INSERT.

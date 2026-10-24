@@ -1,5 +1,23 @@
 ## [Unreleased]
 
+- **`PostgresIndexQueryBuilder.getUniqueIndexesQuery`'s `schema` parameter is now actually applied.**
+  It was accepted but silently dropped — `pg_class.relname` isn't schema-qualified, so without a
+  `pg_namespace` join a unique-index lookup could match a same-named table's index in a *different*
+  schema. MySQL's sibling already scopes by `table_schema`; every `PgDatabase` caller already passes
+  `this.getConfig().schema`, so this was live whenever a schema is configured, not theoretical. Found
+  while standing up a linter (`no-unused-vars`).
+- **`npm run lint` now exists** (ESLint, flat config). 5 of 7 rules enforced as errors
+  (`no-floating-promises`, `no-misused-promises`, `await-thenable`, `no-unused-vars`,
+  `consistent-type-imports`); `no-explicit-any` and `naming-convention` stay at `warn`.
+- **Coverage floor pinned in CI** (`jest.config.js` `coverageThreshold`) so statement/branch/
+  function/line coverage can only go up from here, not slide silently.
+- Internal: the byte-identical `getAddPrimaryKeyQuery` body and the near-identical trailing
+  `CREATE INDEX` loop (all three dialect query builders), the three per-dialect stream-merge cast
+  functions, the TLS `rejectUnauthorized`/`sshConfig`-conflict warning, and `acquireSchemaLock`'s
+  stale-connection handling (mysql/pgsql) are now each one shared implementation instead of 2-3
+  copies. No behaviour change — each was proven unchanged with a characterization test before the
+  move.
+
 ## [2.7.0] - 2026-10-22
 
 > **Staging tables can survive between runs, and carry their own resume point.** Give `openStream` a

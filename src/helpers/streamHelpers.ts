@@ -273,45 +273,8 @@ const PG_TS      = ['datetime', 'datetimetz', 'timestamp', 'timestamptz'];
 const PG_TIME    = ['time'];
 const PG_BOOL    = ['boolean'];
 
-function mysqlCast(col: string, colDef: { type: string | null; length?: number; decimal?: number }): string {
-    const q = qi(col, 'mysql');
-    const t = (colDef.type || '').toLowerCase();
-    if (MYSQL_NUMERIC.includes(t)) return `CAST(${q} AS SIGNED)`;
-    if (MYSQL_FLOAT.includes(t))   return `CAST(${q} AS DECIMAL)`;
-    if (t === 'decimal') {
-        const len = assertSafeLength(colDef.length  ?? 10, 'length');
-        const dec = assertSafeLength(colDef.decimal ?? 2, 'decimal');
-        return `CAST(${q} AS DECIMAL(${len},${dec}))`;
-    }
-    if (MYSQL_DATETIME.includes(t)) return `CAST(${q} AS DATETIME)`;
-    if (MYSQL_DATE.includes(t))     return `CAST(${q} AS DATE)`;
-    if (MYSQL_TIME.includes(t))     return `CAST(${q} AS TIME)`;
-    if (MYSQL_BOOL.includes(t))     return `CAST(${q} AS SIGNED)`;
-    return q; // text-like: no cast needed
-}
-
-function pgCast(col: string, colDef: { type: string | null; length?: number; decimal?: number }): string {
-    const q = qi(col, 'pgsql');
-    const t = (colDef.type || '').toLowerCase();
-    if (PG_INT.includes(t))    return `${q}::INTEGER`;
-    if (PG_BIGINT.includes(t)) return `${q}::BIGINT`;
-    if (PG_SMALL.includes(t))  return `${q}::SMALLINT`;
-    if (PG_FLOAT.includes(t))  return `${q}::FLOAT`;
-    if (t === 'decimal') {
-        const len = assertSafeLength(colDef.length  ?? 10, 'length');
-        const dec = assertSafeLength(colDef.decimal ?? 2, 'decimal');
-        return `${q}::DECIMAL(${len},${dec})`;
-    }
-    if (PG_TS.includes(t))   return `${q}::TIMESTAMP`;
-    if (PG_DATE.includes(t)) return `${q}::DATE`;
-    if (PG_TIME.includes(t)) return `${q}::TIME`;
-    if (PG_BOOL.includes(t)) return `${q}::BOOLEAN`;
-    return q;
-}
-
 // SQL Server: no tinyint (signed) — map to SMALLINT; datetime family → DATETIME2; boolean → BIT (SQL
-// Server casts 'true'/'false' and '1'/'0' to BIT). NULLIF(x,'') so an empty staged string becomes NULL
-// rather than a cast error (mirrors alterTableTypeConversion's text→numeric guard).
+// Server casts 'true'/'false' and '1'/'0' to BIT).
 const SS_INT      = ['int', 'integer', 'mediumint'];
 const SS_BIGINT   = ['bigint'];
 const SS_SMALL    = ['smallint', 'tinyint'];
@@ -321,24 +284,76 @@ const SS_DATETIME = ['datetime', 'datetimetz', 'timestamp', 'timestamptz'];
 const SS_TIME     = ['time'];
 const SS_BOOL     = ['boolean'];
 
-function sqlserverCast(col: string, colDef: { type: string | null; length?: number; decimal?: number }): string {
-    const q = qi(col, 'sqlserver');
+// Identical control flow over different type lists and cast syntax (mysqlCast/pgCast/sqlserverCast
+// used to repeat this as three near-copies): each dialect checks its own type groups in order,
+// decimal is special-cased for its length/scale, and anything left unmatched is text-like and
+// passes through unwrapped. What varies per dialect is just the type-group → target-type mapping
+// and how the cast itself is wrapped around the quoted column.
+interface CastGroup { types: string[]; target: string; }
+interface CastDialect {
+    wrap: (quotedCol: string, target: string) => string;
+    groups: CastGroup[]; // checked in order; first match wins
+    decimalTarget: (len: number, dec: number) => string;
+}
+
+const CAST_DIALECTS: Record<'mysql' | 'pgsql' | 'sqlserver', CastDialect> = {
+    mysql: {
+        wrap: (q, target) => `CAST(${q} AS ${target})`,
+        decimalTarget: (len, dec) => `DECIMAL(${len},${dec})`,
+        groups: [
+            { types: MYSQL_NUMERIC, target: 'SIGNED' },
+            { types: MYSQL_FLOAT, target: 'DECIMAL' },
+            { types: MYSQL_DATETIME, target: 'DATETIME' },
+            { types: MYSQL_DATE, target: 'DATE' },
+            { types: MYSQL_TIME, target: 'TIME' },
+            { types: MYSQL_BOOL, target: 'SIGNED' },
+        ],
+    },
+    pgsql: {
+        wrap: (q, target) => `${q}::${target}`,
+        decimalTarget: (len, dec) => `DECIMAL(${len},${dec})`,
+        groups: [
+            { types: PG_INT, target: 'INTEGER' },
+            { types: PG_BIGINT, target: 'BIGINT' },
+            { types: PG_SMALL, target: 'SMALLINT' },
+            { types: PG_FLOAT, target: 'FLOAT' },
+            { types: PG_TS, target: 'TIMESTAMP' },
+            { types: PG_DATE, target: 'DATE' },
+            { types: PG_TIME, target: 'TIME' },
+            { types: PG_BOOL, target: 'BOOLEAN' },
+        ],
+    },
+    // NULLIF(x,'') so an empty staged string becomes NULL rather than a cast error (mirrors
+    // alterTableTypeConversion's text→numeric guard).
+    sqlserver: {
+        wrap: (q, target) => `CAST(NULLIF(${q}, '') AS ${target})`,
+        decimalTarget: (len, dec) => `DECIMAL(${len},${dec})`,
+        groups: [
+            { types: SS_INT, target: 'INT' },
+            { types: SS_BIGINT, target: 'BIGINT' },
+            { types: SS_SMALL, target: 'SMALLINT' },
+            { types: SS_FLOAT, target: 'FLOAT' },
+            { types: SS_DATETIME, target: 'DATETIME2' },
+            { types: SS_DATE, target: 'DATE' },
+            { types: SS_TIME, target: 'TIME' },
+            { types: SS_BOOL, target: 'BIT' },
+        ],
+    },
+};
+
+function castColumn(dialect: 'mysql' | 'pgsql' | 'sqlserver', col: string, colDef: { type: string | null; length?: number; decimal?: number }): string {
+    const cfg = CAST_DIALECTS[dialect];
+    const q = qi(col, dialect);
     const t = (colDef.type || '').toLowerCase();
-    const cast = (typ: string) => `CAST(NULLIF(${q}, '') AS ${typ})`;
-    if (SS_INT.includes(t))    return cast('INT');
-    if (SS_BIGINT.includes(t)) return cast('BIGINT');
-    if (SS_SMALL.includes(t))  return cast('SMALLINT');
-    if (SS_FLOAT.includes(t))  return cast('FLOAT');
     if (t === 'decimal') {
         const len = assertSafeLength(colDef.length  ?? 10, 'length');
         const dec = assertSafeLength(colDef.decimal ?? 2, 'decimal');
-        return cast(`DECIMAL(${len},${dec})`);
+        return cfg.wrap(q, cfg.decimalTarget(len, dec));
     }
-    if (SS_DATETIME.includes(t)) return cast('DATETIME2');
-    if (SS_DATE.includes(t))     return cast('DATE');
-    if (SS_TIME.includes(t))     return cast('TIME');
-    if (SS_BOOL.includes(t))     return cast('BIT');
-    return q; // text-like: NVARCHAR(MAX), no cast
+    for (const group of cfg.groups) {
+        if (group.types.includes(t)) return cfg.wrap(q, group.target);
+    }
+    return q; // text-like: no cast needed
 }
 
 /** The merge used at end(): INSERT INTO main SELECT ... FROM staging, with per-dialect casts. */
@@ -372,7 +387,7 @@ export function buildMergeFromStreamQuery(
     const colList  = columns.map(c => qi(c, dialect)).join(', ');
 
     if (dialect === 'mysql') {
-        const castList = columns.map(c => mysqlCast(c, metaData[c])).join(', ');
+        const castList = columns.map(c => castColumn('mysql', c, metaData[c])).join(', ');
         let q = `INSERT INTO ${mainRef} (${colList}) SELECT ${castList} FROM ${stagingRef}`;
 
         if (insertType === 'UPDATE') {
@@ -384,7 +399,7 @@ export function buildMergeFromStreamQuery(
         }
         return { query: q, params: [] };
     } else if (dialect === 'sqlserver') {
-        const castList = columns.map(c => sqlserverCast(c, metaData[c])).join(', ');
+        const castList = columns.map(c => castColumn('sqlserver', c, metaData[c])).join(', ');
         // Merge only on written PKs; a surrogate PK (excluded elsewhere) or no PK → plain append (§3.7).
         const mergeKeys = primaryKeys.filter(pk => columns.includes(pk));
         if (insertType === 'UPDATE' && mergeKeys.length > 0) {
@@ -400,7 +415,7 @@ export function buildMergeFromStreamQuery(
         }
         return { query: `INSERT INTO ${mainRef} (${colList}) SELECT ${castList} FROM ${stagingRef};`, params: [] };
     } else {
-        const castList = columns.map(c => pgCast(c, metaData[c])).join(', ');
+        const castList = columns.map(c => castColumn('pgsql', c, metaData[c])).join(', ');
         let q = `INSERT INTO ${mainRef} (${colList}) SELECT ${castList} FROM ${stagingRef}`;
 
         if (insertType === 'UPDATE' && primaryKeys.length > 0) {
