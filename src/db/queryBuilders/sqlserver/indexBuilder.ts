@@ -1,6 +1,7 @@
 import type { QueryInput } from "../../../config/types";
 import { getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, escapeLiteral } from "../../utils/escape";
+import { getAddPrimaryKeyQuery } from "../shared/indexBuilderShared";
 
 const q = (name: string) => escapeIdentifier(name, "sqlserver");
 const lit = (value: string | number | boolean) => escapeLiteral(value, "sqlserver");
@@ -74,11 +75,7 @@ export class SqlServerIndexQueryBuilder {
     }
 
     static getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
-        const schemaPrefix = schema ? `${q(schema)}.` : "";
-        return {
-            query: `ALTER TABLE ${schemaPrefix}${q(table)} ADD PRIMARY KEY (${primaryKeys.map(pk => q(pk)).join(", ")});`,
-            params: []
-        };
+        return getAddPrimaryKeyQuery("sqlserver", table, primaryKeys, schema);
     }
 
     static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
