@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { MetadataHeader, DatabaseConfig, QueryInput, supportedDialects } from '../config/types';
+import type { MetadataHeader, DatabaseConfig, QueryInput, supportedDialects } from '../config/types';
 import { escapeIdentifier, escapeLiteral, assertSafeLength } from '../db/utils/escape';
 
 export function generateRunId(): string {

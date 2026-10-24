@@ -33,7 +33,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
       expect(results.map((r: any) => r.success)).toEqual([true, true, true]);
       expect(results.map((r: any) => r.result)).toEqual(["a", "b", "c"]);
     } finally {
-      pool.close();
+      await pool.close();
     }
   });
 
@@ -44,7 +44,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
       expect(result.success).toBe(false);
       expect(typeof result.error).toBe("string");
     } finally {
-      pool.close();
+      await pool.close();
     }
   });
 
@@ -55,7 +55,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
       expect(result.success).toBe(false);
       expect(String(result.error)).toContain("boom");
     } finally {
-      pool.close();
+      await pool.close();
     }
   });
 
@@ -76,7 +76,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
       expect(results).toHaveLength(3);
       expect(results.every((r: any) => r.success === false)).toBe(true);
     } finally {
-      pool.close();
+      await pool.close();
     }
   });
 
@@ -92,7 +92,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
       const afterDeath = await withDeadline(pool.runTask("ok", { id: 1 }), 5000, "post-death submit");
       expect(afterDeath.success).toBe(false);
     } finally {
-      pool.close();
+      await pool.close();
     }
   });
 
@@ -104,7 +104,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
       expect(result.success).toBe(false);
       expect(String(result.error)).toMatch(/timed out/i);
     } finally {
-      pool.close();
+      await pool.close();
     }
   });
 });

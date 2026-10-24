@@ -1,4 +1,4 @@
-import { supportedDialects, DialectConfig } from "../../config/types";
+import type { supportedDialects, DialectConfig } from "../../config/types";
 
 /**
  * SQL identifier / literal escaping helpers.

@@ -2,7 +2,7 @@ import crypto from "crypto";
 import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
 import { Database } from "./database";
 import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
 import { serializeRowsToCopyText } from "../helpers/bulkLoad";
 import { mysqlConfig } from "./config/mysqlConfig";
@@ -28,7 +28,7 @@ export class MySQLDatabase extends Database {
         let mysql: any;
         try {
             mysql = require("mysql2/promise");
-        } catch (err) {
+        } catch {
             throw new Error("Missing required dependency 'mysql2'. Please install it to use MySQLDatabase.");
         }
         // TLS passthrough. mysql2 rejects `ssl: true` (wants an object/named profile), so normalise
@@ -302,7 +302,6 @@ export class MySQLDatabase extends Database {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 
-        let indexesToDrop: string[] = [];
         // Only drop the unique when the caller opted in (A10); off (default) keeps it and the load
         // fails loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
         if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {

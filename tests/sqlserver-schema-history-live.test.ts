@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 import { escapeIdentifier } from "../src/db/utils/escape";
 
 // Spec-2 slice 3 — schemaHistory on SQL Server (live). The bootstrap DDL + record/detect queries were

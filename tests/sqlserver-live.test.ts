@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 import { escapeIdentifier } from "../src/db/utils/escape";
 
 // SQL Server / Azure SQL adapter — live core-ETL coverage against the docker `sqlserver` service

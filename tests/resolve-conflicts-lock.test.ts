@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { InsertInput, MetadataHeader, AlterTableChanges } from "../src/config/types";
+import type { InsertInput, MetadataHeader, AlterTableChanges } from "../src/config/types";
 
 // R1 Slice 2, PR 2f: resolveConflicts's unique-constraint DROP (opt-in dropUniqueConstraints) runs
 // AFTER the entry point released the load's schema lock, so — to stay serialized against a concurrent

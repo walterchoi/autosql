@@ -1,5 +1,5 @@
 import { predictIndexes } from "../src/helpers/keys";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 describe("predictIndexes function", () => {
     test("predicts indexes for date-related, unique, and pseudo-unique columns", () => {

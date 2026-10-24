@@ -1,4 +1,4 @@
-import { DatabaseConfig, MetadataHeader } from "../config/types";
+import type { DatabaseConfig, MetadataHeader } from "../config/types";
 import { normalizeName } from "../helpers/utilities";
 import { CREATED_TIMESTAMP_NAMES, MODIFIED_TIMESTAMP_NAMES, DWH_LOADED_TIMESTAMP_NAMES } from "../config/defaults";
 

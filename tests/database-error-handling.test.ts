@@ -1,4 +1,4 @@
-import { DB_CONFIG, Database, isValidSingleQuery } from "./utils/testConfig";
+import { DB_CONFIG, Database } from "./utils/testConfig";
     
 Object.values(DB_CONFIG).forEach((config) => {
     describe(`Database Error Handling Tests for ${config.sqlDialect.toUpperCase()}`, () => {

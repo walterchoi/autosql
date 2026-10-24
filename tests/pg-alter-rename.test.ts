@@ -1,5 +1,5 @@
 import { PostgresTableQueryBuilder } from "../src/db/queryBuilders/pgsql/tableBuilder";
-import { AlterTableChanges, QueryInput } from "../src/config/types";
+import type { AlterTableChanges, QueryInput } from "../src/config/types";
 
 const sql = (q: QueryInput): string => (typeof q === "string" ? q : q.query);
 

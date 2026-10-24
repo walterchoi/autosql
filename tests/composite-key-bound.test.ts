@@ -1,5 +1,5 @@
 import { predictIndexes } from "../src/helpers/keys";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // P4: the composite-primary-key search is bounded by maxCompositeKeyColumns. Without a cap it tries
 // every subset of pseudo-unique columns (O(2^N)), each scanned over all rows — a real hang on a wide,

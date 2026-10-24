@@ -1,5 +1,5 @@
-import { Database } from '../db/database';
-import { DatabaseConfig } from '../config/types';
+import type { Database } from '../db/database';
+import type { DatabaseConfig } from '../config/types';
 import { escapeIdentifier, escapeLiteral } from '../db/utils/escape';
 
 // Persisted run-audit table (F1): the engine writes one row per top-level load to a managed table, the

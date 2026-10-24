@@ -1,6 +1,6 @@
 import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
-import { InsertInput, MetadataHeader, QueryResult, AlterTableChanges } from "../config/types";
+import type { InsertInput, MetadataHeader, QueryResult, AlterTableChanges } from "../config/types";
 import { getHistoryTableName, throwIfFailedResults } from "../helpers/utilities";
 import {
     bootstrapSchemaHistoryTable,

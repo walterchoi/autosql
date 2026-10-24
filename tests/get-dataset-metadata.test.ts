@@ -1,6 +1,6 @@
-import { DB_CONFIG, Database } from "./utils/testConfig";
+import { DB_CONFIG } from "./utils/testConfig";
 import { getMetaData } from "../src/helpers/metadata";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 Object.values(DB_CONFIG).forEach((config) => {
     describe(`getMetaData Tests for ${config.sqlDialect.toUpperCase()}`, () => {

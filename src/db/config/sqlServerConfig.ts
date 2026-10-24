@@ -1,4 +1,4 @@
-import { DialectConfig } from "../../config/types";
+import type { DialectConfig } from "../../config/types";
 
 // SQL Server / Azure SQL (T-SQL) dialect config. Row-store, like MySQL/Postgres.
 // - Text stored as NVARCHAR (UTF-16, always Unicode) so emoji/multilingual round-trip without a UTF-8

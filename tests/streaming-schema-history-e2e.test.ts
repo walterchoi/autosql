@@ -22,7 +22,7 @@
 import { AutoSQLHandler, AutoSQLStreamHandle } from "../src/db/autosql";
 import { computeChecksum, detectSchemaDrift, getSchemaAt } from "../src/helpers/schemaHistory";
 import { SchemaDriftError } from "../src/errors";
-import { DatabaseConfig, MetadataHeader, QueryResult } from "../src/config/types";
+import type { DatabaseConfig, MetadataHeader, QueryResult } from "../src/config/types";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
 
 // ---------------------------------------------------------------------------

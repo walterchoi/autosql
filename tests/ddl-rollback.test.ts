@@ -1,5 +1,5 @@
 import { buildCompensatingDDL } from "../src/helpers/compensatingDDL";
-import { AlterTableChanges, MetadataHeader, QueryWithParams } from "../src/config/types";
+import type { AlterTableChanges, MetadataHeader, QueryWithParams } from "../src/config/types";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
 import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
 
@@ -163,7 +163,7 @@ describe("buildCompensatingDDL — PostgreSQL", () => {
             },
             renameColumns: [{ oldName: "a", newName: "b" }],
         };
-        const { queries, warnings } = buildCompensatingDDL("tbl", changes, EMPTY_META, pgsqlConfig);
+        const { queries } = buildCompensatingDDL("tbl", changes, EMPTY_META, pgsqlConfig);
         expect(queries).toHaveLength(0);
     });
 

@@ -1,6 +1,6 @@
 import { compareMetaData } from "../src/helpers/metadata";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // R11 (unit): a column added to an EXISTING table must be emitted as nullable — existing rows have
 // no value for it. A column that can back-fill (calculated timestamp, or explicit default) keeps

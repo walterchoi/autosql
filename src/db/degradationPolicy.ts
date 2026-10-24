@@ -1,6 +1,6 @@
 import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
-import { InsertInput, QueryResult, MetadataHeader, QueryInput } from "../config/types";
+import type { InsertInput, QueryResult, MetadataHeader, QueryInput } from "../config/types";
 import { getInsertValues, tableChangesExist, throwIfFailedResults, sqlize } from "../helpers/utilities";
 import { getMetaData, compareMetaData, restrictInferredUniques } from "../helpers/metadata";
 import { buildBootstrapRejectedRowsQuery, buildInsertRejectedRowsQuery } from "../helpers/streamHelpers";

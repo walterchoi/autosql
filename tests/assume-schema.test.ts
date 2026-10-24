@@ -1,5 +1,5 @@
 import { collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults } from "../src/helpers/metadata";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // A-4 provided-schema fast path — pure helpers that let AutoSQL skip inference when the caller
 // supplies the schema.

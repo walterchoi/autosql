@@ -1,7 +1,7 @@
 import { buildCompensatingDDL } from "../src/helpers/compensatingDDL";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
 import { escapeIdentifier } from "../src/db/utils/escape";
-import { AlterTableChanges, MetadataHeader, QueryInput } from "../src/config/types";
+import type { AlterTableChanges, MetadataHeader, QueryInput } from "../src/config/types";
 
 const sql = (q: QueryInput): string => (typeof q === "string" ? q : q.query);
 

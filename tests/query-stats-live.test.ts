@@ -1,6 +1,6 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
 import { escapeIdentifier } from "../src/db/utils/escape";
-import { QueryStats } from "../src/config/types";
+import type { QueryStats } from "../src/config/types";
 
 // Runtime instrumentation: every autoSQL load returns per-phase timings + throughput on
 // QueryResult.stats and, if a stats sink is configured, calls logger.stats once with the same object.

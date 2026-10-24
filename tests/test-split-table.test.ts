@@ -1,6 +1,6 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { parseDatabaseMetaData, organizeSplitTable, organizeSplitData } from "../src/helpers/utilities";
-import { MetadataHeader } from "../src/config/types";
+import { organizeSplitTable, organizeSplitData } from "../src/helpers/utilities";
+import type { MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_split_table";
 

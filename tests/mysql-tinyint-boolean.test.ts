@@ -1,6 +1,6 @@
 import { parseDatabaseMetaData } from "../src/helpers/utilities";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // R10: MySQL has no native boolean, so `tinyint(1)` is the boolean convention while a plain
 // `tinyint` is a small integer. Introspection previously mapped every `tinyint` to boolean (it read

@@ -1,5 +1,5 @@
 import { getDataHeaders } from "../src/helpers/metadata";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 // I1: the uniqueSet cap was tied to the pseudounique ratio (ceil(0.9 * N)), so a truly-unique
 // column saturated at ~0.9N rows and was mislabeled `pseudounique` — `unique` was effectively

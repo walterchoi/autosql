@@ -1,8 +1,11 @@
 import { parentPort, workerData } from "worker_threads";
 import { Database } from "../db/database";
-import { AutoSQLHandler } from "../db/autosql";
+import type { AutoSQLHandler } from "../db/autosql";
 
-(async () => {
+// Fire-and-forget: this IIFE is the whole worker_thread entry script. Nothing in this file awaits
+// it (there is no caller to await it against) — every path inside already reports its outcome via
+// parentPort.postMessage, so an unhandled rejection here would mean the IIFE's own try/catch failed.
+void (async () => {
   try {
     // Ensure workerData is received properly
     if (!workerData || !workerData.dbConfig) {
@@ -15,7 +18,10 @@ import { AutoSQLHandler } from "../db/autosql";
     db = Database.create(dbConfig);
     const autoSQL = db.autoSQLHandler as AutoSQLHandler;
 
-    parentPort?.on("message", async (task) => {
+    // Listener must return void, not a Promise (no-misused-promises) — the inner async body
+    // already catches every path below and reports it via postMessage, so nothing can reject out
+    // of this handler for a caller to miss.
+    parentPort?.on("message", (task) => void (async () => {
         try {
             const { method, params } = task;
 
@@ -48,7 +54,7 @@ import { AutoSQLHandler } from "../db/autosql";
                 errorCode: (error as any)?.code != null ? String((error as any).code) : undefined,
             });
         }
-        });
+    })());
 
     } catch (error) {
         parentPort?.postMessage({

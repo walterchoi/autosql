@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 import { escapeIdentifier } from "../src/db/utils/escape";
 
 // Spec-2 slice 2 — VERIFICATION (no build): row-level history (addHistory) and split tables (autoSplit)

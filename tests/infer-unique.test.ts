@@ -1,6 +1,6 @@
 import { Database } from "../src/db/database";
 import { getMetaData, getDataHeaders, compareMetaData, restrictInferredUniques } from "../src/helpers/metadata";
-import { DatabaseConfig, MetadataHeader } from "../src/config/types";
+import type { DatabaseConfig, MetadataHeader } from "../src/config/types";
 
 // inferUnique / inferAdditionalUniques. A column that is 100% distinct within one batch gets a UNIQUE
 // constraint, even beside an explicit primary key. On MySQL a stray UNIQUE(id) next to

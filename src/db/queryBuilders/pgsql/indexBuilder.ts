@@ -1,4 +1,4 @@
-import { QueryInput } from "../../../config/types";
+import type { QueryInput } from "../../../config/types";
 import { getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, escapeLiteral } from "../../utils/escape";
 
@@ -65,11 +65,16 @@ export class PostgresIndexQueryBuilder {
     }
 
     static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
+        // `schema` was accepted but never applied (caught by no-unused-vars): pg_class.relname is NOT
+        // schema-qualified, so without filtering by pg_namespace this could match a same-named table's
+        // index in a DIFFERENT schema. MySQL's sibling already scopes by table_schema; this now does
+        // the equivalent via pg_namespace.
         let query = `
             SELECT i.relname AS index_name, array_to_string(array_agg(a.attname), ', ') AS columns
             FROM pg_index ix
             JOIN pg_class i ON i.oid = ix.indexrelid
             JOIN pg_class t ON t.oid = ix.indrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
             JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
             WHERE t.relname = $1
             AND ix.indisunique = true
@@ -78,8 +83,13 @@ export class PostgresIndexQueryBuilder {
         const params = [table];
 
         if (columnName) {
-            query += " AND a.attname = $2";
+            query += ` AND a.attname = $${params.length + 1}`;
             params.push(columnName);
+        }
+
+        if (schema) {
+            query += ` AND n.nspname = $${params.length + 1}`;
+            params.push(schema);
         }
 
         query += " GROUP BY i.relname;";

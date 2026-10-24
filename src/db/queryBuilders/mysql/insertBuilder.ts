@@ -1,10 +1,11 @@
-import { MetadataHeader, QueryInput, DatabaseConfig, InsertInput } from "../../../config/types";
+import type { MetadataHeader, QueryInput, DatabaseConfig, InsertInput } from "../../../config/types";
 import { getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier } from "../../utils/escape";
+import type { HistoryHooks} from "../shared/insertBuilderShared";
 import {
     resolveStatementInput, resolveStagingInput, resolveHistoryInput,
     insertColumns, primaryKeysOf, updatableColumns, flattenInsertParams,
-    buildHistoryQuery, HistoryHooks,
+    buildHistoryQuery
 } from "../shared/insertBuilderShared";
 
 const q = (name: string) => escapeIdentifier(name, "mysql");

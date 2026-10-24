@@ -1,5 +1,5 @@
 import { defaults, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE, MAX_COLUMN_COUNT } from "../config/defaults";
-import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult } from "../config/types";
+import type { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult } from "../config/types";
 import { groupings } from "../config/groupings";
 import crypto from 'crypto';
 export function isObject(val: any): boolean {
@@ -622,7 +622,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
             const columnCount = Object.keys(mergedMetaData).length;
             const exceedsColumnLimit = columnCount >= MAX_COLUMN_COUNT
 
-            const { exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
+            const { nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
             if (!nearlyExceedsLimit && !exceedsColumnLimit) {
                 if (!newGroupedByTable[tableName]) {
                     newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table
@@ -907,7 +907,7 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
         }
 
         return strValue
-    } catch (error) {
+    } catch {
         return value
     }
 }

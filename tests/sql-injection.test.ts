@@ -1,7 +1,7 @@
 import { escapeIdentifier, escapeLiteral, assertSafeTypeToken, assertSafeLength } from "../src/db/utils/escape";
 import { MySQLTableQueryBuilder } from "../src/db/queryBuilders/mysql/tableBuilder";
 import { PostgresTableQueryBuilder } from "../src/db/queryBuilders/pgsql/tableBuilder";
-import { MetadataHeader, QueryInput } from "../src/config/types";
+import type { MetadataHeader, QueryInput } from "../src/config/types";
 import { getInsertValues } from "../src/helpers/utilities";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
 import { pgsqlConfig } from "../src/db/config/pgsqlConfig";

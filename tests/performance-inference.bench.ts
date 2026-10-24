@@ -1,5 +1,5 @@
 import { getMetaData, getDataHeaders } from "../src/helpers/metadata";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 import { makeRows } from "./utils/fakeData";
 import { bench, reportBench, scalingRatio } from "./utils/bench";
 
@@ -23,7 +23,6 @@ describe("bench: inference (CPU-only regression guard)", () => {
         reportBench(rLarge, LARGE);
 
         const { ratio, normalized } = scalingRatio(rSmall.medianMs, SMALL, rLarge.medianMs, LARGE);
-        // eslint-disable-next-line no-console
         console.log(`  ↳ 10× rows took ${ratio.toFixed(1)}× time (normalized ${normalized.toFixed(2)}; ~1.0 = linear)`);
         expect(normalized).toBeLessThan(3); // linear≈1, quadratic≈10 — generous, catches algorithmic regressions
         expect(rLarge.medianMs).toBeLessThan(10_000); // coarse catastrophic-slowdown backstop

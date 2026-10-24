@@ -1,7 +1,7 @@
 import { predictIndexes } from "../src/helpers/keys";
 import { predictType } from "../src/helpers/columnTypes";
 import { getDataHeaders } from "../src/helpers/metadata";
-import { MetadataHeader, DatabaseConfig } from "../src/config/types";
+import type { MetadataHeader, DatabaseConfig } from "../src/config/types";
 
 const BASE_CONFIG: DatabaseConfig = { sqlDialect: "mysql", autoIndexing: false };
 

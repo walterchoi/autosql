@@ -6,7 +6,7 @@ import {
 } from "../src/helpers/streamHelpers";
 import { escapeIdentifier } from "../src/db/utils/escape";
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { DatabaseConfig, MetadataHeader, QueryInput } from "../src/config/types";
+import type { DatabaseConfig, MetadataHeader, QueryInput } from "../src/config/types";
 
 const sql = (qi: QueryInput): string => (typeof qi === "string" ? qi : qi.query);
 
