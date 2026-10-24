@@ -588,6 +588,27 @@ export abstract class Database {
     }
 
     /**
+     * acquireSchemaLock's "register the newly-acquired connection" step, identical across mysql.ts
+     * and pgsql.ts: release whatever stale connection was already registered for this table (a
+     * leftover entry would otherwise leak a pooled connection) before pointing the map at the new
+     * one.
+     */
+    protected registerSchemaLockConnection<T extends { release(): void }>(connections: Map<string, T>, table: string, client: T): void {
+        const stale = connections.get(table);
+        if (stale && stale !== client) stale.release();
+        connections.set(table, client);
+    }
+
+    /**
+     * acquireSchemaLock's catch-path cleanup, identical across mysql.ts and pgsql.ts: if the map
+     * was never updated to point at `client` (the lock wasn't acquired, or acquiring threw before
+     * registration), release it — the one place that owns `client` at this point.
+     */
+    protected releaseSchemaLockConnectionOnError<T extends { release(): void }>(connections: Map<string, T>, table: string, client: T | undefined): void {
+        if (client && connections.get(table) !== client) client.release();
+    }
+
+    /**
      * Bulk-load already-sqlized value rows using the dialect's native mechanism. `columns` is the
      * ordered list each row's values align to. Throws on failure so the caller can fall back to
      * parameterised INSERT.
