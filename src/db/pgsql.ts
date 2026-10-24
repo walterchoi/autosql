@@ -40,12 +40,7 @@ export class PostgresDatabase extends Database {
         // TLS passthrough. pg accepts `ssl: true` and an `ssl` object (ca/cert/key/rejectUnauthorized/
         // servername) directly, so pass through unchanged. Omitted → no `ssl` key (back-compat).
         const ssl = this.config.ssl;
-        if (ssl && typeof ssl === "object" && ssl.rejectUnauthorized === false) {
-            this.config.logger?.warn?.("autosql: ssl.rejectUnauthorized is false — TLS certificate verification is DISABLED (use only for dev/self-signed).");
-        }
-        if (ssl && (this.config.sshConfig || this.config.sshStream)) {
-            this.config.logger?.warn?.("autosql: both `ssl` and `sshConfig` are set — pick one encrypted path (direct TLS OR an SSH tunnel); TLS over an SSH stream is not a supported combination.");
-        }
+        this.warnInsecureTlsAndTunnelConflict(ssl);
         this.connection = new Pg.Pool({
             host: this.config.host,
             user: this.config.user,

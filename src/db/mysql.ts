@@ -38,12 +38,7 @@ export class MySQLDatabase extends Database {
         // TLS passthrough. mysql2 rejects `ssl: true` (wants an object/named profile), so normalise
         // `true` → `{}` (enable TLS, default verification); an object is passed as-is.
         const ssl = this.config.ssl;
-        if (ssl && typeof ssl === "object" && ssl.rejectUnauthorized === false) {
-            this.config.logger?.warn?.("autosql: ssl.rejectUnauthorized is false — TLS certificate verification is DISABLED (use only for dev/self-signed).");
-        }
-        if (ssl && (this.config.sshConfig || this.config.sshStream)) {
-            this.config.logger?.warn?.("autosql: both `ssl` and `sshConfig` are set — pick one encrypted path (direct TLS OR an SSH tunnel); TLS over an SSH stream is not a supported combination.");
-        }
+        this.warnInsecureTlsAndTunnelConflict(ssl);
         this.connection = mysql.createPool({
             host: this.config.host,
             user: this.config.user,
