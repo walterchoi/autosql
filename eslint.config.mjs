@@ -40,7 +40,7 @@ export default tseslint.config(
                 ignoreRestSiblings: true
             }],
             "@typescript-eslint/no-explicit-any": "warn",
-            "@typescript-eslint/consistent-type-imports": "warn",
+            "@typescript-eslint/consistent-type-imports": "error",
             // Tolerates BOTH conventions already in use at module scope (UPPER_CASE constants,
             // camelCase constants — see the audit's table) rather than picking one; it exists to
             // catch a THIRD, genuinely inconsistent form, not to relitigate the two in use today.
