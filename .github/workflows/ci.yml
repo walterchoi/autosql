@@ -36,6 +36,10 @@ jobs:
           echo "Floor drivers: $floor"
           npm install --no-save $floor
 
+      - name: Lint
+        if: matrix.drivers == 'latest'
+        run: npm run lint
+
       - run: npm run build
 
       - name: Start test databases
