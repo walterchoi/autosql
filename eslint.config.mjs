@@ -28,7 +28,17 @@ export default tseslint.config(
             "@typescript-eslint/no-floating-promises": "error",
             "@typescript-eslint/no-misused-promises": "error",
             "@typescript-eslint/await-thenable": "error",
-            "@typescript-eslint/no-unused-vars": "warn",
+            // Respects the codebase's existing convention (predates this config: `_table`, `_client`
+            // already appear in src/) that a leading underscore marks a deliberately-unused binding.
+            "@typescript-eslint/no-unused-vars": ["error", {
+                argsIgnorePattern: "^_",
+                varsIgnorePattern: "^_",
+                caughtErrorsIgnorePattern: "^_",
+                // workerPool.ts's `const { logger, sshClient, sshStream, ...cloneable } = config`
+                // destructures-to-omit on purpose (A8: strip non-cloneable keys before worker_threads
+                // structured-clones the config) — the omitted names are never meant to be read.
+                ignoreRestSiblings: true
+            }],
             "@typescript-eslint/no-explicit-any": "warn",
             "@typescript-eslint/consistent-type-imports": "warn",
             // Tolerates BOTH conventions already in use at module scope (UPPER_CASE constants,
