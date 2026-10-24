@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { ColumnDefinition, MetadataHeader } from "../src/config/types";
+import { MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "create_table_test_table";
 

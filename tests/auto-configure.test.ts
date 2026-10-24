@@ -36,13 +36,13 @@ Object.values(DB_CONFIG).forEach((config) => {
 
         afterAll(async () => {
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
-            const dropQueryResults = await db.runQuery(dropQuery)
+            await db.runQuery(dropQuery)
             await db.closeConnection();
         });
 
         test("Creates table when it does not exist and no metadata provided", async () => {
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
-            const dropQueryResults = await db.runQuery(dropQuery)
+            await db.runQuery(dropQuery)
         
             // ✅ Provide sample rows for structure inference
             const sampleData = [
@@ -69,7 +69,7 @@ Object.values(DB_CONFIG).forEach((config) => {
 
         test("Creates table when it does not exist and metadata is provided", async () => {
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
-            const dropQueryResults = await db.runQuery(dropQuery)
+            await db.runQuery(dropQuery)
         
             // ✅ Provide sample data to ensure valid execution
             const sampleData = [{ id: 1, name: "Alice" }];
@@ -93,7 +93,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         
         test("Returns success when table exists and no changes are needed", async () => {
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
-            const dropQueryResults = await db.runQuery(dropQuery)
+            await db.runQuery(dropQuery)
             // ✅ Ensure the table exists first
             await db.runQuery(`CREATE TABLE IF NOT EXISTS ${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
         
@@ -108,7 +108,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         
         test("Alters table when metadata changes are detected", async () => {
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
-            const dropQueryResults = await db.runQuery(dropQuery)
+            await db.runQuery(dropQuery)
             // ✅ Ensure table exists with initial metadata
             await db.runQuery(`CREATE TABLE IF NOT EXISTS ${db.getConfig().schema || db.getConfig().database}.${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
         
@@ -125,7 +125,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         
         test("Alters table when precomputed table changes are provided", async () => {
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
-            const dropQueryResults = await db.runQuery(dropQuery)
+            await db.runQuery(dropQuery)
             // ✅ Ensure table exists
             await db.runQuery(`CREATE TABLE IF NOT EXISTS ${db.getConfig().schema || db.getConfig().database}.${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(255) UNIQUE NOT NULL);`);
 

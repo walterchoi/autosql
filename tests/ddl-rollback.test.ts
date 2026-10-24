@@ -163,7 +163,7 @@ describe("buildCompensatingDDL — PostgreSQL", () => {
             },
             renameColumns: [{ oldName: "a", newName: "b" }],
         };
-        const { queries, warnings } = buildCompensatingDDL("tbl", changes, EMPTY_META, pgsqlConfig);
+        const { queries } = buildCompensatingDDL("tbl", changes, EMPTY_META, pgsqlConfig);
         expect(queries).toHaveLength(0);
     });
 

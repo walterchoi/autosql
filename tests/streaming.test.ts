@@ -2,7 +2,6 @@ import { AutoSQLStreamHandle } from "../src/db/autosql";
 import { buildStreamStagingTableName, isAutosqlStreamTable, buildMergeFromStreamQuery } from "../src/helpers/streamHelpers";
 import { MetadataHeader, DatabaseConfig, QueryWithParams } from "../src/config/types";
 import { mysqlConfig } from "../src/db/config/mysqlConfig";
-import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
 
 // ---------------------------------------------------------------------------
 // Stream staging table naming
@@ -135,7 +134,7 @@ function makeDb(configOverrides: Partial<DatabaseConfig> = {}) {
     };
 }
 
-function makeHandler(db: any) {
+function makeHandler(_db: any) {
     return {
         fetchTableMetadata: jest.fn().mockResolvedValue({ currentMetaData: null, tableExists: false }),
         configureTables: jest.fn().mockResolvedValue([OK_RESULT]),

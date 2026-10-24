@@ -1,4 +1,4 @@
-import { DB_CONFIG, Database } from "./utils/testConfig";
+import { DB_CONFIG } from "./utils/testConfig";
 import { getMetaData } from "../src/helpers/metadata";
 import { MetadataHeader } from "../src/config/types";
 

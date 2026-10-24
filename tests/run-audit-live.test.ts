@@ -23,7 +23,6 @@ CONFIGS.forEach((rawConfig) => {
         afterAll(async () => { await admin.runQuery({ query: `DROP TABLE IF EXISTS ${auditRef}`, params: [] }).catch(() => {}); await admin.closeConnection(); });
 
         const dropTarget = async () => { await admin.runQuery(admin.getDropTableQuery(TABLE)).catch(() => {}); };
-        const clearAudit = async () => { await admin.runQuery({ query: `DELETE FROM ${auditRef} WHERE table_name = ${lit(TABLE)}`, params: [] }).catch(() => {}); };
         const auditRows = async (): Promise<any[]> => {
             const r = await admin.runQuery({ query: `SELECT table_name, success, rows_in, affected_rows, duration_ms, load_ms, error FROM ${auditRef} WHERE table_name = ${lit(TABLE)}`, params: [] }).catch(() => ({ results: [] }));
             return (r.results || []) as any[];

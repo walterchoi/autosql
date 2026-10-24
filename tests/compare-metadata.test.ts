@@ -1,5 +1,5 @@
 import { compareMetaData } from "../src/helpers/metadata";
-import { DialectConfig, ColumnDefinition, MetadataHeader } from "../src/config/types";
+import { DialectConfig, MetadataHeader } from "../src/config/types";
 import { DB_CONFIG, Database } from "./utils/testConfig";
 
 describe("compareMetaData", () => {

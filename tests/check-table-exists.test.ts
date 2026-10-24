@@ -10,12 +10,12 @@ Object.values(DB_CONFIG).forEach((config) => {
             db = Database.create(config);
             await db.establishConnection();
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
-            const dropQueryResults = await db.runQuery(dropQuery)
+            await db.runQuery(dropQuery)
         });
 
         afterAll(async () => {
             const dropQuery = db.dropTableQuery(TEST_TABLE_NAME)
-            const dropQueryResults = await db.runQuery(dropQuery)
+            await db.runQuery(dropQuery)
             const closeResult = await db.closeConnection();
             expect(closeResult.success).toBe(true);
         });
@@ -23,7 +23,7 @@ Object.values(DB_CONFIG).forEach((config) => {
         test("Check table existence when table exists", async () => {
             // ✅ Ensure the test table exists first
             const createTableQuery = `CREATE TABLE ${db.getConfig().schema || db.getConfig().database || ""}.${TEST_TABLE_NAME} (id INT PRIMARY KEY, name VARCHAR(50));`;
-            const createdTable = await db.runQuery(createTableQuery);
+            await db.runQuery(createTableQuery);
 
             // ✅ Check if the table exists
             const checkTableExistsQuery = db.getTableExistsQuery(
