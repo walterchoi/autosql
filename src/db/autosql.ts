@@ -446,14 +446,14 @@ export class AutoSQLHandler {
         const splitData: Record<string, any>[][] = splitInsertData(data, this.db.getConfig())
         const effectiveMetaData = comparedMetaData?.updatedMetaData || metaData;
         
-        const insertStatements: QueryInput[] = await Promise.all(
-            splitData.map((chunk) => {
-              const normalisedChunk = chunk.map((row) =>
-                getInsertValues(effectiveMetaData, row, this.db.getDialectConfig(), this.db.getConfig(), true)
-              );
-              return this.db.getInsertStatementQuery(table, normalisedChunk, effectiveMetaData, insertType);
-            })
-          );
+        // getInsertStatementQuery is synchronous on every dialect — no await-worthy work happens
+        // per chunk, so this is a plain map, not a Promise.all over non-Promise values.
+        const insertStatements: QueryInput[] = splitData.map((chunk) => {
+            const normalisedChunk = chunk.map((row) =>
+              getInsertValues(effectiveMetaData, row, this.db.getDialectConfig(), this.db.getConfig(), true)
+            );
+            return this.db.getInsertStatementQuery(table, normalisedChunk, effectiveMetaData, insertType);
+          });
 
         if (insertStatements.length > 0 && runQuery) {
             return await this.db.runTransaction(insertStatements);

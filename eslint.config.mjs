@@ -27,7 +27,7 @@ export default tseslint.config(
             // enforced only by documentation. Highest-value rule in this config.
             "@typescript-eslint/no-floating-promises": "error",
             "@typescript-eslint/no-misused-promises": "error",
-            "@typescript-eslint/await-thenable": "warn",
+            "@typescript-eslint/await-thenable": "error",
             "@typescript-eslint/no-unused-vars": "warn",
             "@typescript-eslint/no-explicit-any": "warn",
             "@typescript-eslint/consistent-type-imports": "warn",
