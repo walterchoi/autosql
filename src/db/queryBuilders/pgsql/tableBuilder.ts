@@ -3,6 +3,7 @@ import { pgsqlConfig } from "../../config/pgsqlConfig";
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
+import { buildCreateIndexQueries } from "../shared/tableBuilderShared";
 const dialectConfig = pgsqlConfig
 const q = (name: string) => escapeIdentifier(name, "pgsql");
 
@@ -75,17 +76,8 @@ export class PostgresTableQueryBuilder {
         sqlQuery = sqlQuery.slice(0, -2) + "\n);";
         sqlQueries.push({ query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
     
-        const limitedIndexes = indexes.slice(0, remainingIndexSlots);
-        for (const index of limitedIndexes) {
-            if (!index) continue; // Skip empty index names
+        sqlQueries.push(...buildCreateIndexQueries("pgsql", table, indexes, remainingIndexSlots, schemaPrefix));
 
-            const indexName = generateSafeConstraintName(table, index, 'index');
-            sqlQueries.push({
-                query: `CREATE INDEX ${q(indexName)} ON ${schemaPrefix}${q(table)} (${q(index)});`,
-                params: []
-            });
-        }
-    
         return sqlQueries;
     }
 
