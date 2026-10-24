@@ -23,7 +23,7 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
 
   try {
     SSHClient = require("ssh2").Client;
-  } catch (err) {
+  } catch {
     throw new Error(
       `SSH tunnel config specified but 'ssh2' is not installed. Please run: npm install ssh2`
     );

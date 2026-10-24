@@ -1,4 +1,4 @@
-import { TranslateMap, DialectConfig } from "../../config/types";
+import { DialectConfig } from "../../config/types";
 
 export const pgsqlConfig: DialectConfig = {
   dialect: "pgsql",

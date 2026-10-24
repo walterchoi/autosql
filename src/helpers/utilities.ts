@@ -622,7 +622,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
             const columnCount = Object.keys(mergedMetaData).length;
             const exceedsColumnLimit = columnCount >= MAX_COLUMN_COUNT
 
-            const { exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
+            const { nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
             if (!nearlyExceedsLimit && !exceedsColumnLimit) {
                 if (!newGroupedByTable[tableName]) {
                     newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table
@@ -907,7 +907,7 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
         }
 
         return strValue
-    } catch (error) {
+    } catch {
         return value
     }
 }

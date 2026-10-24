@@ -1,6 +1,5 @@
 import { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { mysqlConfig } from "../../config/mysqlConfig";
-import { compareMetaData } from '../../../helpers/metadata';
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";

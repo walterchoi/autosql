@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { isValidSingleQuery } from './utils/validateQuery';
-import { QueryInput, DatabaseConfig, DialectConfig, ColumnDefinition, AlterTableChanges, InsertResult, MetadataHeader, QueryResult, InsertInput } from '../config/types';
+import { QueryInput, DatabaseConfig, DialectConfig, AlterTableChanges, MetadataHeader, QueryResult, InsertInput } from '../config/types';
 import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
 import { maxQueryAttempts } from "../config/defaults";
 import { AutoSQLHandler } from "./autosql";
@@ -306,7 +306,6 @@ export abstract class Database {
     }
     
     public async runQuery(queryOrParams: QueryInput, maxAttemptsOverride?: number): Promise<QueryResult> {
-        const results: any[] = [];
         // `maxAttemptsOverride` lets a caller owning its OWN retry loop opt out of the internal retry.
         // Matters for NON-idempotent statements (single-row INSERT): on an ambiguous failure (conn
         // dropped AFTER the server applied the row) the internal retry would duplicate it.
@@ -316,7 +315,6 @@ export abstract class Database {
         let _error: any;
         const start = new Date();
         let end: Date;
-        let affectedRows: number | undefined = undefined;
 
         const QueryInput: QueryInput = typeof queryOrParams === "string" ? { query: queryOrParams, params: [] } : queryOrParams;
 

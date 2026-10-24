@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Database } from "./database";
 import { sqlServerPermanentErrors } from "./permanentErrors/sqlserver";
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { sqlServerConfig } from "./config/sqlServerConfig";
 import { isValidSingleQuery } from "./utils/validateQuery";
 import { escapeIdentifier, escapeLiteral } from "./utils/escape";
@@ -79,7 +79,7 @@ export class SqlServerDatabase extends Database {
     async establishDatabaseConnection(): Promise<void> {
         try {
             this.sql = require("mssql");
-        } catch (err) {
+        } catch {
             throw new Error("Missing required dependency 'mssql'. Please install it to use SqlServerDatabase.");
         }
         // Map the driver-agnostic `ssl` option onto tedious/mssql TLS options (options.encrypt,

@@ -2,7 +2,7 @@ import { MySQLDatabase } from "./mysql";
 import { PostgresDatabase } from "./pgsql";
 import { SqlServerDatabase } from "./sqlserver";
 import { Database } from "./database";
-import { InsertResult, InsertInput, MetadataHeader, AlterTableChanges, metaDataInterim, QueryResult, QueryInput, AutoSQLOptions, OpenStreamOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig } from "../config/types";
+import { InsertInput, MetadataHeader, AlterTableChanges, QueryResult, QueryInput, AutoSQLOptions, OpenStreamOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults, restrictInferredUniques } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { resolveDatasetSeparators } from "../helpers/numberFormat";
@@ -25,7 +25,6 @@ import {
     buildStagingColumnsQuery,
     isStagingMetaColumn,
     buildDropStreamStagingTableQuery,
-    buildOrphanSearchQuery,
 } from '../helpers/streamHelpers';
 import { AutoSQLStreamHandle } from "./autoSQLStreamHandle";
 export { AutoSQLStreamHandle };
@@ -411,7 +410,9 @@ export class AutoSQLHandler {
         let table: string;
         let data: Record<string, any>[] = [];
         let metaData: MetadataHeader;
-        let previousMetaData: AlterTableChanges | MetadataHeader | null = null;
+        // Accepted via inputPreviousMetaData for API compatibility but not otherwise read in this
+        // method; comparedMetaData/effectiveMetaData carry what the insert path actually needs.
+        let _previousMetaData: AlterTableChanges | MetadataHeader | null = null;
         let comparedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader } | undefined;
         let runQuery: boolean;
         let insertType: "UPDATE" | "INSERT"
@@ -425,7 +426,7 @@ export class AutoSQLHandler {
           table = inputOrTable.table;
           data = inputOrTable.data;
           metaData = inputOrTable.metaData;
-          previousMetaData = inputOrTable.previousMetaData;
+          _previousMetaData = inputOrTable.previousMetaData;
           comparedMetaData = inputOrTable.comparedMetaData;
           runQuery = inputOrTable.runQuery ?? true;
           insertType = inputOrTable?.insertType ?? configInsertType ?? "UPDATE"
@@ -434,7 +435,7 @@ export class AutoSQLHandler {
           data = inputData ?? [];
           if (!inputMetaData) throw new Error(`autoInsertData: metaData is required when called with individual parameters`);
           metaData = inputMetaData;
-          previousMetaData = inputPreviousMetaData ?? null;
+          _previousMetaData = inputPreviousMetaData ?? null;
           comparedMetaData = inputComparedMetaData;
           runQuery = inputRunQuery ?? true
           insertType = inputInsertType ?? configInsertType ?? "UPDATE"
@@ -522,7 +523,7 @@ export class AutoSQLHandler {
 
     private async attemptTableSplit(table: string, data: Record<string, any>[], mergedMetaData: MetadataHeader) {
         if (this.db.getConfig().autoSplit) {
-            const { rowSize, exceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
+            const { exceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
             const columnCount = Object.keys(mergedMetaData).length;
             const exceedsColumnLimit = columnCount >= MAX_COLUMN_COUNT;
     

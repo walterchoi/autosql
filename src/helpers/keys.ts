@@ -100,7 +100,6 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         for (const [columnName, column] of Object.entries(headers)) {
             const columnType = column.type ?? "varchar";
             const columnLength = Math.max(column.length ?? 0, maxByteLenByColumn[columnName] ?? 0) || 255
-            const isNumeric = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
             const isDecimal = (column.decimal !== 0 && column.decimal !== undefined) || column.type == 'decimal' || groupings.specialIntGroup.includes(columnType); // Identify decimal columns
             const isText = groupings.textGroup.includes(columnType) && columnType !== "varchar";
             const isDate = groupings.dateGroup.includes(columnType);

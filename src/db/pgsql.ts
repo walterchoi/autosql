@@ -2,7 +2,7 @@ import crypto from "crypto";
 import type { Pool, PoolClient } from "pg";
 import { Database } from "./database";
 import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { pgsqlConfig } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { escapeIdentifier, escapeLiteral } from './utils/escape';
@@ -28,7 +28,7 @@ export class PostgresDatabase extends Database {
         let Pg: typeof import("pg");
         try {
             Pg = require("pg");
-        } catch (err) {
+        } catch {
             throw new Error("Missing required dependency 'pg'. Please install it to use PgDatabase.");
         }
 
@@ -297,7 +297,6 @@ export class PostgresDatabase extends Database {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }
         const queries: QueryInput[] = [];
-        const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "pgsql")}.` : "";
 
         // R9: surface schema changes that are computed but blocked by the safe-default flags.
         if (!isStagingTable) this.warnBlockedSchemaChanges(table, alterTableChanges);
@@ -310,7 +309,6 @@ export class PostgresDatabase extends Database {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 
-        let indexesToDrop: string[] = [];
         // Only drop the unique when the caller opted in (A10); off (default) keeps it and the load
         // fails loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
         if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {

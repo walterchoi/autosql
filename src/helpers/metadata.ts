@@ -463,20 +463,23 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
     try {
         let validatedConfig: DatabaseConfig;
         let dbInstance: Database | undefined;
-        let dialectConfig: DialectConfig;
+        // Not read below (nothing here needs the resolved DialectConfig) — kept only for the
+        // unsupported-dialect validation in the else branch's throw, and to preserve whatever
+        // dbInstance.getDialectConfig() does on the Database-instance path.
+        let _dialectConfig: DialectConfig;
 
         if (databaseOrConfig instanceof Database) {
             dbInstance = databaseOrConfig;
             validatedConfig = validateConfig(dbInstance.getConfig()); // Use existing Database config
-            dialectConfig = dbInstance.getDialectConfig();
+            _dialectConfig = dbInstance.getDialectConfig();
         } else {
             validatedConfig = validateConfig(databaseOrConfig); // Use provided config
             if(validatedConfig.sqlDialect == 'mysql') {
-                dialectConfig = mysqlConfig;
+                _dialectConfig = mysqlConfig;
             } else if(validatedConfig.sqlDialect == 'pgsql') {
-                dialectConfig = pgsqlConfig;
+                _dialectConfig = pgsqlConfig;
             } else if(validatedConfig.sqlDialect == 'sqlserver') {
-                dialectConfig = sqlServerConfig;
+                _dialectConfig = sqlServerConfig;
             } else {
                 throw new Error(`Unsupported SQL dialect: ${validatedConfig.sqlDialect}`);
             }

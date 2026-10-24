@@ -50,7 +50,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             try {
                 JSON.parse(strData);
                 json = true
-            } catch (e) {}
+            } catch {}
         }
 
         // Fidelity: a digit string with a leading zero ("007", "07030", phone numbers) is an
