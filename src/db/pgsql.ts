@@ -135,13 +135,9 @@ export class PostgresDatabase extends Database {
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
                 );
             }
-            // Release any stale connection registered for this table before overwriting, so a
-            // leftover entry can't leak a pooled connection.
-            const stale = this.schemaLockConnections.get(table);
-            if (stale && stale !== client) stale.release();
-            this.schemaLockConnections.set(table, client);
+            this.registerSchemaLockConnection(this.schemaLockConnections, table, client);
         } catch (error) {
-            if (client && this.schemaLockConnections.get(table) !== client) client.release();
+            this.releaseSchemaLockConnectionOnError(this.schemaLockConnections, table, client);
             throw error;
         }
     }
