@@ -18,7 +18,10 @@ void (async () => {
     db = Database.create(dbConfig);
     const autoSQL = db.autoSQLHandler as AutoSQLHandler;
 
-    parentPort?.on("message", async (task) => {
+    // Listener must return void, not a Promise (no-misused-promises) — the inner async body
+    // already catches every path below and reports it via postMessage, so nothing can reject out
+    // of this handler for a caller to miss.
+    parentPort?.on("message", (task) => void (async () => {
         try {
             const { method, params } = task;
 
@@ -51,7 +54,7 @@ void (async () => {
                 errorCode: (error as any)?.code != null ? String((error as any).code) : undefined,
             });
         }
-        });
+    })());
 
     } catch (error) {
         parentPort?.postMessage({

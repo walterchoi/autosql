@@ -26,7 +26,7 @@ export default tseslint.config(
             // autosql's whole stream contract is "these methods reject and MUST be awaited" — today
             // enforced only by documentation. Highest-value rule in this config.
             "@typescript-eslint/no-floating-promises": "error",
-            "@typescript-eslint/no-misused-promises": "warn",
+            "@typescript-eslint/no-misused-promises": "error",
             "@typescript-eslint/await-thenable": "warn",
             "@typescript-eslint/no-unused-vars": "warn",
             "@typescript-eslint/no-explicit-any": "warn",
