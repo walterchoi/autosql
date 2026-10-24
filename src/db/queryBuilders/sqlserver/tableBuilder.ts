@@ -3,6 +3,7 @@ import { SQL_SERVER_CONFIG } from "../../config/sqlServerConfig";
 import type { DialectConfig } from "../../../config/types";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, escapeLiteral, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
+import { buildCreateIndexQueries } from "../shared/tableBuilderShared";
 
 const DIALECT_CONFIG = SQL_SERVER_CONFIG;
 const q = (name: string) => escapeIdentifier(name, "sqlserver");
@@ -113,16 +114,7 @@ export const SqlServerTableQueryBuilder = {
         sqlQueries.push({ query: createTable, params: [] }); // Store CREATE TABLE query as first item
 
         // Create indexes separately (one QueryInput per index), same as the pg builder.
-        const limitedIndexes = indexes.slice(0, remainingIndexSlots);
-        for (const index of limitedIndexes) {
-            if (!index) continue; // Skip empty index names
-
-            const indexName = generateSafeConstraintName(table, index, 'index');
-            sqlQueries.push({
-                query: `CREATE INDEX ${q(indexName)} ON ${schemaPrefix}${q(table)} (${q(index)});`,
-                params: []
-            });
-        }
+        sqlQueries.push(...buildCreateIndexQueries("sqlserver", table, indexes, remainingIndexSlots, schemaPrefix));
 
         return sqlQueries;
     },
