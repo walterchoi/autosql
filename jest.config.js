@@ -20,5 +20,17 @@ module.exports = {
   extensionsToTreatAsEsm: [".ts"],
   // Preflight: fail fast with a clear message if a test database is unreachable (see the file). The
   // unit config disables this (it needs no DB).
-  globalSetup: "<rootDir>/tests/utils/globalSetup.ts"
+  globalSetup: "<rootDir>/tests/utils/globalSetup.ts",
+  // Floor, not a target: pinned a few points under the full suite's measured coverage on CI
+  // (2026-10-25: 86.99/75.8/84.88/88.61 stmts/branches/funcs/lines) so it can only go up from here.
+  // Assumes the FULL suite (`npm run test:coverage`, not the unit-only config) is what's measured —
+  // jest.unit.config.js spreads this file and would fail these numbers on its DB-free subset alone.
+  coverageThreshold: {
+    global: {
+      statements: 85,
+      branches: 74,
+      functions: 83,
+      lines: 87
+    }
+  }
 };

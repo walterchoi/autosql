@@ -56,3 +56,10 @@ jobs:
               || r.numTotalTestSuites !== listed || r.numTotalTests < 1000;
             if (bad) { console.error('Test run incomplete'); process.exit(1); }
           " "$listed"
+
+      # One leg only — coverage is identical regardless of driver version, and running it twice just
+      # burns CI minutes. No threshold yet: this step exists to read CI's own numbers before pinning
+      # one, since they may differ from a local run (different OS/driver resolution).
+      - name: Coverage
+        if: matrix.drivers == 'latest'
+        run: npm run test:coverage -- --coverageReporters=text-summary
