@@ -189,10 +189,9 @@ export interface DatabaseConfig {
       insertType?: "UPDATE" | "INSERT";
       insertStack?: number;
       /**
-       * Populate via the dialect's bulk-copy mechanism instead of parameterised INSERT. Off by
-       * default. Requires `useStagingInsert`; upsert is preserved by the unchanged merge step. Falls
-       * back to INSERT on error so a bad row still surfaces a clear message. Postgres needs
-       * `pg-copy-streams`.
+       * Populate via the dialect's bulk-copy mechanism instead of parameterised INSERT (off by
+       * default, requires `useStagingInsert`). Upsert semantics are unaffected — only the populate
+       * step changes. Falls back to INSERT on error. Postgres needs `pg-copy-streams`.
        */
       bulkLoad?: boolean;
 
@@ -210,11 +209,10 @@ export interface DatabaseConfig {
 
       addTimestamps?: boolean;
       /**
-       * Load via a staging temp table (default `true`): empty clone, populate, merge, drop. Gives an
-       * atomic all-or-nothing merge, is the target for `bulkLoad`, and runs conflict resolution.
-       *
-       * `false` loads straight to the target, skipping the temp-table round-trips. Upsert still
-       * works. Required `true` for `addHistory`, which diffs the staging table against the target.
+       * Load via a staging temp table (default `true`): empty clone, populate, merge, drop —
+       * atomic all-or-nothing, required by `bulkLoad` and `addHistory` (which diffs staging
+       * against the target). `false` inserts straight to the target (upsert still works) but
+       * skips that round-trip.
        */
       useStagingInsert?: boolean;
       addHistory?: boolean;
@@ -261,33 +259,26 @@ export interface DatabaseConfig {
       decimalSeparator?: string;
 
       /**
-       * Regional preset, sugar over `thousandsSeparator`/`decimalSeparator` and resolved to them in
-       * `validateConfig` so it reaches both inference and storage.
-       *
+       * Regional preset, sugar over `thousandsSeparator`/`decimalSeparator` (explicit separators
+       * win when both are supplied):
        *  - `"US"` / `"IN"`: thousands `","`, decimal `"."` (Indian grouping accepted automatically).
        *  - `"EU"`: thousands `"."`, decimal `","`.
-       *
-       * Explicit separators win when both are supplied.
        */
       numberFormat?: "US" | "EU" | "IN";
 
       /**
-       * With no explicit separators or `numberFormat`, the layout is inferred from structural
-       * evidence in the data, one layout for the whole load. A value that can only be one layout is a
-       * vote; the ambiguous `"1,234"` shape abstains. Contradictory evidence falls back to decimal
-       * plus a warning.
-       *
-       * This is how many votes a layout needs before it is trusted. Default 1: one structural value
-       * is certainty, not a guess. Raise it to tolerate stray values.
+       * With no explicit separators/`numberFormat`, the number layout is inferred from structural
+       * evidence in the data (an unambiguous value votes; the ambiguous `"1,234"` shape abstains;
+       * conflicts fall back to decimal + a warning). This sets how many votes are needed to trust a
+       * layout — default 1. Raise it to tolerate stray values.
        */
       numberFormatMinEvidence?: number;
 
       /**
-       * IANA time zone that ZONELESS datetime inputs are interpreted as, then converted to a UTC
-       * instant for storage. Inputs already carrying a zone are untouched, and `date`/`time` columns
-       * are never shifted. Omit to store zoneless values as given. autosql NEVER infers this from
-       * the host process timezone. It normalises the stored instant; it does not by itself make a
-       * column round-trip a source offset.
+       * IANA time zone that zoneless datetime inputs are interpreted as, then converted to UTC for
+       * storage. Zoned inputs and `date`/`time` columns are untouched; omit to store zoneless
+       * values as given. Never inferred from the host process timezone — this normalises the
+       * stored instant, it doesn't make a column round-trip a source offset on read.
        */
       sourceTimeZone?: string;
 
@@ -340,15 +331,9 @@ export interface DatabaseConfig {
       /** When true, orphaned stream staging tables are preserved instead of dropped. Default: false. */
       keepOrphanedStagingTables?: boolean;
 
-      /**
-       * Prefix for auto-created staging tables (default: "temp_staging__").
-       * Change this if your schema already has tables with that prefix.
-       */
+      /** Prefix for auto-created staging tables. Default `"temp_staging__"`. */
       stagingPrefix?: string;
-      /**
-       * Suffix for auto-created history tables (default: "__history").
-       * Change this if your schema already has tables with that suffix.
-       */
+      /** Suffix for auto-created history tables. Default `"__history"`. */
       historyTableSuffix?: string;
 
       /**
@@ -368,17 +353,15 @@ export interface DatabaseConfig {
       };
 
       /**
-       * TLS for the driver connection. Omit **or `false`** (default) → no change: plaintext / driver
-       * default (existing configs byte-for-byte unaffected). `true` → TLS with default verification. An
-       * object configures TLS:
-       *   - `ca`: PEM CA bundle to verify the server cert against (e.g. AWS RDS bundle, or a BYOD CA).
-       *   - `rejectUnauthorized`: verify the cert chain. Defaults to driver default (true) when a `ca`
-       *     is supplied; set `false` ONLY for dev/self-signed (verification then off).
-       *   - `cert` / `key`: client certificate + key for mutual TLS (optional).
+       * TLS for the driver connection. Omit or `false` (default): no change. `true`: TLS with
+       * default verification. An object:
+       *   - `ca`: PEM CA bundle to verify the server cert against.
+       *   - `rejectUnauthorized`: verify the cert chain (default `true` when `ca` is set). Set
+       *     `false` only for dev/self-signed.
+       *   - `cert` / `key`: client cert + key for mutual TLS.
        *   - `servername`: SNI override when the host differs from the cert CN/SAN.
-       * Works on **all three dialects**: MySQL/Postgres get it as the driver `ssl` object; SQL Server
-       * maps it onto mssql's `encrypt` / `trustServerCertificate` / `cryptoCredentialsDetails`
-       * automatically. Not composed with `sshConfig` — pick one path (SSH tunnel OR direct TLS).
+       * Works on all three dialects (mapped onto each driver's own TLS options). Not composed
+       * with `sshConfig` — pick one path.
        */
       ssl?: boolean | {
         ca?: string;
@@ -526,9 +509,8 @@ export interface metaDataInterim {
     byteLength: number;
     decimal: number;
     trueMaxDecimal: number;
-    // Running max of integer-part digits. Precision = maxIntegerDigits + maxScale; tracking the
-    // integer part separately avoids under-counting when the widest-integer and widest-scale values
-    // are different rows.
+    // Tracked separately from `decimal` (precision = intLen + decimal) to avoid under-counting
+    // when the widest-integer and widest-scale values are different rows.
     intLen?: number;
   }
 }
