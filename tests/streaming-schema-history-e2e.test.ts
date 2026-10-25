@@ -23,7 +23,7 @@ import { AutoSQLHandler, AutoSQLStreamHandle } from "../src/db/autosql";
 import { computeChecksum, detectSchemaDrift, getSchemaAt } from "../src/helpers/schemaHistory";
 import { SchemaDriftError } from "../src/errors";
 import type { DatabaseConfig, MetadataHeader, QueryResult } from "../src/config/types";
-import { mysqlConfig } from "../src/db/config/mysqlConfig";
+import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -107,7 +107,7 @@ function makeDb(configOverrides: Partial<DatabaseConfig> = {}) {
         }),
         runQuery,
         runTransaction,
-        getDialectConfig: jest.fn().mockReturnValue(mysqlConfig),
+        getDialectConfig: jest.fn().mockReturnValue(MYSQL_CONFIG),
         getInsertStatementQuery: jest.fn().mockReturnValue({ query: "INSERT INTO `users` VALUES (?)", params: [1] }),
         log: jest.fn(),
         warn: jest.fn(),

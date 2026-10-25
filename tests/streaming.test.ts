@@ -1,7 +1,7 @@
 import { AutoSQLStreamHandle } from "../src/db/autosql";
 import { buildStreamStagingTableName, isAutosqlStreamTable, buildMergeFromStreamQuery } from "../src/helpers/streamHelpers";
 import type { MetadataHeader, DatabaseConfig, QueryWithParams } from "../src/config/types";
-import { mysqlConfig } from "../src/db/config/mysqlConfig";
+import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
 
 // ---------------------------------------------------------------------------
 // Stream staging table naming
@@ -126,7 +126,7 @@ function makeDb(configOverrides: Partial<DatabaseConfig> = {}) {
         }),
         runQuery: jest.fn().mockResolvedValue(OK_RESULT),
         runTransaction: jest.fn().mockResolvedValue(OK_RESULT),
-        getDialectConfig: jest.fn().mockReturnValue(mysqlConfig),
+        getDialectConfig: jest.fn().mockReturnValue(MYSQL_CONFIG),
         getInsertStatementQuery: jest.fn().mockReturnValue({ query: "INSERT INTO t VALUES (?)", params: [1] }),
         log: jest.fn(), warn: jest.fn(), error: jest.fn(),
         acquireSchemaLock: jest.fn(), releaseSchemaLock: jest.fn(),

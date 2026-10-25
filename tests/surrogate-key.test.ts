@@ -3,7 +3,7 @@ import { compareMetaData } from "../src/helpers/metadata";
 import { validateConfig } from "../src/helpers/utilities";
 import { MySQLInsertQueryBuilder } from "../src/db/queryBuilders/mysql/insertBuilder";
 import { PostgresInsertQueryBuilder } from "../src/db/queryBuilders/pgsql/insertBuilder";
-import { mysqlConfig } from "../src/db/config/mysqlConfig";
+import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
 import type { ColumnDefinition, MetadataHeader, DatabaseConfig } from "../src/config/types";
 import { DB_CONFIG, Database } from "./utils/testConfig";
 
@@ -80,7 +80,7 @@ describe("applySurrogateKey", () => {
         };
         const inferred: MetadataHeader = { name: col(), age: col({ type: "int" }) };
         const reconciled = applySurrogateKey(inferred, existing, on);
-        const { changes } = compareMetaData(existing, reconciled, mysqlConfig);
+        const { changes } = compareMetaData(existing, reconciled, MYSQL_CONFIG);
         expect(changes.addColumns).toEqual({});
         expect(changes.dropColumns).toEqual([]);
         expect(changes.primaryKeyChanges).toEqual([]);

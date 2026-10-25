@@ -1,7 +1,7 @@
 import { buildCompensatingDDL } from "../src/helpers/compensatingDDL";
 import type { AlterTableChanges, MetadataHeader, QueryWithParams } from "../src/config/types";
-import { mysqlConfig } from "../src/db/config/mysqlConfig";
-import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
+import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
+import { PGSQL_CONFIG } from "../src/db/config/pgsqlConfig";
 
 // All queries emitted by buildCompensatingDDL are always QueryWithParams objects.
 const asQWP = (q: any) => q as QueryWithParams;
@@ -27,7 +27,7 @@ describe("buildCompensatingDDL — MySQL", () => {
                 notes: { type: "text" },
             },
         };
-        const { queries, warnings } = buildCompensatingDDL("users", changes, EMPTY_META, mysqlConfig);
+        const { queries, warnings } = buildCompensatingDDL("users", changes, EMPTY_META, MYSQL_CONFIG);
         expect(warnings).toHaveLength(0);
         expect(queries).toHaveLength(1);
         expect(asQWP(queries[0]).query).toMatch(/DROP COLUMN IF EXISTS `phone`/);
@@ -42,7 +42,7 @@ describe("buildCompensatingDDL — MySQL", () => {
                 age: { type: "varchar", previousType: "int", length: 10, allowNull: false },
             },
         };
-        const { queries, warnings } = buildCompensatingDDL("users", changes, EMPTY_META, mysqlConfig);
+        const { queries, warnings } = buildCompensatingDDL("users", changes, EMPTY_META, MYSQL_CONFIG);
         expect(warnings).toHaveLength(0);
         expect(queries).toHaveLength(1);
         expect(asQWP(queries[0]).query).toMatch(/MODIFY COLUMN `age` int\(10\) NOT NULL/);
@@ -55,7 +55,7 @@ describe("buildCompensatingDDL — MySQL", () => {
                 name: { type: "varchar", previousType: "varchar", length: 255, allowNull: true },
             },
         };
-        const { queries } = buildCompensatingDDL("users", changes, EMPTY_META, mysqlConfig);
+        const { queries } = buildCompensatingDDL("users", changes, EMPTY_META, MYSQL_CONFIG);
         expect(queries).toHaveLength(0);
     });
 
@@ -67,7 +67,7 @@ describe("buildCompensatingDDL — MySQL", () => {
             ...EMPTY_CHANGES,
             renameColumns: [{ oldName: "name", newName: "full_name" }],
         };
-        const { queries, warnings } = buildCompensatingDDL("users", changes, updatedMeta, mysqlConfig);
+        const { queries, warnings } = buildCompensatingDDL("users", changes, updatedMeta, MYSQL_CONFIG);
         expect(warnings).toHaveLength(0);
         expect(queries).toHaveLength(1);
         expect(asQWP(queries[0]).query).toMatch(/CHANGE COLUMN `full_name` `name` varchar\(100\) NOT NULL/);
@@ -78,7 +78,7 @@ describe("buildCompensatingDDL — MySQL", () => {
             ...EMPTY_CHANGES,
             dropColumns: ["old_col", "another_col"],
         };
-        const { queries, warnings } = buildCompensatingDDL("users", changes, EMPTY_META, mysqlConfig);
+        const { queries, warnings } = buildCompensatingDDL("users", changes, EMPTY_META, MYSQL_CONFIG);
         expect(queries).toHaveLength(0);
         expect(warnings).toHaveLength(1);
         expect(warnings[0]).toMatch(/old_col.*another_col/);
@@ -90,7 +90,7 @@ describe("buildCompensatingDDL — MySQL", () => {
             ...EMPTY_CHANGES,
             nullableColumns: ["email"],
         };
-        const { queries, warnings } = buildCompensatingDDL("users", changes, EMPTY_META, mysqlConfig);
+        const { queries, warnings } = buildCompensatingDDL("users", changes, EMPTY_META, MYSQL_CONFIG);
         expect(queries).toHaveLength(0);
         expect(warnings).toHaveLength(1);
         expect(warnings[0]).toMatch(/email/);
@@ -102,7 +102,7 @@ describe("buildCompensatingDDL — MySQL", () => {
             ...EMPTY_CHANGES,
             addColumns: { status: { type: "varchar", length: 50 } },
         };
-        const { queries } = buildCompensatingDDL("orders", changes, EMPTY_META, mysqlConfig, "mydb");
+        const { queries } = buildCompensatingDDL("orders", changes, EMPTY_META, MYSQL_CONFIG, "mydb");
         expect(asQWP(queries[0]).query).toMatch(/ALTER TABLE `mydb`\.`orders`/);
     });
 
@@ -113,7 +113,7 @@ describe("buildCompensatingDDL — MySQL", () => {
                 body: { type: "varchar", previousType: "text", length: 5000, allowNull: true },
             },
         };
-        const { queries } = buildCompensatingDDL("posts", changes, EMPTY_META, mysqlConfig);
+        const { queries } = buildCompensatingDDL("posts", changes, EMPTY_META, MYSQL_CONFIG);
         // text is in noLength — should NOT have (5000) appended
         expect(asQWP(queries[0]).query).not.toMatch(/text\(\d+\)/);
         expect(asQWP(queries[0]).query).toMatch(/MODIFY COLUMN `body` text NULL/);
@@ -132,7 +132,7 @@ describe("buildCompensatingDDL — MySQL", () => {
             renameColumns: [{ oldName: "old_name", newName: "new_name" }],
             dropColumns: ["legacy"],
         };
-        const { queries, warnings } = buildCompensatingDDL("events", changes, updatedMeta, mysqlConfig);
+        const { queries, warnings } = buildCompensatingDDL("events", changes, updatedMeta, MYSQL_CONFIG);
         // rename + modify + drop(add cols)
         expect(queries.length).toBeGreaterThanOrEqual(3);
         expect(warnings).toHaveLength(1); // dropColumns warning
@@ -146,7 +146,7 @@ describe("buildCompensatingDDL — MySQL", () => {
                 count: { type: "varchar", previousType: "int", length: 5, allowNull: false },
             },
         };
-        const { queries } = buildCompensatingDDL("items", changes, EMPTY_META, mysqlConfig);
+        const { queries } = buildCompensatingDDL("items", changes, EMPTY_META, MYSQL_CONFIG);
         for (const q of queries) {
             expect(asQWP(q).params).toEqual([]);
         }
@@ -163,7 +163,7 @@ describe("buildCompensatingDDL — PostgreSQL", () => {
             },
             renameColumns: [{ oldName: "a", newName: "b" }],
         };
-        const { queries } = buildCompensatingDDL("tbl", changes, EMPTY_META, pgsqlConfig);
+        const { queries } = buildCompensatingDDL("tbl", changes, EMPTY_META, PGSQL_CONFIG);
         expect(queries).toHaveLength(0);
     });
 
@@ -172,7 +172,7 @@ describe("buildCompensatingDDL — PostgreSQL", () => {
             ...EMPTY_CHANGES,
             dropColumns: ["gone"],
         };
-        const { queries, warnings } = buildCompensatingDDL("tbl", changes, EMPTY_META, pgsqlConfig);
+        const { queries, warnings } = buildCompensatingDDL("tbl", changes, EMPTY_META, PGSQL_CONFIG);
         expect(queries).toHaveLength(0);
         expect(warnings).toHaveLength(1);
         expect(warnings[0]).toMatch(/gone/);
@@ -183,13 +183,13 @@ describe("buildCompensatingDDL — PostgreSQL", () => {
             ...EMPTY_CHANGES,
             nullableColumns: ["required_field"],
         };
-        const { queries, warnings } = buildCompensatingDDL("tbl", changes, EMPTY_META, pgsqlConfig);
+        const { queries, warnings } = buildCompensatingDDL("tbl", changes, EMPTY_META, PGSQL_CONFIG);
         expect(queries).toHaveLength(0);
         expect(warnings).toHaveLength(1);
     });
 
     test("no queries and no warnings for an empty change set", () => {
-        const { queries, warnings } = buildCompensatingDDL("tbl", EMPTY_CHANGES, EMPTY_META, pgsqlConfig);
+        const { queries, warnings } = buildCompensatingDDL("tbl", EMPTY_CHANGES, EMPTY_META, PGSQL_CONFIG);
         expect(queries).toHaveLength(0);
         expect(warnings).toHaveLength(0);
     });

@@ -1,6 +1,6 @@
 import { normalizeNumber, sqlize, validateConfig } from "../src/helpers/utilities";
 import { getMetaData } from "../src/helpers/metadata";
-import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
+import { PGSQL_CONFIG } from "../src/db/config/pgsqlConfig";
 
 // A24c + numberFormat. Two related concerns:
 //   A24c — a LONE separator followed by exactly three digits (with 1–3 leading digits) is genuinely
@@ -76,14 +76,14 @@ describe("numberFormat — the arbiter: the resolved separators reach sqlize (th
     // here, "1.234" under EU stores as 1234 — not just infers int, but the stored value is correct.
     test("EU: lone-dot 3-digit value is stored as a grouped integer, not a decimal", () => {
         const euCfg = validateConfig({ sqlDialect: "pgsql", numberFormat: "EU" });
-        expect(sqlize("1.234", "int", pgsqlConfig, euCfg)).toBe("1234");
+        expect(sqlize("1.234", "int", PGSQL_CONFIG, euCfg)).toBe("1234");
     });
     test("US: lone-comma 3-digit value is stored as a grouped integer", () => {
         const usCfg = validateConfig({ sqlDialect: "pgsql", numberFormat: "US" });
-        expect(sqlize("1,234", "int", pgsqlConfig, usCfg)).toBe("1234");
+        expect(sqlize("1,234", "int", PGSQL_CONFIG, usCfg)).toBe("1234");
     });
     test("negative control: WITHOUT numberFormat the same EU value does not become 1234 (this is the corruption the knob prevents)", () => {
-        expect(sqlize("1.234", "int", pgsqlConfig, { sqlDialect: "pgsql" })).not.toBe("1234");
+        expect(sqlize("1.234", "int", PGSQL_CONFIG, { sqlDialect: "pgsql" })).not.toBe("1234");
     });
 });
 

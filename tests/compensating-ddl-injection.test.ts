@@ -1,5 +1,5 @@
 import { buildCompensatingDDL } from "../src/helpers/compensatingDDL";
-import { mysqlConfig } from "../src/db/config/mysqlConfig";
+import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
 import { escapeIdentifier } from "../src/db/utils/escape";
 import type { AlterTableChanges, MetadataHeader, QueryInput } from "../src/config/types";
 
@@ -24,7 +24,7 @@ describe("compensating DDL escapes identifiers (H3)", () => {
         };
         const meta: MetadataHeader = { [evil]: { type: "int" }, old_col: { type: "int" } };
 
-        const { queries } = buildCompensatingDDL("t", changes, meta, mysqlConfig, "s");
+        const { queries } = buildCompensatingDDL("t", changes, meta, MYSQL_CONFIG, "s");
         expect(queries.length).toBeGreaterThan(0);
 
         const esc = escapeIdentifier(evil, "mysql"); // backtick-doubled, wrapped

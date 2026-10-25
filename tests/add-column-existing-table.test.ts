@@ -1,5 +1,5 @@
 import { compareMetaData } from "../src/helpers/metadata";
-import { mysqlConfig } from "../src/db/config/mysqlConfig";
+import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
 import type { MetadataHeader } from "../src/config/types";
 
 // R11 (unit): a column added to an EXISTING table must be emitted as nullable — existing rows have
@@ -15,7 +15,7 @@ describe("compareMetaData: new columns on an existing table (R11)", () => {
             id: col({ type: "int", primary: true }),
             extra: col({ type: "varchar", allowNull: false }),
         } as any;
-        const { changes } = compareMetaData(oldH, newH, mysqlConfig);
+        const { changes } = compareMetaData(oldH, newH, MYSQL_CONFIG);
         expect(changes.addColumns.extra).toBeDefined();
         expect(changes.addColumns.extra.allowNull).toBe(true); // forced nullable for existing rows
     });
@@ -26,7 +26,7 @@ describe("compareMetaData: new columns on an existing table (R11)", () => {
             id: col({ type: "int", primary: true }),
             status: col({ type: "varchar", allowNull: false, default: "'active'" }),
         } as any;
-        const { changes } = compareMetaData(oldH, newH, mysqlConfig);
+        const { changes } = compareMetaData(oldH, newH, MYSQL_CONFIG);
         expect(changes.addColumns.status.allowNull).toBe(false);
     });
 
@@ -36,13 +36,13 @@ describe("compareMetaData: new columns on an existing table (R11)", () => {
             id: col({ type: "int", primary: true }),
             dwh_created_at: col({ type: "datetime", allowNull: false, calculated: true }),
         } as any;
-        const { changes } = compareMetaData(oldH, newH, mysqlConfig);
+        const { changes } = compareMetaData(oldH, newH, MYSQL_CONFIG);
         expect(changes.addColumns.dwh_created_at.allowNull).toBe(false);
     });
 
     test("a fresh CREATE (no old headers) keeps inferred NOT NULL", () => {
         const newH: MetadataHeader = { id: col({ type: "int", allowNull: false }) } as any;
-        const { changes, updatedMetaData } = compareMetaData(null, newH, mysqlConfig);
+        const { changes, updatedMetaData } = compareMetaData(null, newH, MYSQL_CONFIG);
         expect(changes.addColumns).toEqual({}); // create path: nothing is an "add"
         expect(updatedMetaData.id.allowNull).toBe(false);
     });
