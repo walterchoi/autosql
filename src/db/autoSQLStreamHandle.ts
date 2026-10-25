@@ -331,8 +331,8 @@ export class AutoSQLStreamHandle {
             const keepForResume = this.resumable && !promoted;
             if (this.stagingCreated && !keepForResume) {
                 const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
-                await this.db.runTransaction([dropQ]).catch(e => {
-                    this.db.error(`autoSQLStream: failed to drop staging table '${this.stagingTable}': ${e.message}`);
+                await this.db.runTransaction([dropQ]).catch((e: unknown) => {
+                    this.db.error(`autoSQLStream: failed to drop staging table '${this.stagingTable}': ${e instanceof Error ? e.message : String(e)}`);
                 });
             } else if (keepForResume) {
                 this.db.warn(`autoSQLStream: end() did not promote staged rows for '${this.table}'; keeping resumable staging table '${this.stagingTable}' so the run can be retried. Call abort() to discard it.`);
@@ -426,8 +426,8 @@ export class AutoSQLStreamHandle {
         return this.db.runWithSchema(this.schema, async () => {
             if (this.stagingCreated) {
                 const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
-                await this.db.runTransaction([dropQ]).catch(e => {
-                    this.db.error(`autoSQLStream: failed to drop staging table during abort: ${e.message}`);
+                await this.db.runTransaction([dropQ]).catch((e: unknown) => {
+                    this.db.error(`autoSQLStream: failed to drop staging table during abort: ${e instanceof Error ? e.message : String(e)}`);
                 });
             }
             this.handler.releaseStreamStaging(this.stagingTable);

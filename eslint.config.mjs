@@ -55,7 +55,11 @@ const PROMOTED_RULES = {
     // Pulled in via strictTypeChecked's eslint-recommended sub-block, not `@typescript-eslint/*`
     // itself. Every flagged `let`/`var` was genuinely never reassigned.
     "prefer-const": "error",
-    "no-var": "error"
+    "no-var": "error",
+    // Each site is a `.catch(e => ...)` logging callback — annotated the param `: unknown` and
+    // narrowed with `instanceof Error` before reading `.message`, same pattern already used for
+    // every other caught-error-to-string site in this codebase.
+    "@typescript-eslint/use-unknown-in-catch-callback-variable": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common

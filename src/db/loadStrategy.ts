@@ -58,7 +58,7 @@ export class RowStoreLoadStrategy implements LoadStrategy {
             } finally {
                 // Drop staging even if a step above threw, so a failed load leaves no orphaned temp
                 // table (mirrors the streaming end() path).
-                await this.staging.removeStagingTables(input).catch(e => { this.db.error(`${ctx.label}: failed to drop staging table(s) for '${ctx.table}': ${e instanceof Error ? e.message : String(e)}`); });
+                await this.staging.removeStagingTables(input).catch((e: unknown) => { this.db.error(`${ctx.label}: failed to drop staging table(s) for '${ctx.table}': ${e instanceof Error ? e.message : String(e)}`); });
             }
         } else {
             return this.handler['insertData'](input, { perRowFallback: true });

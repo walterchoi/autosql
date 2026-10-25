@@ -111,8 +111,8 @@ export class DegradationPolicy {
                         stagingPrefix: config.stagingPrefix,
                         historyTableSuffix: config.historyTableSuffix,
                     }];
-                    await this.handler['configureTables'](widenInput).catch(e => {
-                        this.db.warn(`${label}: schema widening attempt failed: ${e.message}`);
+                    await this.handler['configureTables'](widenInput).catch((e: unknown) => {
+                        this.db.warn(`${label}: schema widening attempt failed: ${e instanceof Error ? e.message : String(e)}`);
                     });
                     workingMeta = updatedMetaData;
                 }
