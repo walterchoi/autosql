@@ -7,8 +7,7 @@ import { buildCreateIndexQueries } from "../shared/tableBuilderShared";
 const DIALECT_CONFIG = PGSQL_CONFIG
 const q = (name: string) => escapeIdentifier(name, "pgsql");
 
-// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
-// no-extraneous-class).
+// A namespace of related query builders, not a data constant — see no-extraneous-class.
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export const PostgresTableQueryBuilder = {
     getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
@@ -77,7 +76,7 @@ export const PostgresTableQueryBuilder = {
         }
     
         sqlQuery = sqlQuery.slice(0, -2) + "\n);";
-        sqlQueries.push({ query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
+        sqlQueries.push({ query: sqlQuery, params: []});
     
         sqlQueries.push(...buildCreateIndexQueries("pgsql", table, indexes, remainingIndexSlots, schemaPrefix));
 
@@ -96,8 +95,8 @@ export const PostgresTableQueryBuilder = {
 
         const schemaPrefix = schema ? `${q(schema)}.` : "";
 
-        // RENAME COLUMN — Postgres requires each rename in its own ALTER TABLE statement (can't be
-        // combined with other actions like MySQL's CHANGE COLUMN). Emit standalone, before the rest.
+        // Postgres requires each rename in its own ALTER TABLE statement (unlike MySQL's
+        // combinable CHANGE COLUMN) — emitted standalone, before the rest.
         changes.renameColumns.forEach(({ oldName, newName }) => {
             queries.push({ query: `ALTER TABLE ${schemaPrefix}${q(table)} RENAME COLUMN ${q(oldName)} TO ${q(newName)};`, params: [] });
         });
@@ -120,17 +119,17 @@ export const PostgresTableQueryBuilder = {
             if (column.default !== undefined) {
                 columnDef += ` DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`;
             } else if (!column.allowNull && column.calculated) {
-                // NOT NULL calculated timestamp (e.g. dwh_created_at) on a possibly-populated table
-                // needs a DEFAULT or ADD COLUMN fails on pre-existing rows. Backfill with the
-                // alter-time value (true creation time unknown); new rows get calculatedDefault at
-                // insert. Calculated columns are timestamps, so CURRENT_TIMESTAMP is correct.
+                // A NOT NULL calculated timestamp needs a DEFAULT or ADD COLUMN fails on existing
+                // rows; backfill with the alter-time value (true creation time unknown) — new rows
+                // get calculatedDefault at insert.
                 columnDef += ` DEFAULT CURRENT_TIMESTAMP`;
             }
 
             alterStatements.push(`ADD COLUMN ${columnDef}`);
         };
-    
-        // Handle `ALTER COLUMN` - consolidate changes per column
+
+        // Grouped by column (not just flattened to alterStatements) so the nullableColumns loop
+        // below can tell which columns modifyColumns already touched.
         const alterColumnMap: { [key: string]: string[] } = {};
     
         for (const [columnName, column] of Object.entries(changes.modifyColumns)) {
@@ -161,23 +160,22 @@ export const PostgresTableQueryBuilder = {
             if (column.allowNull || changes.nullableColumns.includes(columnName)) {
                 alterColumnMap[columnName].push(`DROP NOT NULL`);
             }
-            // Only re-assert a genuine default. A null default is an introspection artefact (no
-            // default reports column_default = NULL); `SET DEFAULT NULL` is a no-op that risks bad SQL.
+            // Only re-assert a genuine default — a null default is an introspection artefact (no
+            // default reports column_default = NULL), and `SET DEFAULT NULL` risks bad SQL.
             if (column.default !== undefined && column.default !== null) {
                 alterColumnMap[columnName].push(`SET DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`);
             }
         };
 
-        // Emit ONE `ALTER COLUMN` action per change. Postgres treats each SET/DROP as its own ALTER
-        // TABLE action; comma-joining under one `ALTER COLUMN` prefix
-        // (`ALTER COLUMN c SET DATA TYPE x, SET DEFAULT y`) is a syntax error (broke widening on re-ingest).
+        // Postgres treats each SET/DROP as its own ALTER TABLE action — comma-joining them under
+        // one `ALTER COLUMN` prefix is a syntax error (broke widening on re-ingest).
         Object.keys(alterColumnMap).forEach(columnName => {
             for (const action of alterColumnMap[columnName]) {
                 alterStatements.push(`ALTER COLUMN ${q(columnName)} ${action}`);
             }
         });
 
-        // Handle `NULLABLE COLUMNS` separately (if not already modified)
+        // Skip columns already covered by modifyColumns above.
         changes.nullableColumns.forEach(columnName => {
             if (!alterColumnMap[columnName]) {
                 alterStatements.push(`ALTER COLUMN ${q(columnName)} DROP NOT NULL`);

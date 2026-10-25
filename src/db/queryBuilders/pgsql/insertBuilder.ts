@@ -17,8 +17,7 @@ const HISTORY_HOOKS: HistoryHooks = {
     placeholder: (n) => `$${n}`,
 };
 
-// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
-// no-extraneous-class).
+// A namespace of related query builders, not a data constant — see no-extraneous-class.
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export const PostgresInsertQueryBuilder = {
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {

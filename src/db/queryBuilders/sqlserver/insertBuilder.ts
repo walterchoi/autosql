@@ -33,8 +33,7 @@ function buildMerge(target: string, sourceClause: string, columns: string[], hea
     return query;
 }
 
-// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
-// no-extraneous-class).
+// A namespace of related query builders, not a data constant — see no-extraneous-class.
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export const SqlServerInsertQueryBuilder = {
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
@@ -53,10 +52,9 @@ export const SqlServerInsertQueryBuilder = {
         }).join(", ");
 
         const primaryKeys = primaryKeysOf(header);
-        // A surrogate/DB-generated PK is excluded from the insert columns (insertColumns), so it can't
-        // be a merge key — its value is generated on both sides, so ON target.pk=source.pk would
-        // self-match on values neither side controls. Merge only on PKs actually being written; if none
-        // remain (a surrogate-key table), plain append — a surrogate is unique per insert (spec-4 §3.7).
+        // A surrogate/DB-generated PK isn't in insertColumns, so it can't be a merge key — both
+        // sides would generate it, making target.pk=source.pk a self-match. Merge only on PKs
+        // actually written; none left → plain append (surrogate is unique per insert, spec-4 §3.7).
         const mergeKeys = primaryKeys.filter(pk => columns.includes(pk));
         if (insertType !== "UPDATE" || mergeKeys.length === 0) {
             return { query: `INSERT INTO ${target} (${quotedCols}) VALUES ${valueTuples};`, params };
@@ -76,14 +74,13 @@ export const SqlServerInsertQueryBuilder = {
         const target = `${schemaPrefix}${q(table)}`;
         const source = `${schemaPrefix}${q(tempTable)}`;
         const primaryKeys = primaryKeysOf(header);
-        // Merge only on PKs actually written — a surrogate PK is excluded from the insert columns and its
-        // staging clone regenerates IDENTITY values, so merging on it self-matches. None left → plain
-        // append (surrogate is unique per insert; the real table generates fresh keys) (spec-4 §3.7).
+        // Same reasoning as getInsertStatementQuery — here the staging clone also regenerates
+        // IDENTITY values for a surrogate PK, so merging on it would self-match either way.
         const mergeKeys = primaryKeys.filter(pk => columns.includes(pk));
 
         if (pkFilter) {
-            // Atomic per-PK degradation path (spec-4 §3.8): scope the MERGE to a single primary key via a
-            // filtered source subquery, so this PK's before-image + merge run in one transaction.
+            // Scope the MERGE to one primary key via a filtered source subquery (spec-4 §3.8), so
+            // this PK's before-image + merge run in one transaction.
             const params: any[] = [];
             const where = primaryKeys.map(pk => { params.push(pkFilter[pk]); return `${q(pk)} = @p${params.length - 1}`; }).join(" AND ");
             const scoped = `USING (SELECT ${selectCols} FROM ${source} WHERE ${where}) AS source (${escapedCols})`;

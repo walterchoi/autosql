@@ -10,8 +10,8 @@ import {
 
 const q = (name: string) => escapeIdentifier(name, "mysql");
 
-// Emit an upsert tail for MySQL's `ON DUPLICATE KEY UPDATE`. No updatable columns but a key present →
-// a no-op self-update so a duplicate key is SKIPPED, matching PG (DO NOTHING) / SQL Server (A11).
+// No updatable columns but a key present → a no-op self-update so a duplicate key is SKIPPED,
+// matching PG (DO NOTHING) / SQL Server (A11).
 function upsertTail(columns: string[], header: MetadataHeader): string {
     const primaryKeys = primaryKeysOf(header);
     const updateCols = updatableColumns(columns, header, primaryKeys);
@@ -31,8 +31,7 @@ const HISTORY_HOOKS: HistoryHooks = {
     placeholder: () => "?",
 };
 
-// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
-// no-extraneous-class).
+// A namespace of related query builders, not a data constant — see no-extraneous-class.
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export const MySQLInsertQueryBuilder = {
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {

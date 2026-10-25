@@ -48,8 +48,7 @@ function renderColumnType(column: ColumnDefinition, cfg: DialectConfig): string 
     return rendered;
 }
 
-// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
-// no-extraneous-class).
+// A namespace of related query builders, not a data constant — see no-extraneous-class.
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export const SqlServerTableQueryBuilder = {
     getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
@@ -111,9 +110,9 @@ export const SqlServerTableQueryBuilder = {
             `BEGIN\n` +
             `CREATE TABLE ${schemaPrefix}${q(table)} (\n${columnDefs}\n);\n` +
             `END;`;
-        sqlQueries.push({ query: createTable, params: [] }); // Store CREATE TABLE query as first item
+        sqlQueries.push({ query: createTable, params: [] });
 
-        // Create indexes separately (one QueryInput per index), same as the pg builder.
+        // One QueryInput per index, same as the pg builder.
         sqlQueries.push(...buildCreateIndexQueries("sqlserver", table, indexes, remainingIndexSlots, schemaPrefix));
 
         return sqlQueries;
@@ -170,23 +169,20 @@ export const SqlServerTableQueryBuilder = {
                 // No type change requested, but ALTER COLUMN still requires a type. Fall back to
                 // previousType; without it there's nothing valid to emit (even for nullability) — skip.
                 if (!column.previousType) {
-                    if (wantsNull) {
-                        // Can't ALTER COLUMN without a type; nothing valid to emit — skip.
-                    }
                     continue;
                 }
                 serverType = renderColumnType({ ...column, type: column.previousType }, DIALECT_CONFIG);
             }
 
-            // NOTE: default-constraint handling (drop + re-add) is deferred — a default change in a
+            // Default-constraint handling (drop + re-add) is deferred — a default change in a
             // modify is intentionally NOT emitted to avoid an invalid `ALTER COLUMN ... SET DEFAULT`.
             const nullability = wantsNull ? "NULL" : "NOT NULL";
 
-            // SQL Server rejects an ALTER COLUMN that changes a column's TYPE while an index or
-            // unique constraint depends on it (err 5074); length and nullability changes are fine.
-            // So a real type change is wrapped: dynamically drop the single-column indexes on the
-            // column, alter, recreate, all in one batch since DDL is transactional. Composite indexes
-            // are left alone and still fail, a documented edge (spec-4 §3.6).
+            // SQL Server rejects an ALTER COLUMN TYPE change while an index/unique constraint
+            // depends on the column (err 5074); nullability/length changes are fine. So a real
+            // type change drops the column's single-column indexes, alters, and recreates them in
+            // one transactional batch. Composite indexes are left alone and still fail (documented
+            // edge, spec-4 §3.6).
             const isTypeChange = !!(column.type && column.previousType && column.type !== column.previousType);
             if (isTypeChange) {
                 const qcol = q(columnName);
@@ -218,8 +214,8 @@ IF LEN(@cre) > 0 EXEC (@cre);`,
             }
         }
 
-        // NULLABLE COLUMNS not already handled by modify above. Without a type we can't emit a
-        // valid ALTER COLUMN, so untyped ones are skipped.
+        // Not already handled by modifyColumns above — skipped if the type is unknown (can't
+        // emit a valid ALTER COLUMN).
         changes.nullableColumns.forEach(columnName => {
             if (handledNullable.has(columnName)) return;
             const meta = changes.modifyColumns[columnName];
@@ -327,9 +323,9 @@ IF LEN(@cre) > 0 EXEC (@cre);`,
                           AND i.is_primary_key = 0
                           AND sc.name = c.COLUMN_NAME
                     ) AS UNIQUE_INDEX_NAME,
-                    -- IDENTITY flag: SQL Server's analogue of MySQL AUTO_INCREMENT / Postgres nextval.
-                    -- Wrapped in MAX() so it needn't join the GROUP BY (constant per grouped column);
-                    -- normalizeResultKeys lowercases IS_IDENTITY → is_identity for deriveColumnMetadata.
+                    -- IDENTITY flag (SQL Server's AUTO_INCREMENT/nextval analogue), MAX()'d since
+                    -- it's constant per grouped column; normalizeResultKeys lowercases this to
+                    -- is_identity for deriveColumnMetadata.
                     MAX(COLUMNPROPERTY(OBJECT_ID(QUOTENAME(c.TABLE_SCHEMA) + '.' + QUOTENAME(c.TABLE_NAME)), c.COLUMN_NAME, 'IsIdentity')) AS IS_IDENTITY
                 FROM INFORMATION_SCHEMA.COLUMNS AS c
                 WHERE c.TABLE_SCHEMA = @p0 AND c.TABLE_NAME = @p1

@@ -1,10 +1,9 @@
 import type { MetadataHeader, DatabaseConfig, InsertInput, QueryInput } from "../../../config/types";
 import { getInsertValues, getTempTableName, getHistoryTableName, getTrueTableName } from "../../../helpers/utilities";
 
-// Shared, dialect-agnostic logic for the three insert builders (R2). SQL assembly diverges too much to
-// unify (ON CONFLICT / ON DUPLICATE KEY / MERGE), but input resolution, column derivation, the
-// updatable-column rule and the row-level history query are identical (previously copy-pasted 3x, so
-// e.g. the A2 history fix had to be made in triplicate). Centralised here.
+// Shared, dialect-agnostic logic for the three insert builders. SQL assembly diverges too much
+// to unify (ON CONFLICT / ON DUPLICATE KEY / MERGE), but input resolution, column derivation, the
+// updatable-column rule, and the row-level history query are identical.
 
 export interface ResolvedStatement { table: string; rows: Record<string, any>[]; header: MetadataHeader; insertType: "UPDATE" | "INSERT"; }
 export interface ResolvedStaging { table: string; header: MetadataHeader; insertType: "UPDATE" | "INSERT"; stagingPrefix?: string; }
@@ -70,10 +69,10 @@ export interface HistoryHooks {
     placeholder: (n: number) => string; // 1-based bound-parameter placeholder (only used with pkFilter)
 }
 
-// Row-level history before-image (A2): capture the CURRENT row for every batch row that will change.
-// INNER JOIN (not LEFT) so only rows present in BOTH the real table and the staged batch are captured
-// — a LEFT JOIN historised every absent row on each incremental load. Optional pkFilter scopes it to a
-// single primary key (the atomic degradation path, same transaction as that PK's merge).
+// Row-level history before-image (A2): capture the CURRENT row for every batch row that will
+// change. INNER JOIN (not LEFT) so only rows present in BOTH tables are captured — a LEFT JOIN
+// historised every absent row on each incremental load. pkFilter scopes it to one primary key
+// (the atomic degradation path, same transaction as that PK's merge).
 export function buildHistoryQuery(resolved: ResolvedHistory, schemaPrefix: string, hooks: HistoryHooks, pkFilter?: Record<string, any>): QueryInput {
     const q = hooks.quote;
     const table = getTrueTableName(resolved.table, resolved.stagingPrefix, resolved.historyTableSuffix);

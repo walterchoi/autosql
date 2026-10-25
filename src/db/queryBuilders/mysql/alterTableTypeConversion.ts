@@ -9,17 +9,14 @@ export function getUsingClause(columnName: string, oldType: string, newType: str
     if (oldType === newType) return q(columnName);
     assertSafeTypeToken(newType);
 
-    // BOOLEAN → NUMERIC
     if (isBoolean(oldType) && isNumeric(newType)) {
         return `UPDATE ${schemaPrefix}${q(tableName)} SET ${q(columnName)} = CASE WHEN ${q(columnName)} THEN 1 ELSE 0 END WHERE ${q(columnName)} IS NOT NULL;`;
     }
 
-    // NUMERIC → BOOLEAN
     if (isNumeric(oldType) && isBoolean(newType)) {
         return `UPDATE ${schemaPrefix}${q(tableName)} SET ${q(columnName)} = CASE WHEN ${q(columnName)} = 1 THEN TRUE ELSE FALSE END WHERE ${q(columnName)} IS NOT NULL;`;
     }
 
-    // TEXT → BOOLEAN
     if (isText(oldType) && isBoolean(newType)) {
         return `UPDATE ${schemaPrefix}${q(tableName)} SET ${q(columnName)} = 
                     CASE 
@@ -30,22 +27,18 @@ export function getUsingClause(columnName: string, oldType: string, newType: str
                 WHERE ${q(columnName)} IS NOT NULL;`;
     }
 
-    // INTEGER → FLOATING POINT
     if (isInteger(oldType) && isFloating(newType)) {
         return `UPDATE ${schemaPrefix}${q(tableName)} SET ${q(columnName)} = ${q(columnName)} * 1.0 WHERE ${q(columnName)} IS NOT NULL;`;
     }
 
-    // FLOATING POINT → INTEGER
     if (isFloating(oldType) && isInteger(newType)) {
         return `UPDATE ${schemaPrefix}${q(tableName)} SET ${q(columnName)} = ROUND(${q(columnName)}) WHERE ${q(columnName)} IS NOT NULL;`;
     }
 
-    // TEXT → NUMERIC
     if (isText(oldType) && isNumeric(newType)) {
         return `UPDATE ${schemaPrefix}${q(tableName)} SET ${q(columnName)} = NULLIF(${q(columnName)}, '') WHERE ${q(columnName)} IS NOT NULL;`;
     }
 
-    // TEXT → DATE/TIME
     if (isText(oldType) && newType === "datetime") {
         return `UPDATE ${schemaPrefix}${q(tableName)} SET ${q(columnName)} = STR_TO_DATE(${q(columnName)}, '%Y-%m-%d %H:%i:%s') WHERE ${q(columnName)} IS NOT NULL;`;
     }

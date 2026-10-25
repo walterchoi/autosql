@@ -6,8 +6,7 @@ import { getAddPrimaryKeyQuery } from "../shared/indexBuilderShared";
 const q = (name: string) => escapeIdentifier(name, "sqlserver");
 const lit = (value: string | number | boolean) => escapeLiteral(value, "sqlserver");
 
-// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
-// no-extraneous-class).
+// A namespace of related query builders, not a data constant — see no-extraneous-class.
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export const SqlServerIndexQueryBuilder = {
     getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
@@ -39,7 +38,6 @@ export const SqlServerIndexQueryBuilder = {
     },
 
     getViewDependenciesQuery(table: string, schema?: string): QueryInput {
-        // Match views whose definition (sys.sql_modules) references the table name.
         return {
             query: schema
                 ? `SELECT v.name AS viewname
@@ -82,8 +80,6 @@ export const SqlServerIndexQueryBuilder = {
     },
 
     getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
-        // Unique indexes, columns comma-joined via STRING_AGG. Table is @p0; optional schema/column
-        // filters follow as subsequent @p placeholders in params-array order.
         let query = `
             SELECT i.name AS index_name, STRING_AGG(c.name, ', ') AS columns
             FROM sys.indexes i

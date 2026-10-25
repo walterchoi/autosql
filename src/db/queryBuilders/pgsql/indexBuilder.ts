@@ -5,8 +5,7 @@ import { getAddPrimaryKeyQuery } from "../shared/indexBuilderShared";
 
 const q = (name: string) => escapeIdentifier(name, "pgsql");
 
-// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
-// no-extraneous-class).
+// A namespace of related query builders, not a data constant — see no-extraneous-class.
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export const PostgresIndexQueryBuilder = {
     getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
@@ -65,10 +64,9 @@ export const PostgresIndexQueryBuilder = {
     },
 
     getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
-        // `schema` was accepted but never applied (caught by no-unused-vars): pg_class.relname is NOT
-        // schema-qualified, so without filtering by pg_namespace this could match a same-named table's
-        // index in a DIFFERENT schema. MySQL's sibling already scopes by table_schema; this now does
-        // the equivalent via pg_namespace.
+        // pg_class.relname isn't schema-qualified, so without the pg_namespace join this could
+        // match a same-named table's index in a DIFFERENT schema (MySQL's sibling already scopes
+        // by table_schema).
         let query = `
             SELECT i.relname AS index_name, array_to_string(array_agg(a.attname), ', ') AS columns
             FROM pg_index ix
