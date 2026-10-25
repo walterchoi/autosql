@@ -26,8 +26,7 @@ export class MySQLDatabase extends Database {
     }
 
     establishDatabaseConnection(): Promise<void> {
-        // Synchronous (require + createPool), but callers rely on this rejecting rather than
-        // throwing (same contract as every other dialect's awaited implementation).
+        // Synchronous, but wrapped so a throw here rejects like every other dialect's implementation.
         try {
             let mysql: any;
             try {
@@ -153,10 +152,8 @@ export class MySQLDatabase extends Database {
             await client.query('SELECT RELEASE_LOCK(?)', [lockKey]);
             client.release();
         } catch (error) {
-            // RELEASE_LOCK failed: the lock may still be held on this connection, so returning it to
-            // the pool would hand the next caller a lock-holding connection. Destroy it instead —
-            // MySQL releases session locks on connection close, and the pool replaces it. Releasing a
-            // lock is cleanup, so a failure here is logged, not thrown.
+            // RELEASE_LOCK failed: destroy the connection rather than return it to the pool still
+            // holding the lock — MySQL releases session locks on connection close. Logged, not thrown.
             this.warn(`releaseSchemaLock: failed to release schema lock for '${table}'; destroying the connection so a lock-holding connection is not returned to the pool — ${error instanceof Error ? error.message : String(error)}`);
             try { client.destroy(); } catch { /* connection already broken */ }
         }
@@ -186,9 +183,9 @@ export class MySQLDatabase extends Database {
         try {
             client = await (this.connection as Pool).getConnection();
     
-            // Use PREPARE to validate syntax without executing
+            // PREPARE validates syntax without executing.
             await client.query(`PREPARE stmt FROM ?`, [query]);
-            await client.query(`DEALLOCATE PREPARE stmt`); // Cleanup
+            await client.query(`DEALLOCATE PREPARE stmt`);
     
             return { success: true };
         } catch (error: any) {
@@ -284,7 +281,6 @@ export class MySQLDatabase extends Database {
         const isStagingTable = table.startsWith(stagingPrefix);
         const alterPrimaryKey = (this.config.updatePrimaryKey ?? false) && !isStagingTable;
         if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
-            // If old headers are provided in MetadataHeader format, compare them with newHeaders
             if (!newHeaders) {
                 throw new Error("Missing new headers for ALTER TABLE query");
             }

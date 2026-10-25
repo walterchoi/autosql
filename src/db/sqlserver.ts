@@ -85,10 +85,7 @@ export class SqlServerDatabase extends Database {
         } catch {
             throw new Error("Missing required dependency 'mssql'. Please install it to use SqlServerDatabase.");
         }
-        // Map the driver-agnostic `ssl` option onto tedious/mssql TLS options (options.encrypt,
-        // options.trustServerCertificate, options.cryptoCredentialsDetails); see sqlServerTlsOptions.
-        // Omitted/false keeps the local-container default (no forced TLS, trust the self-signed cert)
-        // so existing behaviour and the test harness are unchanged.
+        // See sqlServerTlsOptions for the `ssl` -> tedious/mssql options mapping.
         const sslOptions = this.sqlServerTlsOptions();
         const pool = new this.sql.ConnectionPool({
             server: this.config.host || "localhost",
@@ -164,10 +161,8 @@ export class SqlServerDatabase extends Database {
     }
 
     public async bulkLoadRows(table: string, columns: string[], rows: any[][], header?: MetadataHeader): Promise<QueryResult> {
-        // TDS bulk-copy via the mssql `request.bulk` API — the same wire path as BULK INSERT, but with
-        // no server-side file. It needs a fully-typed sql.Table, derived from the column metadata. Any
-        // failure here (unsupported type/value, driver quirk) throws; bulkLoadStaging catches it and
-        // falls back to parameterised INSERT, so correctness never depends on this fast path (spec-4 §3.5).
+        // TDS bulk-copy via mssql's `request.bulk` — same wire path as BULK INSERT, no server-side
+        // file. Any failure here throws; bulkLoadStaging catches it and falls back to INSERT (spec-4 §3.5).
         const start = new Date();
         if (!this.connection) await this.establishConnection();
         if (rows.length === 0) return { start, end: new Date(), duration: 0, success: true, affectedRows: 0 };

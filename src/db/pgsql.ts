@@ -26,8 +26,7 @@ export class PostgresDatabase extends Database {
     }
 
     establishDatabaseConnection(): Promise<void> {
-        // Synchronous (require + new Pool), but callers rely on this rejecting rather than
-        // throwing (same contract as every other dialect's awaited implementation).
+        // Synchronous, but wrapped so a throw here rejects like every other dialect's implementation.
         try {
             // eslint-disable-next-line @typescript-eslint/naming-convention -- a module/class reference, not data
             let Pg: typeof pg;
@@ -160,9 +159,8 @@ export class PostgresDatabase extends Database {
             await client.query('SELECT pg_advisory_unlock($1, $2)', [lockKey1, lockKey2]);
             client.release();
         } catch (error) {
-            // Unlock failed: destroy the connection instead of returning a lock-holding one to the
-            // pool. Postgres releases session advisory locks on session end, so release(true)
-            // (destroy) guarantees the lock is dropped. Cleanup, so logged not thrown.
+            // Unlock failed: destroy the connection (release(true)) rather than return a lock-holding
+            // one to the pool — Postgres releases session advisory locks on session end. Logged, not thrown.
             this.warn(`releaseSchemaLock: failed to release schema lock for '${table}'; destroying the connection so a lock-holding connection is not returned to the pool — ${error instanceof Error ? error.message : String(error)}`);
             try { client.release(true); } catch { /* connection already broken */ }
         }
@@ -198,12 +196,12 @@ export class PostgresDatabase extends Database {
                 query.trim().toLowerCase().startsWith("delete")
             ) {
                 await client.query(`PREPARE validate_stmt AS ${query}`);
-                await client.query(`DEALLOCATE validate_stmt`); // Cleanup
+                await client.query(`DEALLOCATE validate_stmt`);
             } else {
-                // Use a transaction with ROLLBACK for DDL queries (CREATE TABLE, ALTER TABLE)
+                // DDL (CREATE/ALTER) can't be PREPAREd — validate inside a transaction and roll back.
                 await client.query("BEGIN;");
                 await client.query(query);
-                await client.query("ROLLBACK;"); // Prevent execution
+                await client.query("ROLLBACK;");
             }
     
             return { success: true };
