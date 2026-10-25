@@ -75,9 +75,9 @@ const PROMOTED_RULES = {
     // Four unrelated one-offs: utilities.ts's `Boolean` -> `boolean`; its `normalizeResultKeys<T>`
     // dropped the single-use generic (callers never relied on it narrowing the return type, which
     // was always the wider Record<string, any>); escape.ts's renderColumnDefault now throws a
-    // clear error for a column default that isn't string/number/boolean/null/undefined instead of
-    // silently stringifying an object to '[object Object]' into a raw SQL DEFAULT clause (every
-    // real caller only ever passes one of those five, per tests); worker.ts's bare `Function` for
+    // clear error for a column default that isn't string/number/bigint/boolean/null/undefined
+    // instead of silently stringifying an object to '[object Object]' into a raw SQL DEFAULT
+    // clause (every real caller only ever passes one of those six, per tests); worker.ts's bare `Function` for
     // the dynamic autoSQLHandler method dispatch got a real `(...args: any[]) => any` signature.
     "@typescript-eslint/no-wrapper-object-types": "error",
     "@typescript-eslint/no-unnecessary-type-parameters": "error",

@@ -125,9 +125,9 @@ export function renderColumnDefault(value: unknown, dialectConfig: DialectConfig
         return dialectConfig.defaultTranslation[value];
     }
     if (value === null || value === undefined) return "NULL";
-    if (typeof value === "boolean" || typeof value === "number") return String(value);
+    if (typeof value === "boolean" || typeof value === "number" || typeof value === "bigint") return String(value);
     if (typeof value !== "string") {
-        throw new Error(`Unsupported column default value of type '${typeof value}'; expected a string, number, boolean, null, or undefined.`);
+        throw new Error(`Unsupported column default value of type '${typeof value}'; expected a string, number, bigint, boolean, null, or undefined.`);
     }
     assertSafeDefaultExpression(value);
     return value;
