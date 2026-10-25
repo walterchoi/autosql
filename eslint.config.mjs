@@ -89,7 +89,12 @@ const PROMOTED_RULES = {
     // (`queryOrParams: QueryInput`) covers both. Not part of the public API (protected, and
     // src/index.ts doesn't re-export these dialect classes), so narrowing callers from
     // `Promise<any>` to the real `Promise<{ rows, affectedRows }>` is a pure improvement.
-    "@typescript-eslint/unified-signatures": "error"
+    "@typescript-eslint/unified-signatures": "error",
+    // All 3 flagged sites are deliberate: MySQL's identifier-length limit (and this schema-lock-key
+    // truncation, which must match it) counts Unicode code points, not UTF-16 units — spreading a
+    // string is exactly the mechanism for that, same reasoning no-require-imports's exceptions use.
+    // Scoped inline exceptions at each site instead of disabling the rule outright.
+    "@typescript-eslint/no-misused-spread": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common

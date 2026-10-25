@@ -42,6 +42,7 @@ export function escapeIdentifier(name: string, dialect: supportedDialects): stri
     let length: number;
     let unit: string;
     if (dialect === "pgsql") { length = Buffer.byteLength(name, "utf8"); unit = "bytes"; }
+    // eslint-disable-next-line @typescript-eslint/no-misused-spread -- deliberate code-point count, not UTF-16 units.
     else if (dialect === "mysql") { length = [...name].length; unit = "characters"; }
     else { length = name.length; unit = "characters"; }
     if (length > maxLen) {

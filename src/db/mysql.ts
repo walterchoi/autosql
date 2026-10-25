@@ -76,9 +76,11 @@ export class MySQLDatabase extends Database {
         const key = `${prefix}${table}`;
         // Measure/truncate by Unicode CODE POINTS (MySQL counts characters) on character boundaries so
         // truncation can't split a surrogate pair.
+        // eslint-disable-next-line @typescript-eslint/no-misused-spread -- deliberate code-point count, not UTF-16 units.
         if ([...key].length <= 64) return key;
         const hash = crypto.createHash("md5").update(key).digest("hex").slice(0, 8);
         const budget = 64 - prefix.length - 1 - hash.length; // 39 code points
+        // eslint-disable-next-line @typescript-eslint/no-misused-spread -- same code-point reasoning as above.
         const truncated = [...table].slice(0, budget).join("");
         return `${prefix}${truncated}_${hash}`;
     }
