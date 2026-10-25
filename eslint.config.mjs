@@ -40,14 +40,30 @@ export default tseslint.config(
                 ignoreRestSiblings: true
             }],
             "@typescript-eslint/no-explicit-any": "warn",
-            "@typescript-eslint/consistent-type-imports": "error",
-            // Tolerates BOTH conventions already in use at module scope (UPPER_CASE constants,
-            // camelCase constants — see the audit's table) rather than picking one; it exists to
-            // catch a THIRD, genuinely inconsistent form, not to relitigate the two in use today.
-            // Exported names are never auto-renamed (breaking change for consumers) regardless.
+            "@typescript-eslint/consistent-type-imports": "error"
+        }
+    },
+    {
+        // src/ only: Google TS style guide's scope-based naming rule. A module-level (file-scope)
+        // `const` MAY use CONSTANT_CASE regardless of whether it holds a primitive, object or array;
+        // a function/block-scoped binding MUST use camelCase, no exceptions. Chosen over Airbnb's
+        // export-based rule (UPPER_CASE only for guaranteed-immutable exports) because it's
+        // enforceable by the linter without relying on "is this part of the public API today" — a
+        // fact that can drift — and because autosql's module-scope consts (dialect config tables,
+        // permanent-error lists) are exactly the kind of fixed data CONSTANT_CASE is meant to flag
+        // as "do not mutate". NOT applied to tests/ (see below) — test files routinely declare
+        // fixture/config objects at module scope, where forcing CONSTANT_CASE is pure noise.
+        files: ["src/**/*.ts"],
+        rules: {
             "@typescript-eslint/naming-convention": [
-                "warn",
-                { selector: "variable", modifiers: ["const"], format: ["camelCase", "UPPER_CASE"] }
+                "error",
+                // A function assigned to a module-scope const (helper aliases like `const q = (name)
+                // => escapeIdentifier(...)`) is a function, not data — Google's rule exempts
+                // functions from CONSTANT_CASE regardless of scope. More specific than the plain
+                // "global const" selector below, so it wins where both would otherwise match.
+                { selector: "variable", modifiers: ["const"], types: ["function"], format: ["camelCase"], leadingUnderscore: "allow" },
+                { selector: "variable", modifiers: ["const", "global"], format: ["UPPER_CASE"], leadingUnderscore: "allow" },
+                { selector: "variable", format: ["camelCase"], leadingUnderscore: "allow" }
             ]
         }
     },
@@ -55,7 +71,14 @@ export default tseslint.config(
         files: ["tests/**/*.ts"],
         rules: {
             // Tests use `any` and `(handle as any)` freely and on purpose.
-            "@typescript-eslint/no-explicit-any": "off"
+            "@typescript-eslint/no-explicit-any": "off",
+            // Looser than src/: only catches a genuinely non-conforming local (snake_case, or a
+            // PascalCase local shadowing its own type name) — module-scope fixture/config consts in
+            // tests are NOT forced into CONSTANT_CASE the way src/'s rule forces them.
+            "@typescript-eslint/naming-convention": [
+                "error",
+                { selector: "variable", modifiers: ["const"], format: ["camelCase", "UPPER_CASE"], leadingUnderscore: "allow" }
+            ]
         }
     }
 );
