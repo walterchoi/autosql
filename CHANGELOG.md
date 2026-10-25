@@ -6,9 +6,25 @@
   schema. MySQL's sibling already scopes by `table_schema`; every `PgDatabase` caller already passes
   `this.getConfig().schema`, so this was live whenever a schema is configured, not theoretical. Found
   while standing up a linter (`no-unused-vars`).
-- **`npm run lint` now exists** (ESLint, flat config). 5 of 7 rules enforced as errors
-  (`no-floating-promises`, `no-misused-promises`, `await-thenable`, `no-unused-vars`,
-  `consistent-type-imports`); `no-explicit-any` and `naming-convention` stay at `warn`.
+- **`npm run lint` now exists** (ESLint, flat config), and `src/` enforces real standards rather
+  than a tolerant landing config: `strictTypeChecked` (102 rules) adopted wholesale instead of a
+  hand-picked set, with each rule's findings fixed and promoted to `error` one at a time (now
+  includes `no-unnecessary-type-assertion`, `return-await`, `no-confusing-void-expression`,
+  `require-await`, `prefer-const`/`no-var`, `use-unknown-in-catch-callback-variable`,
+  `no-dynamic-delete`, `prefer-reduce-type-parameter`, `no-redundant-type-constituents`,
+  `no-wrapper-object-types`, `no-unnecessary-type-parameters`, `no-base-to-string`,
+  `no-unsafe-function-type`, `unified-signatures`, and `no-misused-spread` — the last two needed a
+  design decision rather than a blind fix; `no-explicit-any`, `no-unnecessary-condition`, and
+  `no-non-null-assertion` stay `warn`, each its own future initiative). Module-scope constant
+  naming converged to Google's TS style guide's scope-based rule (`error` for `src/`). A config bug
+  meant `strictTypeChecked`'s own rule options (e.g. `return-await`'s stricter mode,
+  `consistent-type-imports` itself) were silently dropped or never applied; fixed.
+  - **Behavior notes from the mechanical fixes:** `renderColumnDefault` now throws a clear error
+    for a column default that isn't string/number/bigint/boolean/null/undefined, instead of
+    silently stringifying an object to `'[object Object]'` into a raw SQL `DEFAULT` clause.
+    `normalizeResultKeys` (exported via `internals.ts`) dropped its unused generic type parameter —
+    its return type was always the wider `Record<string, any>` regardless, so no caller narrowing
+    is lost.
 - **Coverage floor pinned in CI** (`jest.config.js` `coverageThreshold`) so statement/branch/
   function/line coverage can only go up from here, not slide silently.
 - Internal: the byte-identical `getAddPrimaryKeyQuery` body and the near-identical trailing
