@@ -96,9 +96,9 @@ export function fillColumnDefaults(schema: MetadataHeader): MetadataHeader {
 function getDataHeadersSync(data: Record<string, any>[], databaseConfig: DatabaseConfig): MetadataHeader {
     const sampling = databaseConfig.sampling;
     const samplingMinimum = databaseConfig.samplingMinimum;
-    let metaData : MetadataHeader = {};
+    const metaData : MetadataHeader = {};
     const allColumns = new Set<string>();
-    let metaDataInterim : metaDataInterim = {};
+    const metaDataInterim : metaDataInterim = {};
 
     if ((sampling !== undefined || samplingMinimum !== undefined) && (sampling === undefined || samplingMinimum === undefined)) {
         throw new Error("Both sampling percentage and sampling minimum must be provided together.");
@@ -562,10 +562,10 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
     const renameColumns: { oldName: string; newName: string }[] = [];
     const nullableColumns: string[] = [];
     const noLongerUnique: string[] = [];
-    let oldPrimaryKeys: string[] = [];
-    let newPrimaryKeys: string[] = [];
+    const oldPrimaryKeys: string[] = [];
+    const newPrimaryKeys: string[] = [];
     let primaryKeyChanges: string[] = [];
-    let renamedPrimaryKeys: { oldName: string; newName: string }[] = [];
+    const renamedPrimaryKeys: { oldName: string; newName: string }[] = [];
 
     for (const oldColumnName of Object.keys(oldHeaders)) {
         if (!newHeaders.hasOwnProperty(oldColumnName)) {
@@ -624,7 +624,7 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
         } else {
             const oldColumn = oldHeaders[columnName];
             let modified = false;
-            let modifiedColumn: ColumnDefinition = { ...oldColumn };
+            const modifiedColumn: ColumnDefinition = { ...oldColumn };
 
             const oldType = oldColumn.type ?? "varchar";
             const newType = newColumn.type ?? "varchar";

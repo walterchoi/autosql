@@ -51,7 +51,11 @@ const PROMOTED_RULES = {
     // consistency, or a public API callers already `await`/`.rejects.toThrow()`) uses explicit
     // Promise.resolve()/Promise.reject() instead of async, so a throw still surfaces as a
     // rejection rather than an uncaught throw.
-    "@typescript-eslint/require-await": "error"
+    "@typescript-eslint/require-await": "error",
+    // Pulled in via strictTypeChecked's eslint-recommended sub-block, not `@typescript-eslint/*`
+    // itself. Every flagged `let`/`var` was genuinely never reassigned.
+    "prefer-const": "error",
+    "no-var": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common

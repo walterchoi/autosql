@@ -463,7 +463,7 @@ export abstract class Database {
             return queryGroups.map(() => ({ start: now, end: now, duration: 0, success: false, error: msg }));
         }
         const results: QueryResult[] = [];
-        let running: Promise<void>[] = [];
+        const running: Promise<void>[] = [];
         // Cap concurrency at the connections actually AVAILABLE — the pool size minus any connections
         // this instance has pinned for held schema locks (A25b). At least 1 so a batch always progresses.
         const poolSize = Math.max(1, this.getMaxConnections() - this.getHeldSchemaLockCount())

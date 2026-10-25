@@ -186,7 +186,7 @@ export class StagingPipeline {
         for (let i = 0; i < allConflicts.length; i++) {
           const result = allConflicts[i];
           const table = conflictTables[i];
-          let tableConstraintsQueries : QueryInput[] = []
+          const tableConstraintsQueries : QueryInput[] = []
 
           const row = result?.results?.[0] || {};
           const violatingIndexes: string[] = [];

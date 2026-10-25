@@ -799,8 +799,6 @@ export class AutoSQLHandler {
         const useHistory = config.schemaHistory;
 
         try {
-            let affectedRows: number;
-            let insertResults: QueryResult[];
             let insertInput: InsertInput[];
 
             // Per-run instrumentation (QueryStats): wall-clock per phase. `perf` is monotonic and
@@ -813,7 +811,7 @@ export class AutoSQLHandler {
             try {
                 const tPrepare = perf();
                 insertInput = await this.prepareInsertData(table, data, schema, primaryKey, options);
-                let nestedInputs = await this.extractNestedInputs(insertInput);
+                const nestedInputs = await this.extractNestedInputs(insertInput);
                 insertInput = [...insertInput, ...nestedInputs];
                 phases.prepare = perf() - tPrepare;
 
@@ -862,10 +860,10 @@ export class AutoSQLHandler {
             }
 
             const tLoad = perf();
-            insertResults = await this.strategy.load({ insertInput, table, label: 'autoSQL' });
+            const insertResults = await this.strategy.load({ insertInput, table, label: 'autoSQL' });
             phases.load = perf() - tLoad;
 
-            affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
+            const affectedRows = insertResults.reduce((sum, res) => sum + (res.affectedRows || 0), 0);
             const allResults = insertResults.flatMap(res => res.results || []);
             const end = new Date();
             // Return the resolved schema (incl. managed dwh_*/surrogate columns) so callers can
@@ -1020,9 +1018,8 @@ export class AutoSQLHandler {
                     chunkInsertInput = lockedInsertInput.map(input => ({ ...input, data: chunk }));
                 }
 
-                let insertResults: QueryResult[];
                 const tLoad = perf();
-                insertResults = await this.strategy.load({ insertInput: chunkInsertInput, table, label: 'autoSQLChunked' });
+                const insertResults = await this.strategy.load({ insertInput: chunkInsertInput, table, label: 'autoSQLChunked' });
                 phases.load = (phases.load ?? 0) + (perf() - tLoad);
 
                 totalAffectedRows += insertResults.reduce((s, r) => s + (r.affectedRows || 0), 0);

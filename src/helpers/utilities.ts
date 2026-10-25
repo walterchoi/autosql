@@ -277,7 +277,7 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
     if (decimalSplit.length > 2) return null; // More than one decimal, invalid
 
     let preDecimal = decimalSplit[0];
-    let postDecimal = decimalSplit[1] || ""; // Optional decimal part
+    const postDecimal = decimalSplit[1] || ""; // Optional decimal part
 
     if (thousandsIndicator) {
         const thousandsSplit = preDecimal.split(thousandsIndicator);
@@ -614,7 +614,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
     const unallocatedColumns = { ...newColumns };
 
     while (Object.keys(unallocatedColumns).length > 0) {
-        for (var i = 0; i < Object.keys(unallocatedColumns).length; i++) {
+        for (let i = 0; i < Object.keys(unallocatedColumns).length; i++) {
             const currentTableData = newGroupedByTable[tableName] || { ...primaryKeys };
             const columnName = Object.keys(unallocatedColumns)[i]
             const columnDef = unallocatedColumns[columnName]

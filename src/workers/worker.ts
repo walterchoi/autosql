@@ -15,8 +15,7 @@ import type { AutoSQLHandler } from "../db/autosql";
 
     // Extract database config, method, and params
     const { dbConfig } = workerData;
-    let db : Database
-    db = Database.create(dbConfig);
+    const db: Database = Database.create(dbConfig);
     const autoSQL = db.autoSQLHandler;
 
     // Listener must return void, not a Promise (no-misused-promises) — the inner async body

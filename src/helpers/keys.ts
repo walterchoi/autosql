@@ -77,10 +77,10 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         const maxKeyLength = maxKeyLengthInput || DEFAULTS.maxKeyLength;
         let primaryKeyFound = false;
 
-        let requiredPrimaryKeys: string[] = [];
-        let potentialPrimaryKeys: string[] = [];
-        let potentialCompositeKeys: string[] = [];
-        let nullablePseudoUniqueColumns: string[] = [];
+        const requiredPrimaryKeys: string[] = [];
+        const potentialPrimaryKeys: string[] = [];
+        const potentialCompositeKeys: string[] = [];
+        const nullablePseudoUniqueColumns: string[] = [];
 
         // Key limits are in bytes, so a multibyte (CJK/emoji) value can exceed the limit even when its
         // char length looks fine. When sample data is available, capture each column's max byte length

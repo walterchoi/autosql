@@ -55,7 +55,7 @@ export const SqlServerTableQueryBuilder = {
     getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
         const maxIndexCount = DIALECT_CONFIG.maxIndexCount || 64;
         let remainingIndexSlots = maxIndexCount;
-        let sqlQueries: QueryInput[] = [];
+        const sqlQueries: QueryInput[] = [];
         const schema = databaseConfig?.schema || DEFAULT_SCHEMA;
         const schemaPrefix = `${q(schema)}.`;
         const primaryKeys: string[] = [];
@@ -120,7 +120,7 @@ export const SqlServerTableQueryBuilder = {
     },
 
     getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string, databaseConfig?: DatabaseConfig): QueryInput[] {
-        let queries: QueryInput[] = [];
+        const queries: QueryInput[] = [];
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const qualified = `${schemaPrefix}${q(table)}`;
 

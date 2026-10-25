@@ -14,12 +14,12 @@ export const MySQLTableQueryBuilder = {
     getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
         const maxIndexCount = DIALECT_CONFIG.maxIndexCount || 64;
         let remainingIndexSlots = maxIndexCount;
-        let sqlQueries: QueryInput[] = [];
+        const sqlQueries: QueryInput[] = [];
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         let sqlQuery = `CREATE TABLE IF NOT EXISTS ${schemaPrefix}${q(table)} (\n`;
-        let primaryKeys: string[] = [];
-        let uniqueKeys: string[] = [];
-        let indexes: string[] = [];
+        const primaryKeys: string[] = [];
+        const uniqueKeys: string[] = [];
+        const indexes: string[] = [];
     
         for (const [columnName, column] of Object.entries(headers)) {
             if (!column.type) throw new Error(`Missing type for column ${columnName}`);
@@ -87,8 +87,8 @@ export const MySQLTableQueryBuilder = {
     },
 
     getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string, databaseConfig?: DatabaseConfig): QueryInput[] {
-        let queries: QueryInput[] = [];
-        let alterStatements: string[] = [];
+        const queries: QueryInput[] = [];
+        const alterStatements: string[] = [];
     
         // Handle `DROP COLUMN`
         if(databaseConfig?.deleteColumns) {
