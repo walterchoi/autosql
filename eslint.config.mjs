@@ -59,7 +59,11 @@ const PROMOTED_RULES = {
     // Each site is a `.catch(e => ...)` logging callback — annotated the param `: unknown` and
     // narrowed with `instanceof Error` before reading `.message`, same pattern already used for
     // every other caught-error-to-string site in this codebase.
-    "@typescript-eslint/use-unknown-in-catch-callback-variable": "error"
+    "@typescript-eslint/use-unknown-in-catch-callback-variable": "error",
+    // Each site is `delete obj[computedKey]` on a per-column (not per-row) object — switched to
+    // `Reflect.deleteProperty` rather than restructuring to a Map, since none of these are
+    // performance-sensitive.
+    "@typescript-eslint/no-dynamic-delete": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common

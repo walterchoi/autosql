@@ -628,7 +628,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
                     newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table
                 }
                 newGroupedByTable[tableName][columnName] = columnDef;
-                delete unallocatedColumns[columnName]; // Remove from unallocated list
+                Reflect.deleteProperty(unallocatedColumns, columnName); // Remove from unallocated list
                 i--
             } else {
                 tableName = getNextTableName(tableName);

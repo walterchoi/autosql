@@ -442,7 +442,7 @@ function getDataHeadersSync(data: Record<string, any>[], databaseConfig: Databas
         .filter(([_, meta]) => meta.uniqueSet.size === 0 && meta.valueCount === 0 && meta.nullCount > 0)
         .map(([key]) => key);
     for (const key of emptyOrNullKeys) {
-        delete metaData[key];
+        Reflect.deleteProperty(metaData, key);
     }
 
     // A24c: warn once per run for columns that resolved to numeric AND carried an ambiguous
@@ -610,7 +610,7 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
             renamedPrimaryKeys.push({ oldName: oldColumnName, newName: newColumnName });
         }
         dropColumns.splice(dropColumns.indexOf(oldColumnName), 1);
-        delete newHeaders[newColumnName];
+        Reflect.deleteProperty(newHeaders, newColumnName);
     }
 
     for (const [columnName, newColumn] of Object.entries(newHeaders)) {
@@ -738,12 +738,12 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
     }
 
     for (const col of dropColumns) {
-        delete updatedMetaData[col];
+        Reflect.deleteProperty(updatedMetaData, col);
     }
 
     for (const { oldName, newName } of renameColumns) {
         updatedMetaData[newName] = updatedMetaData[oldName];
-        delete updatedMetaData[oldName];
+        Reflect.deleteProperty(updatedMetaData, oldName);
     }
 
     return {
