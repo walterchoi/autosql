@@ -21,7 +21,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         }
 
         const defaultConfig: DatabaseConfig = {
-            sqlDialect: config.sqlDialect, // Keep required field
+            sqlDialect: config.sqlDialect,
             pseudoUnique: DEFAULTS.pseudoUnique,
             categorical: DEFAULTS.categorical,
             autoIndexing: DEFAULTS.autoIndexing,
@@ -29,7 +29,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             inferAdditionalUniques: DEFAULTS.inferAdditionalUniques,
             sampling: DEFAULTS.sampling,
             samplingMinimum: DEFAULTS.samplingMinimum,
-            metaData: config.metaData || {}, // Ensuring headers remain intact
+            metaData: config.metaData || {},
             maxKeyLength: DEFAULTS.maxKeyLength,
             maxCompositeKeyColumns: DEFAULTS.maxCompositeKeyColumns,
             maxVarcharLength: DEFAULTS.maxVarcharLength,
@@ -91,9 +91,8 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         if (merged.streamMaxRetries !== undefined && merged.streamMaxRetries < 1) {
             throw new Error("streamMaxRetries must be at least 1.");
         }
-        // The base establishConnection opens the tunnel for every dialect, but only the mysql and
-        // pgsql drivers hand the stream to their driver. On SQL Server the tunnel was opened and then
-        // bypassed, so the connection went direct while the caller believed it was tunnelled.
+        // Only mysql/pgsql hand the SSH tunnel's stream to their driver; on SQL Server it would be
+        // opened then silently bypassed, connecting direct while the caller believes it's tunnelled.
         if (merged.sqlDialect === "sqlserver" && (merged.sshConfig || merged.sshStream)) {
             throw new Error(
                 "SSH tunnelling is not supported on SQL Server: the mssql driver is not given the tunnel's stream, "
@@ -109,8 +108,8 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             throw new Error("thousandsSeparator and decimalSeparator must be provided together.");
         }
         if (merged.numberFormat !== undefined) {
-            // Sugar: resolve to thousandsSeparator/decimalSeparator so it flows through the SAME fields
-            // sqlize already reads. IN shares US separators (lakh/crore grouping accepted by normalizeNumber).
+            // Sugar: resolves to thousandsSeparator/decimalSeparator, the fields sqlize reads. IN
+            // shares US separators (lakh/crore grouping is handled by normalizeNumber).
             const numberFormats: Record<string, { thousands: string; decimal: string }> = {
                 US: { thousands: ",", decimal: "." },
                 IN: { thousands: ",", decimal: "." },
@@ -120,16 +119,15 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             if (!preset) {
                 throw new Error(`Invalid numberFormat "${merged.numberFormat}": expected one of ${Object.keys(numberFormats).join(", ")}.`);
             }
-            // Explicit separators win; supplied together (enforced above) so checking one suffices.
-            // Only fill from the preset when the caller gave neither.
+            // Explicit separators win (checking one suffices — enforced above to be supplied together).
             if (merged.thousandsSeparator === undefined) {
                 merged.thousandsSeparator = preset.thousands;
                 merged.decimalSeparator = preset.decimal;
             }
         }
         if (merged.sourceTimeZone !== undefined) {
-            // Validate up front (fail loud). A bad zone would otherwise surface per-row inside sqlize's
-            // try/catch, which swallows and returns the raw value — silently skipping the conversion.
+            // Validate up front (fail loud) — a bad zone would otherwise surface per-row inside
+            // sqlize's try/catch, which swallows it and silently skips the conversion.
             try {
                 new Intl.DateTimeFormat("en-US", { timeZone: merged.sourceTimeZone });
             } catch {
@@ -193,13 +191,12 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         inputStr = tempinputStr;
     }
 
-    // Ensure `-` appears only at the start
     if (inputStr.includes("-") && inputStr.indexOf("-") !== 0) return null;
 
     const isNegative = inputStr.startsWith("-");
-    if (isNegative) inputStr = inputStr.slice(1); // Remove `-` temporarily for processing
+    if (isNegative) inputStr = inputStr.slice(1);
 
-    if (!inputStr || /[^0-9., `']/.test(inputStr)) return null; // Reject if non-numeric characters exist. Allowing ` and ' as part of the Swiss number format
+    if (!inputStr || /[^0-9., `']/.test(inputStr)) return null; // ` and ' allowed: Swiss number format
 
     const dotCount = (inputStr.match(/\./g) || []).length;
     let commaCount = (inputStr.match(/,/g) || []).length;
@@ -217,10 +214,10 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
     inputStr = inputStr.replace(/ /g, "");
 
     if (
-        !/\d/.test(inputStr) || // No digits present
-        (dotCount > 1 && commaCount > 1) || // Too many of both
-        inputStr.includes(".,") || inputStr.includes(",.") || // Misplaced combinations
-        /\d[.,]{2,}\d/.test(inputStr) // Double separators like "1..234"
+        !/\d/.test(inputStr) ||
+        (dotCount > 1 && commaCount > 1) ||
+        inputStr.includes(".,") || inputStr.includes(",.") ||
+        /\d[.,]{2,}\d/.test(inputStr) // double separators like "1..234"
     ) {
         return null;
     }
@@ -230,14 +227,16 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
     const firstDot = inputStr.indexOf(".");
     const lastDot = inputStr.lastIndexOf(".")
 
-    if (firstComma !== -1 && firstDot !== -1 && // Both exist
+    // Both separators present but their relative order is ambiguous (one repeats, or interleaves
+    // with the other) — can't tell which is the decimal point.
+    if (firstComma !== -1 && firstDot !== -1 &&
         (
-            (firstComma < firstDot && dotCount > 1) || // Comma first, but multiple dots
-            (firstDot < firstComma && commaCount > 1) || // Dot first, but multiple commas
-            (firstComma < firstDot && firstDot < lastComma) || // Comma first, but comma after first dot
-            (firstDot < firstComma && firstComma < lastDot) // Dot first, but dot after first comma
+            (firstComma < firstDot && dotCount > 1) ||
+            (firstDot < firstComma && commaCount > 1) ||
+            (firstComma < firstDot && firstDot < lastComma) ||
+            (firstDot < firstComma && firstComma < lastDot)
         )
-    ) 
+    )
     {
         return null;
     }
@@ -273,11 +272,11 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
     }
 
     const decimalSplit = inputStr.split(decimalIndicator);
-    
-    if (decimalSplit.length > 2) return null; // More than one decimal, invalid
+
+    if (decimalSplit.length > 2) return null;
 
     let preDecimal = decimalSplit[0];
-    const postDecimal = decimalSplit[1] || ""; // Optional decimal part
+    const postDecimal = decimalSplit[1] || "";
 
     if (thousandsIndicator) {
         const thousandsSplit = preDecimal.split(thousandsIndicator);
@@ -297,7 +296,7 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
                 (i === 0 ? part.length <= 2 : i === thousandsSplit.length - 1 ? part.length === 3 : part.length === 2)
             );
 
-            if (!isWesternFormat && !isIndianFormat) return null; // Reject if it fits neither
+            if (!isWesternFormat && !isIndianFormat) return null;
         }
         preDecimal = thousandsSplit.join("");
     }
@@ -311,7 +310,7 @@ export function mergeColumnLengths(lengthA?: string, lengthB?: string): string |
 
     const parseLength = (length: string) => {
         const parts = length.split(",").map(Number);
-        return parts.length === 2 ? parts : [parts[0], 0]; // Ensure decimal part exists
+        return parts.length === 2 ? parts : [parts[0], 0];
     };
 
     const [lenA, decA] = lengthA ? parseLength(lengthA) : [0, 0];
@@ -321,7 +320,7 @@ export function mergeColumnLengths(lengthA?: string, lengthB?: string): string |
 }
 
 export function setToArray<T>(inputSet: Set<T>): T[] {
-    return [...inputSet]; // Spread operator converts Set to an array
+    return [...inputSet];
 }
 
 export function parseDatabaseLength(lengthStr?: string): { length?: number; decimal?: number } {
@@ -335,7 +334,7 @@ export function parseDatabaseLength(lengthStr?: string): { length?: number; deci
 }
 
 export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig ): MetadataHeader | Record<string, MetadataHeader> | null {
-    if (!rows || rows.length === 0) return null; // Return null if no data
+    if (!rows || rows.length === 0) return null;
 
     const hasTableName = rows.some(row => "table_name" in row || "TABLE_NAME" in row);
     const hasNoTableName = rows.some(row => !("table_name" in row) && !("TABLE_NAME" in row));
@@ -352,7 +351,7 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
             return acc;
         }, {});
 
-        if (!normalizedRow.column_name) return; // Skip invalid rows
+        if (!normalizedRow.column_name) return;
 
         const lengthInfo = parseDatabaseLength(String(normalizedRow["length"]));
         const serverType = normalizedRow["data_type"].toLowerCase();
@@ -454,17 +453,17 @@ export function tableChangesExist(alterTableChanges: AlterTableChanges): boolean
 
 export function isMetadataHeader(input: any): input is MetadataHeader {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
-        return false; // Must be a non-null object
+        return false;
     }
 
     for (const key in input) {
-        if (typeof key !== "string") return false; // Keys must be strings
+        if (typeof key !== "string") return false;
 
         const column = input[key];
 
         if (
             typeof column !== "object" || column === null ||
-            (!("type" in column) || typeof column.type !== "string") // "type" required, must be a string
+            (!("type" in column) || typeof column.type !== "string")
         ) {
             return false;
         }
@@ -483,7 +482,7 @@ export function isMetadataHeader(input: any): input is MetadataHeader {
         }
     }
 
-    return true; // Passed all checks
+    return true;
 }
 
 export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supportedDialects): { rowSize: number; exceedsLimit: boolean, nearlyExceedsLimit: boolean } {
@@ -569,11 +568,11 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
     } else {
         const parsedMetadata = parseDatabaseMetaData(currentMetaData, dialectConfig);
         if (!parsedMetadata) {
-            normalizedMetaData = { [table]: {} }; // Ensure valid structure
+            normalizedMetaData = { [table]: {} };
         } else if (Object.values(parsedMetadata).some(value => typeof value === "object" && !Array.isArray(value))) {
-            normalizedMetaData = parsedMetadata as Record<string, MetadataHeader>; // Multiple tables
+            normalizedMetaData = parsedMetadata as Record<string, MetadataHeader>; // multiple tables
         } else {
-            normalizedMetaData = { [table]: parsedMetadata as MetadataHeader }; // Single table
+            normalizedMetaData = { [table]: parsedMetadata as MetadataHeader }; // single table
         }
     }
 
@@ -628,7 +627,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
                     newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table
                 }
                 newGroupedByTable[tableName][columnName] = columnDef;
-                Reflect.deleteProperty(unallocatedColumns, columnName); // Remove from unallocated list
+                Reflect.deleteProperty(unallocatedColumns, columnName);
                 i--
             } else {
                 tableName = getNextTableName(tableName);
@@ -692,10 +691,10 @@ export function sanitizeString(value: string): string {
 
 export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig?: DialectConfig, databaseConfig?: DatabaseConfig, sqlizeValues: boolean = false): any[] {
     const sanitize = databaseConfig?.sanitizeInvalidChars === true;
-        // In surrogate-key mode the auto-increment column is DB-generated, so omit it from the value
-        // list (Postgres rejects NULL into a BIGSERIAL NOT NULL). Gated on `surrogateKey` because a
-        // genuine AUTO_INCREMENT PK is also autoIncrement:true and callers legitimately upsert values
-        // for it. Insert builders gate the column list the same way, keeping columns and params aligned.
+    // Surrogate key is DB-generated, so omit it (Postgres rejects NULL into a BIGSERIAL NOT NULL).
+    // Gated on `surrogateKey`, not just autoIncrement — a genuine AUTO_INCREMENT PK is also
+    // autoIncrement:true and callers legitimately upsert values for it. Insert builders gate the
+    // column list the same way, keeping columns and params aligned.
     const excludeAutoIncrement = databaseConfig?.surrogateKey === true;
     const newRow = Object.entries(metaData)
       .filter(([, meta]) => !(excludeAutoIncrement && meta.autoIncrement === true))
@@ -717,8 +716,8 @@ export function getInsertValues(metaData: MetadataHeader, row: Record<string, an
       } else {
         out = value;
       }
-      // After value resolution so it covers both raw and sqlized paths; strings only. The driver still
-      // parameter-binds, so this is about storability, not escaping.
+      // After value resolution so it covers both raw and sqlized paths. About storability, not
+      // escaping — the driver still parameter-binds.
       if (sanitize && typeof out === "string") {
         out = sanitizeString(out);
       }
@@ -854,12 +853,11 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
                 } else if (typeof value === "object") {
                     return JSON.stringify(value);
                 } else {
-                    // Unexpected type (number, boolean, etc.)
                     return JSON.stringify({ value });
                 }
             } catch (err: any) {
                 databaseConfig?.logger?.warn?.(`[sqlize] Failed to handle JSON value for column: ${JSON.stringify({ value, error: err.message || String(err) })}`);
-                return null; // Fallback to NULL if unusable
+                return null;
             }
         }
         
@@ -913,13 +911,13 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
 }
   
 export function getNextTableName(tableName: string): string {
-    const match = tableName.match(/^(.*?)(__part_(\d+))?$/); // Match `table__part_001`
+    const match = tableName.match(/^(.*?)(__part_(\d+))?$/); // matches `table__part_001`
     if (match && match[3]) {
-        const baseName = match[1]; // Extract "table"
-        const num = parseInt(match[3], 10) + 1; // Increment existing number
-        return `${baseName}__part_${String(num).padStart(3, "0")}`; // Zero-padded
+        const baseName = match[1];
+        const num = parseInt(match[3], 10) + 1;
+        return `${baseName}__part_${String(num).padStart(3, "0")}`;
     }
-    return `${tableName}__part_001`; // If no number exists, start at __part_001
+    return `${tableName}__part_001`;
 };
 
 export function getTempTableName(tableName: string, stagingPrefix = "temp_staging__"): string {

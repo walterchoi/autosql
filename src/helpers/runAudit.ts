@@ -2,10 +2,9 @@ import type { Database } from '../db/database';
 import type { DatabaseConfig } from '../config/types';
 import { escapeIdentifier, escapeLiteral } from '../db/utils/escape';
 
-// Persisted run-audit table (F1): the engine writes one row per top-level load to a managed table, the
-// same bootstrap-a-table + write-a-row pattern as schemaHistory but for RUNS, not DDL. Opt-in via
-// `runAudit`. DIVERGENCE from schemaHistory: everything here is BEST-EFFORT — a failed bootstrap or insert
-// warns and returns, never throwing into the load (an observability feature must never cause an outage).
+// Persisted run-audit table (F1): one row per top-level load, same bootstrap+write pattern as
+// schemaHistory but for RUNS not DDL. Opt-in via `runAudit`. Unlike schemaHistory, everything here
+// is BEST-EFFORT — a failed bootstrap/insert warns and returns, never throws into the load.
 
 /** One run-audit row. Built at each entry point from QueryStats (success) or a partial (failure). */
 export interface RunAuditInput {
@@ -31,9 +30,8 @@ function runAuditTableRef(config: DatabaseConfig): string {
     return schema ? `${escapeIdentifier(schema, dialect)}.${t}` : t;
 }
 
-// Bootstrap — CREATE TABLE IF NOT EXISTS, per dialect (three real branches: pgsql ≠ sqlserver). The core
-// metrics are typed scalar columns so they're queryable without JSON functions. Best-effort: warns and
-// returns on failure (does NOT throw — unlike schemaHistory's fail-loud bootstrap).
+// CREATE TABLE IF NOT EXISTS, per dialect. Core metrics are typed scalar columns so they're
+// queryable without JSON functions.
 async function bootstrapRunAuditTable(db: Database): Promise<void> {
     const ref = runAuditTableRef(db.getConfig());
     const dialect = db.getConfig().sqlDialect;
