@@ -8,12 +8,10 @@ import type { AutoSQLHandler } from "../db/autosql";
 // synchronous throw is still caught by the try/catch right below.
 (() => {
   try {
-    // Ensure workerData is received properly
     if (!workerData || !workerData.dbConfig) {
       throw new Error("workerData is missing or invalid! Ensure it's passed correctly.");
     }
 
-    // Extract database config, method, and params
     const { dbConfig } = workerData;
     const db: Database = Database.create(dbConfig);
     const autoSQL = db.autoSQLHandler;

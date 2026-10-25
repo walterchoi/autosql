@@ -4,16 +4,14 @@ import type { Client, ClientChannel } from "ssh2";
 import type * as ssh2 from "ssh2";
 import type { SSHKeys, DatabaseConfig } from "../config/types";
 
-// OpenSSH-format host-key fingerprint: "SHA256:" + base64(sha256(keyblob)) with padding stripped —
-// the exact form `ssh-keyscan host | ssh-keygen -lf -` prints, so a user can supply what they can
-// actually obtain. `key` is the raw host-key buffer ssh2 hands the hostVerifier.
+// OpenSSH-format host-key fingerprint: "SHA256:" + base64(sha256(keyblob)), padding stripped —
+// matches what `ssh-keyscan host | ssh-keygen -lf -` prints, so users can supply what they have.
 export function sshHostKeyFingerprint(key: Buffer): string {
     return "SHA256:" + crypto.createHash("sha256").update(key).digest("base64").replace(/=+$/, "");
 }
 
-// Compare a presented host key to an expected fingerprint. Tolerant of the optional "SHA256:" prefix
-// and trailing base64 padding on the expected value; base64 is case-sensitive so the digest itself is
-// NOT lower-cased.
+// Tolerant of the optional "SHA256:" prefix and padding on the expected value; base64 is
+// case-sensitive, so the digest itself is NOT lower-cased.
 export function fingerprintMatches(key: Buffer, expected: string): boolean {
     const norm = (fp: string) => fp.trim().replace(/^SHA256:/i, "").replace(/=+$/, "");
     return norm(sshHostKeyFingerprint(key)) === norm(expected);
@@ -63,10 +61,9 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
     })
   };
 
-  // Host-key verification (A7). ssh2 does NO host-key verification without a `hostVerifier` — it
-  // accepts whatever key the server presents, so the tunnel protecting the DB credentials is silently
-  // MITM-able. When the caller pins a fingerprint, verify and refuse a mismatch; otherwise warn loudly
-  // that verification is off (parity with the TLS `rejectUnauthorized: false` warning).
+  // Host-key verification (A7). ssh2 does no verification without a `hostVerifier` — it accepts
+  // whatever key the server presents, silently MITM-able. Verify and refuse a mismatch when
+  // pinned; otherwise warn loudly (parity with the TLS `rejectUnauthorized: false` warning).
   if (sshKeys.hostFingerprint) {
     sshConfig.hostVerifier = (key: Buffer): boolean => {
       const ok = fingerprintMatches(key, sshKeys.hostFingerprint!);

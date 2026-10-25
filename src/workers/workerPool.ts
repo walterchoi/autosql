@@ -2,9 +2,8 @@ import { Worker } from "worker_threads";
 import { resolve } from "path";
 import { existsSync } from "fs";
 
-// Config reaches a worker via `workerData` (structured clone), which can't serialise functions or
-// live handles, so strip them (A8): a `logger` or live `sshClient`/`sshStream` would throw
-// DataCloneError and crash the default-on worker path. The worker re-derives from `sshConfig`.
+// workerData is a structured clone, which can't carry functions/live handles — strip logger/
+// sshClient/sshStream (A8) or spawning throws DataCloneError. The worker re-derives from `sshConfig`.
 export function stripNonCloneable(config: any): any {
   if (!config || typeof config !== "object") return config;
   const { logger, sshClient, sshStream, ...cloneable } = config;
@@ -32,16 +31,15 @@ class WorkerPool {
   private closed = false;
   private dbConfig: any;
 
-  // `workerFile` override is for tests only (point the pool at a crash fixture);
-  // production always resolves the compiled worker next to this module.
+  // `workerFile` override is test-only (points at a crash fixture); production resolves the
+  // compiled worker next to this module.
   constructor(size: number, dbConfig: any, workerFile?: string) {
     // Sanitise ONCE up front so every spawned worker gets a cloneable config (A8).
     this.dbConfig = stripNonCloneable(dbConfig);
     this.workerFile = workerFile ?? resolve(__dirname, "worker.js");
 
-    // Per-task timeout (config in SECONDS -> ms), 0/undefined disables. The no-hang guarantee does
-    // NOT depend on this, since 'error'/'exit' always catch worker death; this only guards an
-    // alive-but-wedged worker. Off by default so a long batch isn't spuriously failed.
+    // Per-task timeout (SECONDS -> ms), 0/undefined disables. Only guards an alive-but-wedged
+    // worker — 'error'/'exit' already catch worker death — so off by default.
     const timeoutSec = Number(this.dbConfig?.workerTaskTimeout) || 0;
     this.taskTimeoutMs = timeoutSec > 0 ? timeoutSec * 1000 : 0;
 
@@ -70,16 +68,14 @@ class WorkerPool {
     });
 
     worker.on("error", (err) => {
-      // Uncaught error inside the worker. Node emits 'exit' immediately after;
-      // failWorker is idempotent so the follow-up 'exit' is a harmless no-op.
+      // Node emits 'exit' right after; failWorker is idempotent so that follow-up is a no-op.
       this.failWorker(worker, err?.message || String(err));
     });
 
     worker.on("exit", (code) => {
       if (this.closed) return; // expected teardown from close()
-      // Worker stopped without returning a result — terminate(), OOM, a native
-      // crash, or process.exit inside the worker. Without this handler the task's
-      // resolver would never fire and WorkerHelper.run would hang the whole load.
+      // Worker died without a result (terminate()/OOM/crash/process.exit) — without this, the
+      // task's resolver never fires and the load hangs.
       this.failWorker(worker, `Worker stopped unexpectedly (exit code ${code}) before returning a result`);
     });
 
@@ -124,8 +120,6 @@ class WorkerPool {
   private handleTimeout(worker: Worker): void {
     // Only act if this worker still owns the task we timed (it may have just replied).
     if (!this.workerPending.has(worker)) return;
-    // Fail the wedged task and tear the worker down. failWorker settles it and
-    // drops it from rotation; terminate() there fires 'exit' (idempotent).
     this.failWorker(worker, `Worker task timed out after ${this.taskTimeoutMs} ms`);
   }
 
@@ -135,15 +129,13 @@ class WorkerPool {
    * 'error' is followed by 'exit'.
    */
   private failWorker(worker: Worker, reason: string): void {
-    // No-op if already settled.
     this.settleWorker(worker, { success: false, error: reason });
     this.workers = this.workers.filter((w) => w !== worker);
     this.idleWorkers = this.idleWorkers.filter((w) => w !== worker);
     // Ensure the OS thread is gone (no-op if it already exited).
     worker.terminate().catch(() => {});
 
-    // Pool is now empty: nothing will ever drain the queue, so fail it all rather
-    // than leave those resolvers hanging forever.
+    // Pool is empty — nothing will ever drain the queue, so fail it all rather than hang forever.
     if (this.workers.length === 0 && this.pendingTasks.length > 0) {
       const orphaned = this.pendingTasks.splice(0, this.pendingTasks.length);
       for (const task of orphaned) {
@@ -154,9 +146,8 @@ class WorkerPool {
 
   runTask(method: string, params: any): Promise<any> {
     return new Promise((resolve) => {
-      // Every worker has already died: fail fast instead of queueing a task that
-      // nothing is left to pick up (this is the path WorkerHelper hits when it
-      // dispatches the next task after a crash settled the previous one).
+      // Every worker died: fail fast rather than queue a task nothing will pick up (the path
+      // WorkerHelper hits dispatching the next task right after a crash settled the previous one).
       if (this.workers.length === 0) {
         resolve({ success: false, error: "Worker pool has no live workers" });
         return;
@@ -180,9 +171,9 @@ class WorkerPool {
     const workers = this.workers;
     this.workers = [];
     this.idleWorkers = [];
-    // Ask each worker to close its DB connections first, then terminate — so pooled server-side
-    // connections are released gracefully instead of leaked on an abrupt kill (A14). Bounded, so a
-    // wedged worker can't hang teardown. (Crash/timeout paths in failWorker still terminate abruptly.)
+    // Ask each worker to close DB connections first, then terminate — releases pooled server-side
+    // connections gracefully instead of leaking on an abrupt kill (A14). Bounded so a wedged
+    // worker can't hang teardown.
     await Promise.all(workers.map((w) => this.gracefulTerminate(w, graceMs)));
   }
 
