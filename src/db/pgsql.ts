@@ -26,37 +26,43 @@ export class PostgresDatabase extends Database {
     }
 
     establishDatabaseConnection(): Promise<void> {
-        // eslint-disable-next-line @typescript-eslint/naming-convention -- a module/class reference, not data
-        let Pg: typeof pg;
+        // Synchronous (require + new Pool), but callers rely on this rejecting rather than
+        // throwing (same contract as every other dialect's awaited implementation).
         try {
-            // Lazy require, not a static import: pg is an OPTIONAL peer dependency — a static import
-            // would force every consumer to install all three drivers.
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            Pg = require("pg");
-        } catch {
-            throw new Error("Missing required dependency 'pg'. Please install it to use PgDatabase.");
-        }
+            // eslint-disable-next-line @typescript-eslint/naming-convention -- a module/class reference, not data
+            let Pg: typeof pg;
+            try {
+                // Lazy require, not a static import: pg is an OPTIONAL peer dependency — a static import
+                // would force every consumer to install all three drivers.
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                Pg = require("pg");
+            } catch {
+                throw new Error("Missing required dependency 'pg'. Please install it to use PgDatabase.");
+            }
 
-        // TLS passthrough. pg accepts `ssl: true` and an `ssl` object (ca/cert/key/rejectUnauthorized/
-        // servername) directly, so pass through unchanged. Omitted → no `ssl` key (back-compat).
-        const ssl = this.config.ssl;
-        this.warnInsecureTlsAndTunnelConflict(ssl);
-        this.connection = new Pg.Pool({
-            host: this.config.host,
-            user: this.config.user,
-            password: this.config.password,
-            database: this.config.database,
-            port: this.config.port || 5432,
-            max: this.config.connectionLimit || 5,
-            // Pin client encoding to UTF8 so multibyte text transfers intact regardless of the
-            // client's locale-derived default (e.g. WIN1252 on Windows). Defense-in-depth only: does
-            // NOT rescue malformed source bytes (see sanitizeInvalidChars for those).
-            client_encoding: this.config.encoding || DIALECT_CONFIG.encoding || "UTF8",
-            // `ssl: false` is treated the same as omitting it (plaintext) — only a truthy `ssl` is threaded.
-            ...(ssl ? { ssl } : {}),
-            stream: this.config.sshStream ? () => this.config.sshStream! : undefined
-        });
-        return Promise.resolve();
+            // TLS passthrough. pg accepts `ssl: true` and an `ssl` object (ca/cert/key/rejectUnauthorized/
+            // servername) directly, so pass through unchanged. Omitted → no `ssl` key (back-compat).
+            const ssl = this.config.ssl;
+            this.warnInsecureTlsAndTunnelConflict(ssl);
+            this.connection = new Pg.Pool({
+                host: this.config.host,
+                user: this.config.user,
+                password: this.config.password,
+                database: this.config.database,
+                port: this.config.port || 5432,
+                max: this.config.connectionLimit || 5,
+                // Pin client encoding to UTF8 so multibyte text transfers intact regardless of the
+                // client's locale-derived default (e.g. WIN1252 on Windows). Defense-in-depth only: does
+                // NOT rescue malformed source bytes (see sanitizeInvalidChars for those).
+                client_encoding: this.config.encoding || DIALECT_CONFIG.encoding || "UTF8",
+                // `ssl: false` is treated the same as omitting it (plaintext) — only a truthy `ssl` is threaded.
+                ...(ssl ? { ssl } : {}),
+                stream: this.config.sshStream ? () => this.config.sshStream! : undefined
+            });
+            return Promise.resolve();
+        } catch (error) {
+            return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+        }
     }
 
     public getMaxConnections(): number {

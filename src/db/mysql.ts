@@ -26,36 +26,42 @@ export class MySQLDatabase extends Database {
     }
 
     establishDatabaseConnection(): Promise<void> {
-        let mysql: any;
+        // Synchronous (require + createPool), but callers rely on this rejecting rather than
+        // throwing (same contract as every other dialect's awaited implementation).
         try {
-            // Lazy require, not a static import: mysql2 is an OPTIONAL peer dependency — a static
-            // import would force every consumer to install all three drivers.
-            // eslint-disable-next-line @typescript-eslint/no-require-imports
-            mysql = require("mysql2/promise");
-        } catch {
-            throw new Error("Missing required dependency 'mysql2'. Please install it to use MySQLDatabase.");
+            let mysql: any;
+            try {
+                // Lazy require, not a static import: mysql2 is an OPTIONAL peer dependency — a static
+                // import would force every consumer to install all three drivers.
+                // eslint-disable-next-line @typescript-eslint/no-require-imports
+                mysql = require("mysql2/promise");
+            } catch {
+                throw new Error("Missing required dependency 'mysql2'. Please install it to use MySQLDatabase.");
+            }
+            // TLS passthrough. mysql2 rejects `ssl: true` (wants an object/named profile), so normalise
+            // `true` → `{}` (enable TLS, default verification); an object is passed as-is.
+            const ssl = this.config.ssl;
+            this.warnInsecureTlsAndTunnelConflict(ssl);
+            this.connection = mysql.createPool({
+                host: this.config.host,
+                user: this.config.user,
+                password: this.config.password,
+                database: this.config.database || this.config.schema,
+                port: this.config.port || 3306,
+                connectionLimit: this.config.connectionLimit || 5,
+                // Pin the connection charset to a 4-byte-capable encoding. Without this mysql2 negotiates
+                // its default (historically 3-byte utf8_general_ci), so a 4-byte char (emoji, some CJK)
+                // throws `Incorrect string value` on INSERT even when the table is utf8mb4.
+                charset: this.config.charset || DIALECT_CONFIG.charset,
+                // `ssl: false` == omitting it (plaintext/driver default); only truthy `ssl` is threaded.
+                // mysql2 rejects `ssl: true`, so normalise it to `{}`.
+                ...(ssl ? { ssl: ssl === true ? {} : ssl } : {}),
+                ...(this.config.sshStream ? { stream: this.config.sshStream } : {})
+            });
+            return Promise.resolve();
+        } catch (error) {
+            return Promise.reject(error instanceof Error ? error : new Error(String(error)));
         }
-        // TLS passthrough. mysql2 rejects `ssl: true` (wants an object/named profile), so normalise
-        // `true` → `{}` (enable TLS, default verification); an object is passed as-is.
-        const ssl = this.config.ssl;
-        this.warnInsecureTlsAndTunnelConflict(ssl);
-        this.connection = mysql.createPool({
-            host: this.config.host,
-            user: this.config.user,
-            password: this.config.password,
-            database: this.config.database || this.config.schema,
-            port: this.config.port || 3306,
-            connectionLimit: this.config.connectionLimit || 5,
-            // Pin the connection charset to a 4-byte-capable encoding. Without this mysql2 negotiates
-            // its default (historically 3-byte utf8_general_ci), so a 4-byte char (emoji, some CJK)
-            // throws `Incorrect string value` on INSERT even when the table is utf8mb4.
-            charset: this.config.charset || DIALECT_CONFIG.charset,
-            // `ssl: false` == omitting it (plaintext/driver default); only truthy `ssl` is threaded.
-            // mysql2 rejects `ssl: true`, so normalise it to `{}`.
-            ...(ssl ? { ssl: ssl === true ? {} : ssl } : {}),
-            ...(this.config.sshStream ? { stream: this.config.sshStream } : {})
-        });
-        return Promise.resolve();
     }
 
     /**

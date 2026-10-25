@@ -2,11 +2,10 @@ import { parentPort, workerData } from "worker_threads";
 import { Database } from "../db/database";
 import type { AutoSQLHandler } from "../db/autosql";
 
-// Fire-and-forget: this IIFE is the whole worker_thread entry script. Nothing in this file awaits
-// it (there is no caller to await it against) — every path inside already reports its outcome via
-// parentPort.postMessage, so an unhandled rejection here would mean the IIFE's own try/catch failed.
-// Synchronous top to bottom (the real async work lives in the per-message handler below), so no
-// `async`/`void` wrapper is needed here.
+// This IIFE is the whole worker_thread entry script, run once at startup; every path inside
+// reports its outcome via parentPort.postMessage. Synchronous top to bottom (the real async work
+// lives in the per-message handler below), so no `async`/`void` wrapper is needed here — a
+// synchronous throw is still caught by the try/catch right below.
 (() => {
   try {
     // Ensure workerData is received properly
