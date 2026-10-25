@@ -39,25 +39,18 @@ const PROMOTED_RULES = {
     // Every instance was a genuinely redundant `as T`/`!` — the compiler already inferred the
     // same type without it. Promoted now that the full `src/` tree is clean under it.
     "@typescript-eslint/no-unnecessary-type-assertion": "error",
-    // Rule only flags `return await` outside a try (or a try with no finally) — every flagged
-    // site here had no catch/finally depending on the await, so dropping it is behavior-neutral.
-    // Sites inside a try/finally (e.g. loadStrategy.ts's staging path) were correctly left alone:
-    // removing await there would let `finally` run before the returned promise settles.
+    // Flags `return await` wherever the preset's `error-handling-correctness-only` mode says the
+    // await doesn't change catching behaviour — a try/finally with no catch still needs it (it
+    // delays `finally` until the returned promise settles), so those sites are correctly untouched.
     "@typescript-eslint/return-await": "error",
     // Each site was a `.catch(e => this.db.error(...))`/`setTimeout(() => fn())`-shaped arrow
     // shorthand implicitly returning a logger/void call's result — wrapped in braces so the
     // callback returns nothing instead of a discarded value.
     "@typescript-eslint/no-confusing-void-expression": "error",
-    // Each flagged async had zero awaits. Most are dialect-interface stubs/overrides (e.g.
-    // getPermanentErrors, establishDatabaseConnection) that are genuinely synchronous but must
-    // keep returning a Promise for interface consistency with sibling dialects that DO await —
-    // those drop `async` and return `Promise.resolve(...)`/`Promise.reject(...)` explicitly so a
-    // synchronous throw still surfaces as a rejection, not an uncaught throw, for callers that
-    // `await` or `.rejects.toThrow(...)` them (autoSQLStreamHandle's suspend(), metadata.ts's
-    // getDataHeaders — the latter split into a private sync `getDataHeadersSync` plus a thin
-    // Promise-wrapping export, since its throws are deep inside a large validation/inference body).
-    // worker.ts's top-level IIFE just dropped `async`/`void` outright — it's fire-and-forget with
-    // no caller to see a rejection either way, and was synchronous top to bottom already.
+    // A genuinely synchronous function must still return a Promise (dialect-interface
+    // consistency, or a public API callers already `await`/`.rejects.toThrow()`) uses explicit
+    // Promise.resolve()/Promise.reject() instead of async, so a throw still surfaces as a
+    // rejection rather than an uncaught throw.
     "@typescript-eslint/require-await": "error"
 };
 
@@ -71,7 +64,16 @@ const STRICT_TYPE_CHECKED_AT_WARN = Object.fromEntries(
         // Preserve "off" as-is (the preset deliberately disables some core ESLint rules in favour
         // of TS's own checking, e.g. `no-undef` — downgrading those to "warn" would turn them back
         // ON and produce false positives TS already rules out, like flagging `setTimeout`).
-        .map(([rule, severity]) => [rule, PROMOTED_RULES[rule] ?? (severity === "off" ? "off" : "warn")])
+        .map(([rule, presetSeverity]) => {
+            if (presetSeverity === "off") return [rule, "off"];
+            const presetOptions = Array.isArray(presetSeverity) ? presetSeverity.slice(1) : [];
+            const promoted = PROMOTED_RULES[rule];
+            // An explicit [severity, ...options] override in PROMOTED_RULES (e.g. no-unused-vars)
+            // replaces the preset's options entirely; a bare severity string keeps them.
+            if (Array.isArray(promoted)) return [rule, promoted];
+            const severity = promoted ?? "warn";
+            return [rule, presetOptions.length ? [severity, ...presetOptions] : severity];
+        })
 );
 
 export default tseslint.config(
