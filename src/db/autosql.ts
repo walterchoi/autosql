@@ -278,7 +278,7 @@ export class AutoSQLHandler {
                 tableExists = true;
             } else {
                 this.db.log("Precomputed table changes detected, using them directly.");
-                tableChanges = currentMetaDataOrTableChanges as AlterTableChanges;
+                tableChanges = currentMetaDataOrTableChanges;
                 updatedMetadata = newMetaData; // No merging needed
                 tableExists = true;
             }
@@ -376,13 +376,14 @@ export class AutoSQLHandler {
             const currentSplitResults = await this.db.runQuery(splitQuery);
             if(!currentSplitResults || !currentSplitResults.success || !currentSplitResults.results) { throw new Error(currentSplitResults.error || `Error while retrieving existing split table information for: ${table}`)}
             const currentSplit = currentSplitResults.results
-            let parsedSplitMetadata = parseDatabaseMetaData(currentSplit as Record<string, any>[], this.db.getDialectConfig());
-            if (!parsedSplitMetadata) {
+            const rawSplitMetadata = parseDatabaseMetaData(currentSplit as Record<string, any>[], this.db.getDialectConfig());
+            let parsedSplitMetadata: Record<string, MetadataHeader>;
+            if (!rawSplitMetadata) {
                 parsedSplitMetadata = { [table]: {} }; // Ensure it has a valid structure
-            } else if (Object.values(parsedSplitMetadata).some(value => typeof value === "object" && !Array.isArray(value))) {
-                parsedSplitMetadata = parsedSplitMetadata as Record<string, MetadataHeader>;
+            } else if (Object.values(rawSplitMetadata).some(value => typeof value === "object" && !Array.isArray(value))) {
+                parsedSplitMetadata = rawSplitMetadata as Record<string, MetadataHeader>;
             } else {
-                parsedSplitMetadata = { [table]: parsedSplitMetadata as MetadataHeader };
+                parsedSplitMetadata = { [table]: rawSplitMetadata as MetadataHeader };
             }
             const newGroupedByTable = organizeSplitTable(table, metaData, parsedSplitMetadata, this.db.getDialectConfig())
             const newGroupedData = organizeSplitData(data, newGroupedByTable)
@@ -590,13 +591,13 @@ export class AutoSQLHandler {
             } catch (err) {
                 if (err instanceof Error && err.message.startsWith("WORKER_UNAVAILABLE:")) {
                     this.db.warn(err.message + " Falling back to direct execution.");
-                    configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[];
+                    configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input)));
                 } else {
                     throw err;
                 }
             }
         } else {
-            configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input))) as (QueryResult | QueryInput[])[];
+            configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input)));
         }
     
         // Step 2: Split immediate results from deferred DDL queries, preserving
@@ -608,7 +609,7 @@ export class AutoSQLHandler {
             if (Array.isArray(result)) {
                 pendingDDL.push({ queries: result, inputIndex: i });
             } else {
-                initialResults.push(result as QueryResult);
+                initialResults.push(result);
             }
         });
 
@@ -695,7 +696,7 @@ export class AutoSQLHandler {
                         this.db.warn(err.message + " Falling back to direct execution.");
                         insertQueries = await Promise.all(
                             insertInput.map((input) => this.autoInsertData({ ...input, runQuery: false }))
-                        ) as (QueryResult | QueryInput[])[];
+                        );
                     } else {
                         throw err;
                     }
@@ -703,7 +704,7 @@ export class AutoSQLHandler {
             } else {
                 insertQueries = await Promise.all(
                     insertInput.map((input) => this.autoInsertData({ ...input, runQuery: false }))
-                ) as (QueryResult | QueryInput[])[];
+                );
             }
         }
     
@@ -894,8 +895,8 @@ export class AutoSQLHandler {
         } catch (error: any) {
             const end = new Date();
             const durationMs = end.getTime() - start.getTime();
-            await writeRunAudit(this.db, { table, success: false, rows: data.length, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!config.useStagingInsert, bulkLoad: !!config.bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined });
-            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
+            await writeRunAudit(this.db, { table, success: false, rows: data.length, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!config.useStagingInsert, bulkLoad: !!config.bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined });
+            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined };
         }
       }));
     }
@@ -986,7 +987,7 @@ export class AutoSQLHandler {
                     // (ids 1..100 infer tinyint, then id 128 overflows). Re-infer this chunk and
                     // compare ONLY its data columns, since the managed columns aren't in the chunk and
                     // must not read as "to drop". Widen only when a column needs it.
-                    const lockedMeta = lockedInsertInput[0].metaData as MetadataHeader;
+                    const lockedMeta = lockedInsertInput[0].metaData;
                     const tPrepare = perf();
                     const inferred = await getMetaData(config, chunk, primaryKey);
                     phases.prepare = (phases.prepare ?? 0) + (perf() - tPrepare);
@@ -1057,7 +1058,7 @@ export class AutoSQLHandler {
         } catch (error: any) {
             const end = new Date();
             const durationMs = end.getTime() - start.getTime();
-            await writeRunAudit(this.db, { table, success: false, rows: totalRows, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!this.db.getConfig().useStagingInsert, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined });
+            await writeRunAudit(this.db, { table, success: false, rows: totalRows, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!this.db.getConfig().useStagingInsert, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined });
             return {
                 start,
                 end,

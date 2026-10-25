@@ -78,7 +78,7 @@ export class MySQLDatabase extends Database {
 
     public getMaxConnections(): number {
         // mysql2's promise wrapper keeps the pool config on the underlying `.pool` (not `.config`).
-        const conn = this.connection as any;
+        const conn = this.connection;
         return conn?.pool?.config?.connectionLimit ?? conn?.config?.connectionLimit ?? 5;
     }
 
@@ -117,7 +117,7 @@ export class MySQLDatabase extends Database {
         try {
             client = await (this.connection as Pool).getConnection();
             const [rows] = await client.query('SELECT GET_LOCK(?, ?) AS acquired', [lockKey, timeoutSeconds]) as [any[], any];
-            const acquired = (rows as any[])[0]?.acquired;
+            const acquired = rows[0]?.acquired;
             if (!acquired) {
                 // Don't release here — the catch below releases exactly once (map not set for this
                 // table, so its guard fires); releasing here too would double-release on timeout.
@@ -231,7 +231,7 @@ export class MySQLDatabase extends Database {
             if (!Array.isArray(rowsOrResult) && rowsOrResult != null && 'affectedRows' in rowsOrResult) {
                 affectedRows = (rowsOrResult as ResultSetHeader).affectedRows;
             } else if (maybeHeader && !Array.isArray(maybeHeader) && 'affectedRows' in maybeHeader) {
-                affectedRows = (maybeHeader as ResultSetHeader).affectedRows;
+                affectedRows = maybeHeader.affectedRows;
             } else if (rows.length > 0) {
                 affectedRows = rows.length;
             }
@@ -284,7 +284,7 @@ export class MySQLDatabase extends Database {
             ({ changes: alterTableChanges, updatedMetaData }  = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig(), this.config.logger));
             this.updateTableMetadata(table, updatedMetaData, "metaData")
         } else {
-            alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
+            alterTableChanges = alterTableChangesOrOldHeaders;
         }
         const queries: QueryInput[] = [];
         const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "mysql")}.` : "";

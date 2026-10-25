@@ -35,7 +35,10 @@ const PROMOTED_RULES = {
     //   mssql/ssh2/pg-copy-streams) are deliberate — a static import would force every consumer
     //   to install all three/five drivers.
     "@typescript-eslint/no-extraneous-class": "error",
-    "@typescript-eslint/no-require-imports": "error"
+    "@typescript-eslint/no-require-imports": "error",
+    // Every instance was a genuinely redundant `as T`/`!` — the compiler already inferred the
+    // same type without it. Promoted now that the full `src/` tree is clean under it.
+    "@typescript-eslint/no-unnecessary-type-assertion": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common

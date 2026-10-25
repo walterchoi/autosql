@@ -285,7 +285,7 @@ export class AutoSQLStreamHandle {
 
             const tLoad = perf();
             // Any resumable stream, not just cursored ones: a resume can re-send staged rows.
-            const mergeQ = buildMergeFromStreamQuery(this.table, this.stagingTable, updatedMetaData, insertType as 'UPDATE' | 'INSERT', config, this.resumable);
+            const mergeQ = buildMergeFromStreamQuery(this.table, this.stagingTable, updatedMetaData, insertType, config, this.resumable);
             const mergeResult = await this.db.runTransaction([mergeQ]);
 
             let affectedRows = mergeResult.affectedRows ?? 0;
@@ -294,7 +294,7 @@ export class AutoSQLStreamHandle {
                 // Fallback: per-row retry with schema widening, under the resolved separators so the
                 // per-row sqlize (via getConfig()) normalizes values with the detected format.
                 affectedRows = await this.db.runWithSeparators(separators, () =>
-                    this._perRowMerge(stagingRows, updatedMetaData, insertType as 'UPDATE' | 'INSERT', maxRetries));
+                    this._perRowMerge(stagingRows, updatedMetaData, insertType, maxRetries));
             }
             phases.load = perf() - tLoad;
 
@@ -322,8 +322,8 @@ export class AutoSQLStreamHandle {
             const end = new Date();
             const durationMs = end.getTime() - start.getTime();
             // rows/affected unknown here (the failure may precede the staging read) — record 0 with the error.
-            await writeRunAudit(this.db, { table: this.table, success: false, rows: 0, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: true, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined });
-            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: (error as any)?.code != null ? String((error as any).code) : undefined };
+            await writeRunAudit(this.db, { table: this.table, success: false, rows: 0, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: true, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined });
+            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined };
         } finally {
             // A resumable stream keeps its table when the rows didn't land: the failure may be
             // transient, and dropping here would discard rows accumulated over earlier runs, the

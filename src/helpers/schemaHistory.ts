@@ -9,7 +9,7 @@ import { escapeIdentifier, escapeLiteral } from '../db/utils/escape';
 function stableStringify(val: unknown): string {
     if (Array.isArray(val)) return `[${val.map(stableStringify).join(',')}]`;
     if (val !== null && typeof val === 'object') {
-        const keys = Object.keys(val as object).sort();
+        const keys = Object.keys(val).sort();
         return `{${keys.map(k => `${JSON.stringify(k)}:${stableStringify((val as any)[k])}`).join(',')}}`;
     }
     return JSON.stringify(val);

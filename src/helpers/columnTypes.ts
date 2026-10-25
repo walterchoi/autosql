@@ -168,7 +168,7 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
 
         const uniqueTypes = [...new Set(types)];
         if (uniqueTypes.length === 1) {
-            return uniqueTypes[0]!;
+            return uniqueTypes[0];
         }
 
         let overallType: string | null = null;

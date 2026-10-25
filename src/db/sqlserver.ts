@@ -110,7 +110,7 @@ export class SqlServerDatabase extends Database {
             // database) — and aborts instead of retrying it maxAttempts times.
             throw this.normalizeError(error);
         }
-        this.connection = pool as any;
+        this.connection = pool;
     }
 
     /**
@@ -144,7 +144,7 @@ export class SqlServerDatabase extends Database {
     }
 
     public getMaxConnections(): number {
-        return (this.connection as any)?.config?.pool?.max ?? this.config.connectionLimit ?? 5;
+        return this.connection?.config?.pool?.max ?? this.config.connectionLimit ?? 5;
     }
 
     protected getHeldSchemaLockCount(): number { return this.schemaLockTx.size; }
@@ -152,7 +152,7 @@ export class SqlServerDatabase extends Database {
     public async closeConnection(): Promise<{ success: boolean; error?: string }> {
         if (!this.connection) return { success: true };
         try {
-            await (this.connection as any).close();
+            await this.connection.close();
             return { success: true };
         } catch (error) {
             return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
@@ -179,11 +179,11 @@ export class SqlServerDatabase extends Database {
         const tvp = new sql.Table(qualified);
         tvp.create = false;
         for (const col of columns) {
-            const meta = header[col] || ({ type: "varchar" } as ColumnDefinition);
+            const meta = header[col] || { type: "varchar" };
             tvp.columns.add(col, sqlServerBulkType(sql, meta), { nullable: meta.allowNull !== false });
         }
         for (const row of rows) {
-            tvp.rows.add(...row.map((v, i) => sqlServerBulkCoerce(v, header[columns[i]] || ({ type: "varchar" } as ColumnDefinition))));
+            tvp.rows.add(...row.map((v, i) => sqlServerBulkCoerce(v, header[columns[i]] || { type: "varchar" })));
         }
         await new sql.Request(this.connection).bulk(tvp);
         const end = new Date();
@@ -238,7 +238,7 @@ export class SqlServerDatabase extends Database {
         if (!this.connection) await this.establishConnection();
 
         // Syntax-check without executing (SET PARSEONLY validates the batch and returns nothing).
-        const request = (this.connection as any).request();
+        const request = this.connection.request();
         try {
             await request.batch(`SET PARSEONLY ON; ${query}; SET PARSEONLY OFF;`);
             return { success: true };
@@ -268,7 +268,7 @@ export class SqlServerDatabase extends Database {
         const params = typeof queryOrParams === "string" ? [] : queryOrParams.params || [];
 
         // Bind to the pinned transaction when running inside runTransaction; otherwise a pool request.
-        const request = client ? new this.sql.Request(client) : (this.connection as any).request();
+        const request = client ? new this.sql.Request(client) : this.connection.request();
         params.forEach((value: any, i: number) => request.input(`p${i}`, value));
 
         try {
@@ -382,7 +382,7 @@ export class SqlServerDatabase extends Database {
             ({ changes: alterTableChanges, updatedMetaData } = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig(), this.config.logger));
             this.updateTableMetadata(table, updatedMetaData, "metaData");
         } else {
-            alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
+            alterTableChanges = alterTableChangesOrOldHeaders;
         }
         const queries: QueryInput[] = [];
 

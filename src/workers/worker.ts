@@ -16,7 +16,7 @@ void (async () => {
     const { dbConfig } = workerData;
     let db : Database
     db = Database.create(dbConfig);
-    const autoSQL = db.autoSQLHandler as AutoSQLHandler;
+    const autoSQL = db.autoSQLHandler;
 
     // Listener must return void, not a Promise (no-misused-promises) — the inner async body
     // already catches every path below and reports it via postMessage, so nothing can reject out

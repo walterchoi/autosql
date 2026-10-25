@@ -87,7 +87,7 @@ export class PostgresDatabase extends Database {
         try {
             const stream: NodeJS.WritableStream = client.query(
                 copyFrom(`COPY ${schemaPrefix}${escapeIdentifier(table, "pgsql")} (${colList}) FROM STDIN`)
-            ) as any;
+            );
             await new Promise<void>((resolve, reject) => {
                 stream.on("error", reject);
                 stream.on("finish", () => resolve());
@@ -293,7 +293,7 @@ export class PostgresDatabase extends Database {
                     ({ changes: alterTableChanges, updatedMetaData }  = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig(), this.config.logger));
                     this.updateTableMetadata(table, updatedMetaData, "metaData")
                 } else {
-                    alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
+                    alterTableChanges = alterTableChangesOrOldHeaders;
                 }
         const queries: QueryInput[] = [];
 

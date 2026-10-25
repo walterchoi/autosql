@@ -36,7 +36,7 @@ export class DegradationPolicy {
                 throwIfFailedResults([allInsertResults[i]], "data insert queries");
                 continue;
             }
-            const insertType = (input.insertType ?? config.insertType ?? 'UPDATE') as 'UPDATE' | 'INSERT';
+            const insertType = input.insertType ?? config.insertType ?? 'UPDATE';
             // Preserve already-resolved key columns during widening re-inference so it can't re-infer
             // different keys for the failed rows.
             const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col]?.primary);

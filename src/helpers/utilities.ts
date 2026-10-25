@@ -567,7 +567,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
             normalizedMetaData = { [table]: currentMetaData as MetadataHeader };
         }
     } else {
-        const parsedMetadata = parseDatabaseMetaData(currentMetaData as Record<string, any>[], dialectConfig);
+        const parsedMetadata = parseDatabaseMetaData(currentMetaData, dialectConfig);
         if (!parsedMetadata) {
             normalizedMetaData = { [table]: {} }; // Ensure valid structure
         } else if (Object.values(parsedMetadata).some(value => typeof value === "object" && !Array.isArray(value))) {
