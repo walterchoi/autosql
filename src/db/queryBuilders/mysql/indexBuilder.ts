@@ -4,8 +4,11 @@ import { escapeIdentifier } from "../../utils/escape";
 
 const q = (name: string) => escapeIdentifier(name, "mysql");
 
-export class MySQLIndexQueryBuilder {
-    static getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
+// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
+// no-extraneous-class).
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export const MySQLIndexQueryBuilder = {
+    getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
         return {
             query: `
                 SELECT COLUMN_NAME 
@@ -16,9 +19,9 @@ export class MySQLIndexQueryBuilder {
             `,
             params: schema ? [table, schema] : [table]
         };
-    }
-    
-    static getForeignKeyConstraintsQuery(table: string, schema?: string): QueryInput {
+    },
+
+    getForeignKeyConstraintsQuery(table: string, schema?: string): QueryInput {
         return {
             query: `
                 SELECT TABLE_NAME, COLUMN_NAME, CONSTRAINT_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME 
@@ -28,9 +31,9 @@ export class MySQLIndexQueryBuilder {
             `,
             params: schema ? [table, schema] : [table]
         };
-    }
-    
-    static getViewDependenciesQuery(table: string, schema?: string): QueryInput {
+    },
+
+    getViewDependenciesQuery(table: string, schema?: string): QueryInput {
         return {
             query: `
                 SELECT TABLE_NAME 
@@ -40,33 +43,33 @@ export class MySQLIndexQueryBuilder {
             `,
             params: schema ? [table, schema] : [table]
         };
-    }    
+    },
 
-    static getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
+    getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
             query: `ALTER TABLE ${schemaPrefix}${q(table)} DROP PRIMARY KEY;`,
             params: []
         };
-    }
+    },
 
-    static getDropUniqueConstraintQuery(table: string, indexName: string, schema?: string): QueryInput {
+    getDropUniqueConstraintQuery(table: string, indexName: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
           query: `DROP INDEX ${q(indexName)} ON ${schemaPrefix}${q(table)};`,
           params: []
         };
-    }
+    },
 
-    static getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
+    getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
             query: `ALTER TABLE ${schemaPrefix}${q(table)} ADD PRIMARY KEY (${primaryKeys.map(pk => q(pk)).join(", ")});`,
             params: []
         };
-    }
+    },
 
-    static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
+    getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
         let query = `
             SELECT DISTINCT index_name, GROUP_CONCAT(column_name ORDER BY seq_in_index) AS columns
             FROM information_schema.statistics
@@ -90,9 +93,9 @@ export class MySQLIndexQueryBuilder {
         query += " GROUP BY index_name;";
     
         return { query, params };
-    }
+    },
 
-    static generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string, stagingPrefix?: string): QueryInput {
+    generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string, stagingPrefix?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const tempTable = getTempTableName(table, stagingPrefix);
         const t1 = "t1";
@@ -121,4 +124,4 @@ export class MySQLIndexQueryBuilder {
           params: []
         };
     }
-}
+};

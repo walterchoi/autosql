@@ -5,8 +5,11 @@ import { escapeIdentifier, escapeLiteral } from "../../utils/escape";
 const q = (name: string) => escapeIdentifier(name, "sqlserver");
 const lit = (value: string | number | boolean) => escapeLiteral(value, "sqlserver");
 
-export class SqlServerIndexQueryBuilder {
-    static getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
+// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
+// no-extraneous-class).
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export const SqlServerIndexQueryBuilder = {
+    getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
         const qualified = schema ? `${q(schema)}.${q(table)}` : q(table);
         return {
             query: `
@@ -20,9 +23,9 @@ export class SqlServerIndexQueryBuilder {
             `,
             params: []
         };
-    }
+    },
 
-    static getForeignKeyConstraintsQuery(table: string, schema?: string): QueryInput {
+    getForeignKeyConstraintsQuery(table: string, schema?: string): QueryInput {
         const qualified = schema ? `${q(schema)}.${q(table)}` : q(table);
         return {
             query: `
@@ -32,9 +35,9 @@ export class SqlServerIndexQueryBuilder {
             `,
             params: []
         };
-    }
+    },
 
-    static getViewDependenciesQuery(table: string, schema?: string): QueryInput {
+    getViewDependenciesQuery(table: string, schema?: string): QueryInput {
         // Match views whose definition (sys.sql_modules) references the table name.
         return {
             query: schema
@@ -49,9 +52,9 @@ export class SqlServerIndexQueryBuilder {
                    WHERE m.definition LIKE '%' + @p0 + '%';`,
             params: schema ? [schema, table] : [table]
         };
-    }
+    },
 
-    static getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
+    getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
         // SQL Server PK names aren't fixed (no `_pkey` convention); look up the actual name and drop via EXEC.
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const qualified = `${schemaPrefix}${q(table)}`;
@@ -63,25 +66,25 @@ export class SqlServerIndexQueryBuilder {
                 `IF @pk IS NOT NULL EXEC('ALTER TABLE ${qualified} DROP CONSTRAINT [' + @pk + ']');`,
             params: []
         };
-    }
+    },
 
-    static getDropUniqueConstraintQuery(table: string, indexName: string, schema?: string): QueryInput {
+    getDropUniqueConstraintQuery(table: string, indexName: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
             query: `ALTER TABLE ${schemaPrefix}${q(table)} DROP CONSTRAINT ${q(indexName)};`,
             params: []
         };
-    }
+    },
 
-    static getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
+    getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
             query: `ALTER TABLE ${schemaPrefix}${q(table)} ADD PRIMARY KEY (${primaryKeys.map(pk => q(pk)).join(", ")});`,
             params: []
         };
-    }
+    },
 
-    static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
+    getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
         // Unique indexes, columns comma-joined via STRING_AGG. Table is @p0; optional schema/column
         // filters follow as subsequent @p placeholders in params-array order.
         let query = `
@@ -108,9 +111,9 @@ export class SqlServerIndexQueryBuilder {
         query += ` GROUP BY i.name;`;
 
         return { query, params };
-    }
+    },
 
-    static generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string, stagingPrefix?: string): QueryInput {
+    generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string, stagingPrefix?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const tempTable = getTempTableName(table, stagingPrefix);
         const t1 = "t1";
@@ -143,4 +146,4 @@ export class SqlServerIndexQueryBuilder {
             params: []
         };
     }
-}
+};

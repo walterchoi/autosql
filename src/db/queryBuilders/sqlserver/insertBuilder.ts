@@ -33,8 +33,11 @@ function buildMerge(target: string, sourceClause: string, columns: string[], hea
     return query;
 }
 
-export class SqlServerInsertQueryBuilder {
-    static getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
+// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
+// no-extraneous-class).
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export const SqlServerInsertQueryBuilder = {
+    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         const { table, rows, header, insertType } = resolveStatementInput(tableOrInput, data, metaData, databaseConfig, inputInsertType);
         if (!rows || rows.length === 0) throw new Error(`No data provided for insert into table "${table}"`);
@@ -60,9 +63,9 @@ export class SqlServerInsertQueryBuilder {
         }
         const source = `USING (VALUES ${valueTuples}) AS source (${quotedCols})`;
         return { query: buildMerge(target, source, columns, header, mergeKeys), params };
-    }
+    },
 
-    static getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT", pkFilter?: Record<string, any>): QueryInput {
+    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT", pkFilter?: Record<string, any>): QueryInput {
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         const { table, header, insertType, stagingPrefix } = resolveStagingInput(tableOrInput, metaData, databaseConfig, inputInsertType);
         const tempTable = getTempTableName(table, stagingPrefix);
@@ -91,10 +94,10 @@ export class SqlServerInsertQueryBuilder {
             return { query: `INSERT INTO ${target} (${escapedCols}) SELECT ${selectCols} FROM ${source};`, params: [] };
         }
         return { query: buildMerge(target, `USING ${source} AS source`, columns, header, mergeKeys), params: [] };
-    }
+    },
 
-    static getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, pkFilter?: Record<string, any>): QueryInput {
+    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, pkFilter?: Record<string, any>): QueryInput {
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         return buildHistoryQuery(resolveHistoryInput(tableOrInput, metaData), schemaPrefix, HISTORY_HOOKS, pkFilter);
     }
-}
+};

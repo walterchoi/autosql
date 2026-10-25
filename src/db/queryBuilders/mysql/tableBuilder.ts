@@ -6,8 +6,11 @@ import { escapeIdentifier, assertSafeTypeToken, assertSafeLength, renderColumnDe
 const DIALECT_CONFIG = MYSQL_CONFIG
 const q = (name: string) => escapeIdentifier(name, "mysql");
 
-export class MySQLTableQueryBuilder {
-    static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
+// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
+// no-extraneous-class).
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export const MySQLTableQueryBuilder = {
+    getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
         const maxIndexCount = DIALECT_CONFIG.maxIndexCount || 64;
         let remainingIndexSlots = maxIndexCount;
         let sqlQueries: QueryInput[] = [];
@@ -87,9 +90,9 @@ export class MySQLTableQueryBuilder {
         }
     
         return sqlQueries;
-    }
+    },
 
-    static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string, databaseConfig?: DatabaseConfig): QueryInput[] {
+    getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string, databaseConfig?: DatabaseConfig): QueryInput[] {
         let queries: QueryInput[] = [];
         let alterStatements: string[] = [];
     
@@ -196,28 +199,28 @@ export class MySQLTableQueryBuilder {
         }
     
         return queries;
-    }
-    
-    static getDropTableQuery(table: string, schema?: string): QueryInput {
+    },
+
+    getDropTableQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {query: `DROP TABLE IF EXISTS ${schemaPrefix}${q(table)};`, params: []};
-    }
+    },
 
-    static getCreateTempTableQuery(table: string, schema?: string, stagingPrefix?: string): QueryInput {
+    getCreateTempTableQuery(table: string, schema?: string, stagingPrefix?: string): QueryInput {
         const tempTableName = getTempTableName(table, stagingPrefix);
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {query: `CREATE TABLE IF NOT EXISTS ${schemaPrefix}${q(tempTableName)}
         AS SELECT * FROM ${schemaPrefix}${q(table)} LIMIT 0;`, params: []};
-    }
+    },
 
-    static getTableExistsQuery(schema: string, table: string): QueryInput {
+    getTableExistsQuery(schema: string, table: string): QueryInput {
         return {
             query: "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = ? AND table_name = ?",
             params: [schema, table],
         };
-    }
+    },
 
-    static getTableMetaDataQuery(schema: string, table: string): QueryInput {
+    getTableMetaDataQuery(schema: string, table: string): QueryInput {
         return {
             query: `SELECT
     c.COLUMN_NAME,
@@ -281,9 +284,9 @@ export class MySQLTableQueryBuilder {
     `,
             params: [schema, table],
         };
-    }
+    },
 
-    static getSplitTablesQuery(table: string, schema?: string): QueryInput {
+    getSplitTablesQuery(table: string, schema?: string): QueryInput {
         return {
             query: `
                 SELECT 
@@ -349,4 +352,4 @@ export class MySQLTableQueryBuilder {
             params: schema ? [table, table, schema] : [table, table],
         };
     }
-}
+};

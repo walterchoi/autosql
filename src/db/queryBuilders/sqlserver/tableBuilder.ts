@@ -47,8 +47,11 @@ function renderColumnType(column: ColumnDefinition, cfg: DialectConfig): string 
     return rendered;
 }
 
-export class SqlServerTableQueryBuilder {
-    static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
+// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
+// no-extraneous-class).
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export const SqlServerTableQueryBuilder = {
+    getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
         const maxIndexCount = DIALECT_CONFIG.maxIndexCount || 64;
         let remainingIndexSlots = maxIndexCount;
         let sqlQueries: QueryInput[] = [];
@@ -122,9 +125,9 @@ export class SqlServerTableQueryBuilder {
         }
 
         return sqlQueries;
-    }
+    },
 
-    static getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string, databaseConfig?: DatabaseConfig): QueryInput[] {
+    getAlterTableQuery(table: string, changes: AlterTableChanges, schema?: string, databaseConfig?: DatabaseConfig): QueryInput[] {
         let queries: QueryInput[] = [];
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const qualified = `${schemaPrefix}${q(table)}`;
@@ -244,18 +247,18 @@ IF LEN(@cre) > 0 EXEC (@cre);`,
         }
 
         return queries;
-    }
+    },
 
-    static getDropTableQuery(table: string, schema?: string): QueryInput {
+    getDropTableQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const qualified = `${schemaPrefix}${q(table)}`;
         return {
             query: `IF OBJECT_ID(${lit(qualified)}, 'U') IS NOT NULL DROP TABLE ${qualified};`,
             params: []
         };
-    }
+    },
 
-    static getCreateTempTableQuery(table: string, schema?: string, stagingPrefix?: string): QueryInput {
+    getCreateTempTableQuery(table: string, schema?: string, stagingPrefix?: string): QueryInput {
         const tempTableName = getTempTableName(table, stagingPrefix);
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const stagingQualified = `${schemaPrefix}${q(tempTableName)}`;
@@ -265,16 +268,16 @@ IF LEN(@cre) > 0 EXEC (@cre);`,
                 `SELECT * INTO ${stagingQualified} FROM ${schemaPrefix}${q(table)} WHERE 1=0;`,
             params: []
         };
-    }
+    },
 
-    static getTableExistsQuery(schema: string, table: string): QueryInput {
+    getTableExistsQuery(schema: string, table: string): QueryInput {
         return {
             query: "SELECT COUNT(*) AS count FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = @p0 AND TABLE_NAME = @p1",
             params: [schema, table],
         };
-    }
+    },
 
-    static getTableMetaDataQuery(schema: string, table: string): QueryInput {
+    getTableMetaDataQuery(schema: string, table: string): QueryInput {
         // COLUMN_KEY derived from sys.* per column. LENGTH mirrors pg CONCAT/precision rules;
         // nvarchar(max) reports CHARACTER_MAXIMUM_LENGTH -1, mapped to NULL. Deduped via GROUP BY
         // (SQL Server has no DISTINCT ON).
@@ -342,9 +345,9 @@ IF LEN(@cre) > 0 EXEC (@cre);`,
                 `,
             params: [schema, table],
         };
-    }
+    },
 
-    static getSplitTablesQuery(table: string, schema?: string): QueryInput {
+    getSplitTablesQuery(table: string, schema?: string): QueryInput {
         // Match `<table>__part_<digits>` partition tables. No SIMILAR TO in SQL Server, so the
         // "all digits" test is emulated: LIKE '...__part_%' requires the prefix, NOT LIKE
         // '...__part_%[^0-9]%' rejects any non-digit after it. @p1 is the (autosql-generated) base name.
@@ -404,4 +407,4 @@ IF LEN(@cre) > 0 EXEC (@cre);`,
             params: [schema, table],
         };
     }
-}
+};

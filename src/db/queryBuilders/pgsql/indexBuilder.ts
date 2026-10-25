@@ -4,8 +4,11 @@ import { escapeIdentifier, escapeLiteral } from "../../utils/escape";
 
 const q = (name: string) => escapeIdentifier(name, "pgsql");
 
-export class PostgresIndexQueryBuilder {
-    static getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
+// A namespace of related query builders, not a data constant (was `class X { static ... }`; see
+// no-extraneous-class).
+// eslint-disable-next-line @typescript-eslint/naming-convention
+export const PostgresIndexQueryBuilder = {
+    getPrimaryKeysQuery(table: string, schema?: string): QueryInput {
         const qualified = schema ? `${q(schema)}.${q(table)}` : q(table);
         return {
             query: `
@@ -17,9 +20,9 @@ export class PostgresIndexQueryBuilder {
             `,
             params: []
         };
-    }
+    },
 
-    static getForeignKeyConstraintsQuery(table: string, schema?: string): QueryInput {
+    getForeignKeyConstraintsQuery(table: string, schema?: string): QueryInput {
         const qualified = schema ? `${q(schema)}.${q(table)}` : q(table);
         return {
             query: `
@@ -29,42 +32,42 @@ export class PostgresIndexQueryBuilder {
             `,
             params: []
         };
-    }
+    },
 
-    static getViewDependenciesQuery(table: string, schema?: string): QueryInput {
+    getViewDependenciesQuery(table: string, schema?: string): QueryInput {
         return {
             query: schema
                 ? `SELECT viewname FROM pg_views WHERE schemaname = $1 AND definition LIKE '%' || $2 || '%';`
                 : `SELECT viewname FROM pg_views WHERE definition LIKE '%' || $1 || '%';`,
             params: schema ? [schema, table] : [table]
         };
-    }
+    },
 
-    static getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
+    getDropPrimaryKeyQuery(table: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
             query: `ALTER TABLE ${schemaPrefix}${q(table)} DROP CONSTRAINT IF EXISTS ${q(`${table}_pkey`)};`,
             params: []
         };
-    }
+    },
 
-    static getDropUniqueConstraintQuery(table: string, indexName: string, schema?: string): QueryInput {
+    getDropUniqueConstraintQuery(table: string, indexName: string, schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
           query: `ALTER TABLE ${schemaPrefix}${q(table)} DROP CONSTRAINT ${q(indexName)};`,
           params: []
         };
-    }
+    },
 
-    static getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
+    getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         return {
             query: `ALTER TABLE ${schemaPrefix}${q(table)} ADD PRIMARY KEY (${primaryKeys.map(pk => q(pk)).join(", ")});`,
             params: []
         };
-    }
+    },
 
-    static getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
+    getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
         // `schema` was accepted but never applied (caught by no-unused-vars): pg_class.relname is NOT
         // schema-qualified, so without filtering by pg_namespace this could match a same-named table's
         // index in a DIFFERENT schema. MySQL's sibling already scopes by table_schema; this now does
@@ -95,9 +98,9 @@ export class PostgresIndexQueryBuilder {
         query += " GROUP BY i.relname;";
 
         return { query, params };
-    }
+    },
 
-    static generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string, stagingPrefix?: string): QueryInput {
+    generateConstraintConflictBreakdownQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, schema?: string, stagingPrefix?: string): QueryInput {
         const schemaPrefix = schema ? `${q(schema)}.` : "";
         const tempTable = getTempTableName(table, stagingPrefix);
         const t1 = "t1";
@@ -126,4 +129,4 @@ export class PostgresIndexQueryBuilder {
           params: []
         };
     }
-}
+};
