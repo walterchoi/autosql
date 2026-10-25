@@ -16,7 +16,6 @@ Object.values(DB_CONFIG)
             const TABLE = "nf_consensus_test";
             const ref = `${qi("test_schema")}.${qi(TABLE)}`;
             const tempRef = `${qi("test_schema")}.${qi("temp_staging__" + TABLE)}`;
-            const streamPrefix = `${qi("test_schema")}.`;
             const baseConfig = { ...config, schema: "test_schema", useWorkers: false, addTimestamps: false };
             let admin: Database;
 

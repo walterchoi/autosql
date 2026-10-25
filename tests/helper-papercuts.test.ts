@@ -1,5 +1,4 @@
 import { isCombinationUnique, estimateRowSize } from "../src/helpers/utilities";
-import { Database } from "../src/db/database";
 
 // A24: isCombinationUnique built its key by joining on "|", which collided on an embedded "|", coerced
 // null to "" and read 1 the same as "1". It now JSON-encodes the tuple.

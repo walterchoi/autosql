@@ -1,9 +1,12 @@
 import WorkerPool from "./workerPool";
-import { DatabaseConfig } from "../config/types";
-import { defaults } from "../config/defaults";
+import type { DatabaseConfig } from "../config/types";
+import { DEFAULTS } from "../config/defaults";
 
-class WorkerHelper {
-  static async run(dbConfig: DatabaseConfig, method: string, paramsArray: any[], workerSize: number = dbConfig.maxWorkers ?? defaults.maxWorkers) {
+// A namespace of related helpers, not a data constant (was `class X { static ... }`; see
+// no-extraneous-class).
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const WorkerHelper = {
+  async run(dbConfig: DatabaseConfig, method: string, paramsArray: any[], workerSize: number = dbConfig.maxWorkers ?? DEFAULTS.maxWorkers) {
     // Never spawn more workers than there are tasks (A8): configuring a single table shouldn't stand up
     // an 8-thread pool, each with its own DB connection pool.
     workerSize = Math.max(1, Math.min(workerSize, paramsArray.length || 1));
@@ -47,6 +50,6 @@ class WorkerHelper {
       }
     });
   }
-}
+};
 
 export default WorkerHelper;

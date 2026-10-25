@@ -1,6 +1,6 @@
 import { parseDatabaseMetaData } from "../src/helpers/utilities";
-import { mysqlConfig } from "../src/db/config/mysqlConfig";
-import { MetadataHeader } from "../src/config/types";
+import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
+import type { MetadataHeader } from "../src/config/types";
 
 // R10: MySQL has no native boolean, so `tinyint(1)` is the boolean convention while a plain
 // `tinyint` is a small integer. Introspection previously mapped every `tinyint` to boolean (it read
@@ -19,7 +19,7 @@ describe("MySQL tinyint introspection (R10)", () => {
             row("small_int", "tinyint", "tinyint"),
             row("wide_tinyint", "tinyint", "tinyint(3)"),
             row("count", "int", "int"),
-        ], mysqlConfig) as MetadataHeader;
+        ], MYSQL_CONFIG) as MetadataHeader;
 
         expect(meta.flag.type).toBe("boolean");        // the boolean convention preserved
         expect(meta.small_int.type).toBe("tinyint");   // small int, NOT boolean (the fix)

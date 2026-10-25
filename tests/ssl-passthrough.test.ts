@@ -12,7 +12,7 @@ import pg from "pg";
 import { Database } from "../src/db/database";
 
 const mysqlCreatePool = mysql.createPool as unknown as jest.Mock;
-const PgPool = (pg as any).Pool as jest.Mock;
+const pgPool = (pg as any).Pool as jest.Mock;
 
 const base = { host: "h", user: "u", password: "p", database: "d" };
 const poolCfgMysql = async (ssl?: any) => {
@@ -22,10 +22,10 @@ const poolCfgMysql = async (ssl?: any) => {
     return mysqlCreatePool.mock.calls[0][0];
 };
 const poolCfgPg = async (ssl?: any) => {
-    PgPool.mockClear();
+    pgPool.mockClear();
     const db: any = Database.create({ sqlDialect: "pgsql", ...base, ...(ssl !== undefined ? { ssl } : {}) });
     await db.establishDatabaseConnection();
-    return PgPool.mock.calls[0][0];
+    return pgPool.mock.calls[0][0];
 };
 
 describe("ssl passthrough", () => {

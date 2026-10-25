@@ -1,6 +1,6 @@
 import { computeChecksum } from "../src/helpers/schemaHistory";
 import { validateConfig } from "../src/helpers/utilities";
-import { DatabaseConfig, MetadataHeader } from "../src/config/types";
+import type { DatabaseConfig, MetadataHeader } from "../src/config/types";
 import { SchemaDriftError } from "../src/errors";
 
 const BASE: DatabaseConfig = { sqlDialect: "mysql", host: "localhost", user: "u", password: "p", database: "db" };

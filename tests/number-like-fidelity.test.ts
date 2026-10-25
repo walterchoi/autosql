@@ -1,6 +1,6 @@
 import { predictType, collateTypes } from "../src/helpers/columnTypes";
 import { getDataHeaders } from "../src/helpers/metadata";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 // Number-like fidelity guard. Native JS numbers lose leading zeros and round beyond ~15 digits, so
 // number-like fields (phone numbers, zip codes, account IDs, high-precision values) must be fed as

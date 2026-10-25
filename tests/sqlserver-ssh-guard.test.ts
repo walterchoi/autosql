@@ -1,5 +1,5 @@
 import { validateConfig } from "../src/helpers/utilities";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 // SSH tunnelling on SQL Server was silently a no-op: the base establishConnection opens the tunnel
 // for every dialect, but only mysql.ts and pgsql.ts pass the resulting stream to their driver, so the

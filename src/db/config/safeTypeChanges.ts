@@ -1,4 +1,4 @@
-const safeTypeChanges: Record<string, string[]> = {
+const SAFE_TYPE_CHANGES: Record<string, string[]> = {
     "tinyint": ["smallint", "int", "bigint", "decimal", "varchar"],
     "smallint": ["int", "bigint", "decimal", "varchar"],
     "int": ["bigint", "decimal", "double", "varchar"],
@@ -19,4 +19,4 @@ const safeTypeChanges: Record<string, string[]> = {
     "time": ["varchar"]
 };
 
-export default safeTypeChanges;
+export default SAFE_TYPE_CHANGES;

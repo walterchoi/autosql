@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 import { escapeIdentifier } from "../src/db/utils/escape";
 
 // Spec-4 slice D (§3.8): the atomic staging-degradation + row-level-history combo (rejectedRowsTable +

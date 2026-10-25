@@ -1,4 +1,4 @@
-export const defaults = {
+export const DEFAULTS = {
     pseudoUnique: 0.90,
     categorical: 0.20,
     sampling: 0,
@@ -50,7 +50,7 @@ export const defaults = {
     keepOrphanedStagingTables: false,
 }
 
-export const maxQueryAttempts = 3;
+export const MAX_QUERY_ATTEMPTS = 3;
 
 export const MAX_COLUMN_COUNT = 100;
 export const MYSQL_MAX_ROW_SIZE = 16 * 1024; // 16KB
@@ -93,4 +93,4 @@ export const CREATED_TIMESTAMP_NAMES = [
   ];
   
 
-export const nonCategoricalTypes = ["boolean", "tinyint", "smallint", "binary", "datetimetz", "datetime"]
+export const NON_CATEGORICAL_TYPES = ["boolean", "tinyint", "smallint", "binary", "datetimetz", "datetime"]

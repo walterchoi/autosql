@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // Real-DB proof that runTransaction is atomic. These tests fail against the old
 // implementation (BEGIN/DML/COMMIT ran on different pooled connections, so a "rolled back"

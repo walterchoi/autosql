@@ -1,10 +1,10 @@
 import { escapeIdentifier, escapeLiteral, assertSafeTypeToken, assertSafeLength } from "../src/db/utils/escape";
 import { MySQLTableQueryBuilder } from "../src/db/queryBuilders/mysql/tableBuilder";
 import { PostgresTableQueryBuilder } from "../src/db/queryBuilders/pgsql/tableBuilder";
-import { MetadataHeader, QueryInput } from "../src/config/types";
+import type { MetadataHeader, QueryInput } from "../src/config/types";
 import { getInsertValues } from "../src/helpers/utilities";
-import { mysqlConfig } from "../src/db/config/mysqlConfig";
-import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
+import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
+import { PGSQL_CONFIG } from "../src/db/config/pgsqlConfig";
 
 const sql = (qi: QueryInput): string => (typeof qi === "string" ? qi : qi.query);
 
@@ -74,19 +74,19 @@ describe("getInsertValues does not double-escape parameter-bound values", () => 
     // quote/backslash escaping — otherwise O'Brien is stored as O''Brien.
     test("MySQL: apostrophes and backslashes pass through untouched", () => {
         const meta: MetadataHeader = { name: { type: "varchar", length: 50 } };
-        const [value] = getInsertValues(meta, { name: "O'Brien\\x" }, mysqlConfig, undefined, true);
+        const [value] = getInsertValues(meta, { name: "O'Brien\\x" }, MYSQL_CONFIG, undefined, true);
         expect(value).toBe("O'Brien\\x");
     });
 
     test("Postgres: apostrophes and backslashes pass through untouched", () => {
         const meta: MetadataHeader = { name: { type: "varchar", length: 50 } };
-        const [value] = getInsertValues(meta, { name: "O'Brien\\x" }, pgsqlConfig, undefined, true);
+        const [value] = getInsertValues(meta, { name: "O'Brien\\x" }, PGSQL_CONFIG, undefined, true);
         expect(value).toBe("O'Brien\\x");
     });
 
     test("type normalization still applies (boolean string -> 1 for MySQL)", () => {
         const meta: MetadataHeader = { flag: { type: "boolean" } };
-        const [value] = getInsertValues(meta, { flag: "true" }, mysqlConfig, undefined, true);
+        const [value] = getInsertValues(meta, { flag: "true" }, MYSQL_CONFIG, undefined, true);
         expect(value).toBe("1");
     });
 });

@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { InsertInput, MetadataHeader, AlterTableChanges } from "../src/config/types";
+import type { InsertInput, MetadataHeader, AlterTableChanges } from "../src/config/types";
 
 // White-box unit tests for the derive-with-fallback gate (deriveConstraintStructure). It may derive
 // the constraint structure from metadata ONLY when doing so is provably identical to the live catalog;

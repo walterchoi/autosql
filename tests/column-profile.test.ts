@@ -1,5 +1,5 @@
 import { buildColumnProfile } from "../src/helpers/columnProfile";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // Physical column profile — the semantic-layer generator's input (doc 06). Pure derivation from the
 // resolved metadata; no business meaning, no DB.

@@ -41,7 +41,6 @@ export async function bench(
 /** Console line for CI visibility. `units` (e.g. row count) adds a throughput figure. */
 export function reportBench(r: BenchResult, units?: number): void {
     const thr = units ? `  (${Math.round((units / r.medianMs) * 1000).toLocaleString()} rows/s)` : "";
-    // eslint-disable-next-line no-console
     console.log(`  ⏱  ${r.label}: median ${r.medianMs.toFixed(1)}ms  [min ${r.minMs.toFixed(1)} / max ${r.maxMs.toFixed(1)}, n=${r.runs}]${thr}`);
 }
 

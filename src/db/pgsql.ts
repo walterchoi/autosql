@@ -1,9 +1,10 @@
 import crypto from "crypto";
 import type { Pool, PoolClient } from "pg";
+import type * as pg from "pg";
 import { Database } from "./database";
-import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput, QueryResult } from "../config/types";
-import { pgsqlConfig } from "./config/pgsqlConfig";
+import { PGSQL_PERMANENT_ERRORS } from './permanentErrors/pgsql';
+import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import { PGSQL_CONFIG } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { escapeIdentifier, escapeLiteral } from './utils/escape';
 import { compareMetaData } from '../helpers/metadata';
@@ -14,7 +15,7 @@ import { AutoSQLHandler } from "./autosql";
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
 import { serializeRowsToCopyText } from "../helpers/bulkLoad";
 import { SchemaLockTimeoutError } from "../errors";
-const dialectConfig = pgsqlConfig
+const DIALECT_CONFIG = PGSQL_CONFIG
 
 export class PostgresDatabase extends Database {
     private schemaLockConnections: Map<string, PoolClient> = new Map();
@@ -25,10 +26,14 @@ export class PostgresDatabase extends Database {
     }
 
     async establishDatabaseConnection(): Promise<void> {
-        let Pg: typeof import("pg");
+        // eslint-disable-next-line @typescript-eslint/naming-convention -- a module/class reference, not data
+        let Pg: typeof pg;
         try {
+            // Lazy require, not a static import: pg is an OPTIONAL peer dependency — a static import
+            // would force every consumer to install all three drivers.
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             Pg = require("pg");
-        } catch (err) {
+        } catch {
             throw new Error("Missing required dependency 'pg'. Please install it to use PgDatabase.");
         }
 
@@ -51,7 +56,7 @@ export class PostgresDatabase extends Database {
             // Pin client encoding to UTF8 so multibyte text transfers intact regardless of the
             // client's locale-derived default (e.g. WIN1252 on Windows). Defense-in-depth only: does
             // NOT rescue malformed source bytes (see sanitizeInvalidChars for those).
-            client_encoding: this.config.encoding || dialectConfig.encoding || "UTF8",
+            client_encoding: this.config.encoding || DIALECT_CONFIG.encoding || "UTF8",
             // `ssl: false` is treated the same as omitting it (plaintext) — only a truthy `ssl` is threaded.
             ...(ssl ? { ssl } : {}),
             stream: this.config.sshStream ? () => this.config.sshStream! : undefined
@@ -72,6 +77,9 @@ export class PostgresDatabase extends Database {
         }
         let copyFrom: any;
         try {
+            // Lazy require, not a static import: pg-copy-streams is an OPTIONAL peer dependency,
+            // only needed for Postgres bulk loads.
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             copyFrom = require("pg-copy-streams").from;
         } catch {
             throw new Error("Missing optional dependency 'pg-copy-streams' (required for bulkLoad on PostgreSQL).");
@@ -163,11 +171,11 @@ export class PostgresDatabase extends Database {
     }
 
     public getDialectConfig() {
-        return dialectConfig;
+        return DIALECT_CONFIG;
     }
 
     protected async getPermanentErrors(): Promise<string[]> {
-        return pgsqlPermanentErrors
+        return PGSQL_PERMANENT_ERRORS
     }
 
     async testQuery(queryOrParams: QueryInput): Promise<any> {
@@ -297,7 +305,6 @@ export class PostgresDatabase extends Database {
                     alterTableChanges = alterTableChangesOrOldHeaders as AlterTableChanges;
                 }
         const queries: QueryInput[] = [];
-        const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "pgsql")}.` : "";
 
         // R9: surface schema changes that are computed but blocked by the safe-default flags.
         if (!isStagingTable) this.warnBlockedSchemaChanges(table, alterTableChanges);
@@ -310,7 +317,6 @@ export class PostgresDatabase extends Database {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 
-        let indexesToDrop: string[] = [];
         // Only drop the unique when the caller opted in (A10); off (default) keeps it and the load
         // fails loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
         if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {

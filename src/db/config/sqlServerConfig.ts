@@ -1,11 +1,11 @@
-import { DialectConfig } from "../../config/types";
+import type { DialectConfig } from "../../config/types";
 
 // SQL Server / Azure SQL (T-SQL) dialect config. Row-store, like MySQL/Postgres.
 // - Text stored as NVARCHAR (UTF-16, always Unicode) so emoji/multilingual round-trip without a UTF-8
 //   collation. Unbounded text -> NVARCHAR(MAX), handled in the table builder ("(max)" can't pass assertSafeTypeToken).
 // - Integer types take NO length/display width -> noLength.
 // - Identifiers bracket-quoted ([name]); parameters named (@p0, @p1 ...) — see escape.ts / sqlserver adapter.
-export const sqlServerConfig: DialectConfig = {
+export const SQL_SERVER_CONFIG: DialectConfig = {
   dialect: "sqlserver",
   encoding: "",
   collate: "",

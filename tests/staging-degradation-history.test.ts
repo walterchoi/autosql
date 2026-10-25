@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // Unit coverage for the atomic staging-degradation-with-history plumbing: the single-PK filter used to
 // run each PK's before-image + merge in one transaction builds the right WHERE clause / params for all

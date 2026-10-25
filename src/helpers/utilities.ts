@@ -1,6 +1,6 @@
-import { defaults, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE, MAX_COLUMN_COUNT } from "../config/defaults";
-import { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult } from "../config/types";
-import { groupings } from "../config/groupings";
+import { DEFAULTS, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE, MAX_COLUMN_COUNT } from "../config/defaults";
+import type { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult } from "../config/types";
+import { GROUPINGS } from "../config/groupings";
 import crypto from 'crypto';
 export function isObject(val: any): boolean {
     return val !== null && typeof val === "object";
@@ -22,47 +22,47 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
 
         const defaultConfig: DatabaseConfig = {
             sqlDialect: config.sqlDialect, // Keep required field
-            pseudoUnique: defaults.pseudoUnique,
-            categorical: defaults.categorical,
-            autoIndexing: defaults.autoIndexing,
-            inferUnique: defaults.inferUnique,
-            inferAdditionalUniques: defaults.inferAdditionalUniques,
-            sampling: defaults.sampling,
-            samplingMinimum: defaults.samplingMinimum,
+            pseudoUnique: DEFAULTS.pseudoUnique,
+            categorical: DEFAULTS.categorical,
+            autoIndexing: DEFAULTS.autoIndexing,
+            inferUnique: DEFAULTS.inferUnique,
+            inferAdditionalUniques: DEFAULTS.inferAdditionalUniques,
+            sampling: DEFAULTS.sampling,
+            samplingMinimum: DEFAULTS.samplingMinimum,
             metaData: config.metaData || {}, // Ensuring headers remain intact
-            maxKeyLength: defaults.maxKeyLength,
-            maxCompositeKeyColumns: defaults.maxCompositeKeyColumns,
-            maxVarcharLength: defaults.maxVarcharLength,
-            autoSplit: defaults.autoSplit,
-            insertStack: defaults.insertStack,
-            insertType: defaults.insertType as "UPDATE" | "INSERT",
-            safeMode: defaults.safeMode,
-            deleteColumns: defaults.deleteColumns,
-            useWorkers: defaults.useWorkers,
-            maxWorkers: defaults.maxWorkers,
-            workerTaskTimeout: defaults.workerTaskTimeout,
-            useStagingInsert: defaults.useStagingInsert,
-            addHistory: defaults.addHistory,
-            addTimestamps: defaults.addTimestamps,
-            decimalToVarchar: defaults.decimalToVarchar,
-            addNested: defaults.addNested,
-            excludeBlankColumns: defaults.excludeBlankColumns,
-            stagingPrefix: defaults.stagingPrefix,
-            historyTableSuffix: defaults.historyTableSuffix,
-            sanitizeInvalidChars: defaults.sanitizeInvalidChars,
-            bulkLoad: defaults.bulkLoad,
-            upgradeCharset: defaults.upgradeCharset,
-            surrogateKey: defaults.surrogateKey,
-            surrogateKeyColumn: defaults.surrogateKeyColumn,
-            useSchemaLock: defaults.useSchemaLock,
-            schemaLockTimeout: defaults.schemaLockTimeout,
-            schemaHistory: defaults.schemaHistory,
-            schemaHistoryTable: defaults.schemaHistoryTable,
-            strictDriftDetection: defaults.strictDriftDetection,
-            detectDrift: defaults.detectDrift,
-            streamingStagingPrefix: defaults.streamingStagingPrefix,
-            streamMaxRetries: defaults.streamMaxRetries,
-            keepOrphanedStagingTables: defaults.keepOrphanedStagingTables,
+            maxKeyLength: DEFAULTS.maxKeyLength,
+            maxCompositeKeyColumns: DEFAULTS.maxCompositeKeyColumns,
+            maxVarcharLength: DEFAULTS.maxVarcharLength,
+            autoSplit: DEFAULTS.autoSplit,
+            insertStack: DEFAULTS.insertStack,
+            insertType: DEFAULTS.insertType as "UPDATE" | "INSERT",
+            safeMode: DEFAULTS.safeMode,
+            deleteColumns: DEFAULTS.deleteColumns,
+            useWorkers: DEFAULTS.useWorkers,
+            maxWorkers: DEFAULTS.maxWorkers,
+            workerTaskTimeout: DEFAULTS.workerTaskTimeout,
+            useStagingInsert: DEFAULTS.useStagingInsert,
+            addHistory: DEFAULTS.addHistory,
+            addTimestamps: DEFAULTS.addTimestamps,
+            decimalToVarchar: DEFAULTS.decimalToVarchar,
+            addNested: DEFAULTS.addNested,
+            excludeBlankColumns: DEFAULTS.excludeBlankColumns,
+            stagingPrefix: DEFAULTS.stagingPrefix,
+            historyTableSuffix: DEFAULTS.historyTableSuffix,
+            sanitizeInvalidChars: DEFAULTS.sanitizeInvalidChars,
+            bulkLoad: DEFAULTS.bulkLoad,
+            upgradeCharset: DEFAULTS.upgradeCharset,
+            surrogateKey: DEFAULTS.surrogateKey,
+            surrogateKeyColumn: DEFAULTS.surrogateKeyColumn,
+            useSchemaLock: DEFAULTS.useSchemaLock,
+            schemaLockTimeout: DEFAULTS.schemaLockTimeout,
+            schemaHistory: DEFAULTS.schemaHistory,
+            schemaHistoryTable: DEFAULTS.schemaHistoryTable,
+            strictDriftDetection: DEFAULTS.strictDriftDetection,
+            detectDrift: DEFAULTS.detectDrift,
+            streamingStagingPrefix: DEFAULTS.streamingStagingPrefix,
+            streamMaxRetries: DEFAULTS.streamMaxRetries,
+            keepOrphanedStagingTables: DEFAULTS.keepOrphanedStagingTables,
         };
 
         const merged = { ...defaultConfig, ...config };
@@ -111,14 +111,14 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
         if (merged.numberFormat !== undefined) {
             // Sugar: resolve to thousandsSeparator/decimalSeparator so it flows through the SAME fields
             // sqlize already reads. IN shares US separators (lakh/crore grouping accepted by normalizeNumber).
-            const NUMBER_FORMATS: Record<string, { thousands: string; decimal: string }> = {
+            const numberFormats: Record<string, { thousands: string; decimal: string }> = {
                 US: { thousands: ",", decimal: "." },
                 IN: { thousands: ",", decimal: "." },
                 EU: { thousands: ".", decimal: "," },
             };
-            const preset = NUMBER_FORMATS[merged.numberFormat];
+            const preset = numberFormats[merged.numberFormat];
             if (!preset) {
-                throw new Error(`Invalid numberFormat "${merged.numberFormat}": expected one of ${Object.keys(NUMBER_FORMATS).join(", ")}.`);
+                throw new Error(`Invalid numberFormat "${merged.numberFormat}": expected one of ${Object.keys(numberFormats).join(", ")}.`);
             }
             // Explicit separators win; supplied together (enforced above) so checking one suffices.
             // Only fill from the preset when the caller gave neither.
@@ -178,12 +178,12 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
     let inputStr = String(input)
     let overridden: Boolean = false
     if(thousandsIndicatorOverride && decimalIndicatorOverride) {
-        const THOUSANDS_INDICATORS = [",", "#*#*", "%*%*"];
-        const DECIMAL_INDICATORS = [".", "%*%*", "#*#*"];
+        const thousandsIndicators = [",", "#*#*", "%*%*"];
+        const decimalIndicators = [".", "%*%*", "#*#*"];
         const usedThousands = thousandsIndicatorOverride;
         const usedDecimal = decimalIndicatorOverride;
-        const unusedThousands = THOUSANDS_INDICATORS.filter(ind => ind !== usedThousands && ind !== usedDecimal)[0];
-        const unusedDecimal = DECIMAL_INDICATORS.filter(ind => ind !== usedThousands && ind !== usedDecimal)[0];
+        const unusedThousands = thousandsIndicators.filter(ind => ind !== usedThousands && ind !== usedDecimal)[0];
+        const unusedDecimal = decimalIndicators.filter(ind => ind !== usedThousands && ind !== usedDecimal)[0];
         overridden = true
         let tempinputStr = inputStr.replaceAll(usedThousands, unusedThousands);
         tempinputStr = tempinputStr.replaceAll(usedDecimal, unusedDecimal);
@@ -622,7 +622,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
             const columnCount = Object.keys(mergedMetaData).length;
             const exceedsColumnLimit = columnCount >= MAX_COLUMN_COUNT
 
-            const { exceedsLimit, nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
+            const { nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
             if (!nearlyExceedsLimit && !exceedsColumnLimit) {
                 if (!newGroupedByTable[tableName]) {
                     newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table
@@ -729,16 +729,16 @@ export function getInsertValues(metaData: MetadataHeader, row: Record<string, an
 
 // One Intl.DateTimeFormat per zone, cached module-level. Construction is ~100× a formatToParts call,
 // so the per-value insert hot path pays it once per zone, not per value. Only runs when sourceTimeZone set.
-const tzFormatterCache = new Map<string, Intl.DateTimeFormat>();
+const TZ_FORMATTER_CACHE = new Map<string, Intl.DateTimeFormat>();
 function tzFormatter(timeZone: string): Intl.DateTimeFormat {
-    let f = tzFormatterCache.get(timeZone);
+    let f = TZ_FORMATTER_CACHE.get(timeZone);
     if (!f) {
         f = new Intl.DateTimeFormat("en-US", {
             timeZone, hourCycle: "h23",
             year: "numeric", month: "2-digit", day: "2-digit",
             hour: "2-digit", minute: "2-digit", second: "2-digit",
         });
-        tzFormatterCache.set(timeZone, f);
+        TZ_FORMATTER_CACHE.set(timeZone, f);
     }
     return f;
 }
@@ -810,18 +810,18 @@ function normalizeDateValue(strValue: string, columnType: string, sourceTimeZone
     // Otherwise keep the WALL-CLOCK exactly as written: parse the components textually, never via Date.
     const dt = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?)?/);
     if (dt) {
-        const [, Y, Mo, D, h, mi, se, frac] = dt;
+        const [, y, mo, d, h, mi, se, frac] = dt;
         if (timeOnly) return h !== undefined ? `${h}:${mi}:${se ?? "00"}${frac ?? ""}` : s;
-        if (dateOnly || h === undefined) return `${Y}-${Mo}-${D}`;
+        if (dateOnly || h === undefined) return `${y}-${mo}-${d}`;
         // datetime/timestamp/datetimetz, zoneless. If the caller declared the source zone, interpret
         // this wall-clock in THAT zone and convert to a UTC instant; otherwise preserve the wall-clock
         // verbatim (no timezone assumed). Neither path involves the host zone.
         if (sourceTimeZone) {
-            return zonedWallClockToUtcIso(Y, Mo, D, h, mi, se ?? "00", frac, sourceTimeZone);
+            return zonedWallClockToUtcIso(y, mo, d, h, mi, se ?? "00", frac, sourceTimeZone);
         }
         // Canonical ISO (with Z) from the SAME digits; the dialect rules reduce it to
         // 'YYYY-MM-DD HH:MM:SS' with the wall-clock unchanged.
-        return `${Y}-${Mo}-${D}T${h}:${mi}:${se ?? "00"}${frac ?? ""}Z`;
+        return `${y}-${mo}-${d}T${h}:${mi}:${se ?? "00"}${frac ?? ""}Z`;
     }
 
     // A bare time value "HH:MM[:SS]" for a time column.
@@ -879,12 +879,12 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
             return strValue;
         }
 
-        const isDateLike = groupings.dateGroup.includes(columnType);
+        const isDateLike = GROUPINGS.dateGroup.includes(columnType);
         if (isDateLike) {
             strValue = normalizeDateValue(strValue, columnType, databaseConfig?.sourceTimeZone, dialectConfig.dialect);
         }
 
-        const isNumberLike = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
+        const isNumberLike = GROUPINGS.intGroup.includes(columnType) || GROUPINGS.specialIntGroup.includes(columnType);
         if (isNumberLike) {
             const normalised = normalizeNumber(value, databaseConfig?.thousandsSeparator, databaseConfig?.decimalSeparator) || strValue;
             // Round to the column's scale: configured cap, else dialect numeric limit (not an arbitrary low default).
@@ -907,7 +907,7 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
         }
 
         return strValue
-    } catch (error) {
+    } catch {
         return value
     }
 }

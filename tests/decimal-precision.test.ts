@@ -1,5 +1,5 @@
 import { getDataHeaders } from "../src/helpers/metadata";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 // Decimal precision = max integer digits + max scale, taken as INDEPENDENT running maxes across rows.
 // The old logic summed each row's integer length with the running scale, so when the widest-integer

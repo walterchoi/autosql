@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { ColumnDefinition, MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 const TEST_TABLE_NAME = "alter_table_complex_test_table";
 
@@ -21,12 +21,6 @@ const MODIFIED_COLUMNS_2: MetadataHeader = {
     name: { type: "varchar", length: 100, allowNull: false, unique: true },
     created_at: { type: "datetime", allowNull: false },
     email: { type: "varchar", length: 255, allowNull: false, unique: true }
-};
-
-const MODIFIED_COLUMNS_3: MetadataHeader = {
-    id: { type: "int", length: 11, allowNull: false }, // Removed as primary key
-    username: { type: "varchar", length: 100, allowNull: false, unique: true },
-    email: { type: "varchar", length: 255, allowNull: false, unique: true, primary: true } // New primary key
 };
 
 Object.values(DB_CONFIG).forEach((config) => {

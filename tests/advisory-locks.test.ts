@@ -1,6 +1,6 @@
 import { SchemaLockTimeoutError } from "../src/errors";
 import { validateConfig } from "../src/helpers/utilities";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 import { Database } from "../src/db/database";
 
 const BASE_CONFIG: DatabaseConfig = {

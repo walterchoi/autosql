@@ -1,6 +1,7 @@
 import { readFile } from "fs/promises";
 import crypto from "crypto";
 import type { Client, ClientChannel } from "ssh2";
+import type * as ssh2 from "ssh2";
 import type { SSHKeys, DatabaseConfig } from "../config/types";
 
 // OpenSSH-format host-key fingerprint: "SHA256:" + base64(sha256(keyblob)) with padding stripped —
@@ -19,11 +20,15 @@ export function fingerprintMatches(key: Buffer, expected: string): boolean {
 }
 
 export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]): Promise<{ stream: ClientChannel; sshClient: Client }> {
-  let SSHClient: typeof import("ssh2").Client;
+  // eslint-disable-next-line @typescript-eslint/naming-convention -- a class reference, not data
+  let SSHClient: typeof ssh2.Client;
 
   try {
+    // Lazy require, not a static import: ssh2 is an OPTIONAL peer dependency, only needed when
+    // a caller actually sets sshConfig.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     SSHClient = require("ssh2").Client;
-  } catch (err) {
+  } catch {
     throw new Error(
       `SSH tunnel config specified but 'ssh2' is not installed. Please run: npm install ssh2`
     );

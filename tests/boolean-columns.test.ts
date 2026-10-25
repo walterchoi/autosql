@@ -1,8 +1,8 @@
 import { getDataHeaders } from "../src/helpers/metadata";
 import { sqlize } from "../src/helpers/utilities";
-import { mysqlConfig } from "../src/db/config/mysqlConfig";
-import { pgsqlConfig } from "../src/db/config/pgsqlConfig";
-import { DatabaseConfig } from "../src/config/types";
+import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
+import { PGSQL_CONFIG } from "../src/db/config/pgsqlConfig";
+import type { DatabaseConfig } from "../src/config/types";
 
 const BASE_CONFIG: DatabaseConfig = {
     sqlDialect: "mysql",
@@ -76,7 +76,7 @@ describe("booleanColumns hint", () => {
 // as CSV sources deliver them) reaches the driver unchanged and MySQL rejects it against a
 // TINYINT(1). This is not hint-specific — plain inference of literal true/false hits the same path.
 describe("sqlize boolean normalization", () => {
-    for (const [name, cfg] of [["mysql", mysqlConfig], ["pgsql", pgsqlConfig]] as const) {
+    for (const [name, cfg] of [["mysql", MYSQL_CONFIG], ["pgsql", PGSQL_CONFIG]] as const) {
         describe(name, () => {
             test("truthy forms normalize to '1'", () => {
                 for (const v of [1, "1", true, "true", "TRUE", "t", "yes"]) {

@@ -1,6 +1,6 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
 import { escapeIdentifier } from "../src/db/utils/escape";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // A-4 provided-schema (assumeSchema) fast path, end to end. The discriminating case: declare
 // `id: bigint` on data whose id values are 0/1 — inference would mis-type that as boolean (R3),

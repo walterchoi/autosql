@@ -1,4 +1,4 @@
-import { isNumeric, isInteger, isFloating, isText, isBoolean, isDate, isTime } from "../../../config/groupings";
+import { isNumeric, isInteger, isFloating, isText, isBoolean } from "../../../config/groupings";
 import { escapeIdentifier, assertSafeTypeToken } from "../../utils/escape";
 
 const q = (name: string) => escapeIdentifier(name, "mysql");

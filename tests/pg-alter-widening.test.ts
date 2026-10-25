@@ -1,5 +1,5 @@
 import { PostgresTableQueryBuilder } from "../src/db/queryBuilders/pgsql/tableBuilder";
-import { AlterTableChanges, DatabaseConfig } from "../src/config/types";
+import type { AlterTableChanges, DatabaseConfig } from "../src/config/types";
 
 // R1: the Postgres modify path comma-joined multiple sub-actions under a single `ALTER COLUMN`
 // prefix (`... SET DATA TYPE x, SET DEFAULT y`), which is a syntax error at the bare second

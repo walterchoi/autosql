@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { AlterTableChanges, DatabaseConfig } from "../src/config/types";
+import type { AlterTableChanges, DatabaseConfig } from "../src/config/types";
 
 // R9: deleteColumns / updatePrimaryKey default to false (the safe default), so compareMetaData can
 // compute a column drop or PK change that is then not executed. That silent no-op must be observable:

@@ -1,6 +1,6 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
 import { bootstrapSchemaHistoryTable, recordMigrationStart, recordMigrationSuccess } from "../src/helpers/schemaHistory";
-import { MetadataHeader } from "../src/config/types";
+import type { MetadataHeader } from "../src/config/types";
 
 // Real-DB proof that recordMigrationStart returns a usable id. On MySQL the id came from a
 // separate `SELECT LAST_INSERT_ID()` runQuery that ran on a *different* pooled connection

@@ -1,11 +1,12 @@
 import crypto from "crypto";
+import { Readable } from "stream";
 import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
 import { Database } from "./database";
-import { mysqlPermanentErrors } from './permanentErrors/mysql';
-import { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, InsertResult, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import { MYSQL_PERMANENT_ERRORS } from './permanentErrors/mysql';
+import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
 import { serializeRowsToCopyText } from "../helpers/bulkLoad";
-import { mysqlConfig } from "./config/mysqlConfig";
+import { MYSQL_CONFIG } from "./config/mysqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { escapeIdentifier, escapeLiteral } from './utils/escape';
 import { compareMetaData } from '../helpers/metadata';
@@ -14,7 +15,7 @@ import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
 import { MySQLInsertQueryBuilder } from "./queryBuilders/mysql/insertBuilder";
 import { AutoSQLHandler } from "./autosql";
 import { SchemaLockTimeoutError } from "../errors";
-const dialectConfig = mysqlConfig
+const DIALECT_CONFIG = MYSQL_CONFIG
 
 export class MySQLDatabase extends Database {
     private schemaLockConnections: Map<string, PoolConnection> = new Map();
@@ -27,8 +28,11 @@ export class MySQLDatabase extends Database {
     async establishDatabaseConnection(): Promise<void> {
         let mysql: any;
         try {
+            // Lazy require, not a static import: mysql2 is an OPTIONAL peer dependency — a static
+            // import would force every consumer to install all three drivers.
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             mysql = require("mysql2/promise");
-        } catch (err) {
+        } catch {
             throw new Error("Missing required dependency 'mysql2'. Please install it to use MySQLDatabase.");
         }
         // TLS passthrough. mysql2 rejects `ssl: true` (wants an object/named profile), so normalise
@@ -50,7 +54,7 @@ export class MySQLDatabase extends Database {
             // Pin the connection charset to a 4-byte-capable encoding. Without this mysql2 negotiates
             // its default (historically 3-byte utf8_general_ci), so a 4-byte char (emoji, some CJK)
             // throws `Incorrect string value` on INSERT even when the table is utf8mb4.
-            charset: this.config.charset || dialectConfig.charset,
+            charset: this.config.charset || DIALECT_CONFIG.charset,
             // `ssl: false` == omitting it (plaintext/driver default); only truthy `ssl` is threaded.
             // mysql2 rejects `ssl: true`, so normalise it to `{}`.
             ...(ssl ? { ssl: ssl === true ? {} : ssl } : {}),
@@ -91,7 +95,6 @@ export class MySQLDatabase extends Database {
         if (rows.length === 0) {
             return { start, end: new Date(), duration: 0, success: true, affectedRows: 0 };
         }
-        const { Readable } = require("stream");
         const schema = this.getConfig().schema;
         const schemaPrefix = schema ? `${escapeIdentifier(schema, "mysql")}.` : "";
         const colList = columns.map(c => escapeIdentifier(c, "mysql")).join(", ");
@@ -160,11 +163,11 @@ export class MySQLDatabase extends Database {
     }
 
     public getDialectConfig() {
-        return dialectConfig;
+        return DIALECT_CONFIG;
     }
 
     protected async getPermanentErrors(): Promise<string[]> {
-        return mysqlPermanentErrors;
+        return MYSQL_PERMANENT_ERRORS;
     }
 
     async testQuery(queryOrParams: QueryInput): Promise<any> {
@@ -302,7 +305,6 @@ export class MySQLDatabase extends Database {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 
-        let indexesToDrop: string[] = [];
         // Only drop the unique when the caller opted in (A10); off (default) keeps it and the load
         // fails loud / diverts on the collision. warnBlockedSchemaChanges emits the warning.
         if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {
@@ -342,8 +344,8 @@ export class MySQLDatabase extends Database {
      * `CHARACTER_SET_NAME` and are ignored. Convergent: once all text columns match, returns `[]`.
      */
     public async getCharsetUpgradeQueries(table: string): Promise<QueryInput[]> {
-        const targetCharset = this.config.charset || dialectConfig.charset;
-        const targetCollate = this.config.collate || dialectConfig.collate;
+        const targetCharset = this.config.charset || DIALECT_CONFIG.charset;
+        const targetCollate = this.config.collate || DIALECT_CONFIG.collate;
         // charset/collate are config-derived identifiers, not row data — validate before
         // interpolating (they can't be parameter-bound in a CONVERT clause).
         const idOk = /^[A-Za-z0-9_]+$/;

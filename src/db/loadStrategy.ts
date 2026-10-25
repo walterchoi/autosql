@@ -2,7 +2,7 @@ import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
 import type { StagingPipeline } from "./stagingPipeline";
 import type { HistoryCoordinator } from "./historyCoordinator";
-import { InsertInput, QueryResult } from "../config/types";
+import type { InsertInput, QueryResult } from "../config/types";
 
 /**
  * Prepared inputs handed to a LoadStrategy: metadata resolved, split applied, nested appended, and

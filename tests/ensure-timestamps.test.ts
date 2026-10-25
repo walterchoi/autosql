@@ -1,5 +1,5 @@
 import { ensureTimestamps } from "../src/helpers/timestamps";
-import { MetadataHeader, supportedDialects } from "../src/config/types";
+import type { MetadataHeader, supportedDialects } from "../src/config/types";
 
 describe("ensureTimestamps", () => {
   it("does nothing if addTimestamps is false", () => {

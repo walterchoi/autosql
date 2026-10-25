@@ -1,5 +1,5 @@
 import { getDataHeaders } from "../src/helpers/metadata";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 const BASE_CONFIG: DatabaseConfig = {
     sqlDialect: "mysql",
@@ -87,9 +87,7 @@ describe("varchar→text promotion after remainingData", () => {
     // Use sampling so that sampleData sees only short values (→ varchar)
     // while remainingData sees a long value that should trigger promotion.
     test("column promoted to text when long value appears only in remainingData", async () => {
-        const shortRows = Array.from({ length: 10 }, (_, i) => ({ note: `short${i}` }));
         const longRow = { note: "x".repeat(2000) }; // 2000 > maxVarcharLength default (1024)
-        const data = [...shortRows, longRow];
 
         // With sampling, shuffle places the long row in remainingData most of the time.
         // Use a deterministic setup: first 10 rows are sample (samplingMinimum=10, sampling=0.9 of 11 ≈ 10)

@@ -1,5 +1,5 @@
 import { Database } from "../src/db/database";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 import { escapeIdentifier } from "../src/db/utils/escape";
 
 // Spec-4 slice E (§3.6): SQL Server rejects ALTER COLUMN that changes a column's TYPE while an index or

@@ -1,5 +1,5 @@
 import { getDataHeaders } from "../src/helpers/metadata";
-import { DatabaseConfig } from "../src/config/types";
+import type { DatabaseConfig } from "../src/config/types";
 
 // R12: a column that arrives with no data (all null) has no inferable type. AutoSQL defers it —
 // it is excluded from inference (no type is guessed) and created, correctly typed, when a later

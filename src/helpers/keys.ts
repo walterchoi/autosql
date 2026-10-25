@@ -1,6 +1,6 @@
-import { defaults } from "../config/defaults";
-import { MetadataHeader, ColumnDefinition, DatabaseConfig } from "../config/types";
-import { groupings } from "../config/groupings";
+import { DEFAULTS } from "../config/defaults";
+import type { MetadataHeader, ColumnDefinition, DatabaseConfig } from "../config/types";
+import { GROUPINGS } from "../config/groupings";
 import { generateCombinations, isCombinationUnique } from "../helpers/utilities";
 
 /** Column definition for an auto-generated surrogate primary key (BIGINT AUTO_INCREMENT / BIGSERIAL). */
@@ -57,7 +57,7 @@ export function applySurrogateKey(
     const hasPrimary = Object.values(metaData).some(col => col.primary === true);
     if (hasPrimary) return metaData;
 
-    const name = config.surrogateKeyColumn || defaults.surrogateKeyColumn;
+    const name = config.surrogateKeyColumn || DEFAULTS.surrogateKeyColumn;
     if (metaData[name]) {
         throw new Error(
             `surrogateKey: cannot add surrogate column "${name}" because a column with that name ` +
@@ -74,13 +74,13 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
     const maxComposite = Math.max(1, maxCompositeKeyColumns ?? 4);
     try {
         const headers: MetadataHeader = JSON.parse(JSON.stringify(meta_data)); // Deep copy to avoid mutation
-        const maxKeyLength = maxKeyLengthInput || defaults.maxKeyLength;
+        const maxKeyLength = maxKeyLengthInput || DEFAULTS.maxKeyLength;
         let primaryKeyFound = false;
 
         let requiredPrimaryKeys: string[] = [];
         let potentialPrimaryKeys: string[] = [];
         let potentialCompositeKeys: string[] = [];
-        let NullablePseudoUniqueColumns: string[] = [];
+        let nullablePseudoUniqueColumns: string[] = [];
 
         // Key limits are in bytes, so a multibyte (CJK/emoji) value can exceed the limit even when its
         // char length looks fine. When sample data is available, capture each column's max byte length
@@ -100,10 +100,9 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         for (const [columnName, column] of Object.entries(headers)) {
             const columnType = column.type ?? "varchar";
             const columnLength = Math.max(column.length ?? 0, maxByteLenByColumn[columnName] ?? 0) || 255
-            const isNumeric = groupings.intGroup.includes(columnType) || groupings.specialIntGroup.includes(columnType);
-            const isDecimal = (column.decimal !== 0 && column.decimal !== undefined) || column.type == 'decimal' || groupings.specialIntGroup.includes(columnType); // Identify decimal columns
-            const isText = groupings.textGroup.includes(columnType) && columnType !== "varchar";
-            const isDate = groupings.dateGroup.includes(columnType);
+            const isDecimal = (column.decimal !== 0 && column.decimal !== undefined) || column.type == 'decimal' || GROUPINGS.specialIntGroup.includes(columnType); // Identify decimal columns
+            const isText = GROUPINGS.textGroup.includes(columnType) && columnType !== "varchar";
+            const isDate = GROUPINGS.dateGroup.includes(columnType);
 
             // An explicitly requested primary key must be honored even if long/text/decimal — else it
             // is silently dropped and a different key (or none) chosen. Auto-index exclusions below
@@ -132,7 +131,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             } else if ((column.pseudounique || column.categorical) && !column.allowNull) {
                 potentialCompositeKeys.push(columnName)
             } else if (column.pseudounique) {
-                NullablePseudoUniqueColumns.push(columnName)
+                nullablePseudoUniqueColumns.push(columnName)
             }
         }
         
@@ -152,7 +151,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                     idLikeKey = key;
                   }
               
-                  if (!numericKey && groupings.intGroup.includes(type)) {
+                  if (!numericKey && GROUPINGS.intGroup.includes(type)) {
                     numericKey = key;
                   }
               
@@ -173,7 +172,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
             // If no unique column exists, try pseudo-unique combinations using data
             let foundUniqueCombination = false;
             const dateColumns = Object.keys(headers).filter(
-                col => groupings.dateGroup.includes(headers[col].type ?? "") && headers[col].allowNull !== true
+                col => GROUPINGS.dateGroup.includes(headers[col].type ?? "") && headers[col].allowNull !== true
             );
             
             if (!selectedPrimaryKey && data && data.length > 0) {

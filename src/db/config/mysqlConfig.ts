@@ -1,6 +1,6 @@
-import { TranslateMap, DialectConfig, SqlizeRule } from "../../config/types";
+import type { DialectConfig } from "../../config/types";
 
-export const mysqlConfig: DialectConfig = {
+export const MYSQL_CONFIG: DialectConfig = {
   dialect: "mysql",
   engine: "InnoDB",
   charset: "utf8mb4",

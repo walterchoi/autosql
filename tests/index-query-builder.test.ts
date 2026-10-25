@@ -1,5 +1,5 @@
 import { DB_CONFIG, Database } from "./utils/testConfig";
-import { MetadataHeader, QueryResult } from "../src/config/types";
+import type { MetadataHeader, QueryResult } from "../src/config/types";
 
 const TEST_TABLE_NAME = "test_index_table";
 
