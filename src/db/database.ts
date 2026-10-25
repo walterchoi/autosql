@@ -20,13 +20,11 @@ export abstract class Database {
     protected config: DatabaseConfig;
     public autoSQLHandler!: AutoSQLHandler;
     protected abstract getPermanentErrors(): Promise<string[]>;
-    // Per-operation schema override: a schema-scoped call runs its whole async operation inside this
-    // context so concurrent calls with different schemas stay isolated instead of racing on a shared,
-    // mutated this.config.schema.
+    // Per-operation schema override, so concurrent calls with different schemas don't race on a
+    // shared, mutated this.config.schema.
     private schemaContext = new AsyncLocalStorage<string>();
-    // Per-operation number-format override. Separator consensus resolves ONE {thousands, decimal}
-    // pair and runs the whole load inside this context, so inference, load-time sqlize and worker
-    // dispatch all see it without mutating shared config. Isolated per-load like schemaContext.
+    // Per-operation number-format override, so a resolved {thousands, decimal} pair reaches
+    // inference/sqlize/worker dispatch for one load without mutating shared config.
     private separatorContext = new AsyncLocalStorage<{ thousands: string; decimal: string }>();
 
     constructor(config: DatabaseConfig) {
@@ -46,21 +44,13 @@ export abstract class Database {
         return cfg;
     }
 
-    /**
-     * Run `fn` with `schema` as the effective config schema for the whole async operation, without
-     * mutating shared config, so concurrent operations on different schemas cannot interfere. A
-     * falsy schema runs `fn` unchanged.
-     */
+    /** Run `fn` with `schema` as the effective config schema, without mutating shared config. A falsy schema runs `fn` unchanged. */
     public runWithSchema<T>(schema: string | undefined, fn: () => T): T {
         if (!schema) return fn();
         return this.schemaContext.run(schema, fn);
     }
 
-    /**
-     * Run `fn` with resolved number-format separators as the effective config for the whole async
-     * operation (including worker dispatch), without mutating shared config. A falsy pair runs `fn`
-     * unchanged.
-     */
+    /** Run `fn` with resolved number-format separators as the effective config, without mutating shared config. A falsy pair runs `fn` unchanged. */
     public runWithSeparators<T>(separators: { thousands: string; decimal: string } | undefined, fn: () => T): T {
         if (!separators) return fn();
         return this.separatorContext.run(separators, fn);
@@ -86,10 +76,10 @@ export abstract class Database {
     public error(msg: string): void { this.config.logger?.error?.(msg); }
 
     /**
-     * Make blocked schema changes observable (R9). `deleteColumns`/`updatePrimaryKey` default to
-     * false, so compareMetaData can compute a drop or PK change that is then silently not executed.
-     * Warn once, naming the columns and the flag to flip. `primaryKeyChanges` is only populated on a
-     * genuine delta and `dropColumns` is rename-folded, so neither warns on an unchanged re-ingest.
+     * Warn once when a computed schema change (drop/PK change/unique-drop) is blocked by its
+     * opt-in flag defaulting to false (R9), naming the columns and the flag to flip. Doesn't fire
+     * on an unchanged re-ingest: `primaryKeyChanges` only populates on a genuine delta, and
+     * `dropColumns` is rename-folded.
      */
     protected warnBlockedSchemaChanges(table: string, changes: AlterTableChanges): void {
         if (changes.dropColumns?.length && !this.config.deleteColumns) {
@@ -179,7 +169,7 @@ export abstract class Database {
 
                 attempts++;
                 if (attempts < maxAttempts) {
-                    await new Promise((res) => setTimeout(res, 1000)); // Wait 1 second before retrying
+                    await new Promise((res) => setTimeout(res, 1000));
                 }
             }
         }
@@ -267,9 +257,8 @@ export abstract class Database {
     }
     
 
-    // Transaction control statements. These require a pinned connection (see runTransaction);
-    // a transaction spread across throwaway pool connections is not atomic. Call runTransaction
-    // for atomic multi-statement work rather than these directly.
+    // Require a pinned connection — a transaction spread across throwaway pool connections isn't
+    // atomic. Call runTransaction for atomic multi-statement work rather than these directly.
     public async startTransaction(client: any): Promise<void> {
         if (!client) throw new Error("startTransaction requires a pinned connection; use runTransaction() for atomic transactions.");
         await this.executeQuery("START TRANSACTION;", client);
@@ -290,7 +279,7 @@ export abstract class Database {
 
         try {
             if ("end" in this.connection) {
-                await this.connection.end(); // MySQL & PostgreSQL close method
+                await this.connection.end(); // only MySQL/PostgreSQL expose this
             }
             if (this.config.sshClient) {
                 this.config.sshClient.end();
@@ -306,10 +295,10 @@ export abstract class Database {
     }
     
     public async runQuery(queryOrParams: QueryInput, maxAttemptsOverride?: number): Promise<QueryResult> {
-        // `maxAttemptsOverride` lets a caller owning its OWN retry loop opt out of the internal retry.
-        // Matters for NON-idempotent statements (single-row INSERT): on an ambiguous failure (conn
-        // dropped AFTER the server applied the row) the internal retry would duplicate it.
-        // `perRowInsertWithRetry` passes 1 for exactly this (A15).
+        // `maxAttemptsOverride` lets a caller opt out of the internal retry — matters for a
+        // non-idempotent statement (single-row INSERT), where retrying after an ambiguous failure
+        // (conn dropped after the server applied the row) would duplicate it. `perRowInsertWithRetry`
+        // passes 1 for exactly this (A15).
         const maxAttempts = maxAttemptsOverride ?? MAX_QUERY_ATTEMPTS ?? 3;
         let attempts = 0;
         let _error: any;
@@ -345,7 +334,7 @@ export abstract class Database {
     
                 attempts++;
                 if (attempts < maxAttempts) {
-                    await new Promise(res => setTimeout(res, 1000)); // Wait before retry
+                    await new Promise(res => setTimeout(res, 1000));
                 } else {
                     _error = error;
                 }
@@ -396,7 +385,7 @@ export abstract class Database {
                 await this.startTransaction(client);
 
                 for (const query of queries) {
-                    if (!query?.query?.trim()) continue; // Skip empty queries
+                    if (!query?.query?.trim()) continue;
                     const { rows, affectedRows } = await this.executeQuery(query, client);
                     results = results.concat(rows);
                     totalAffectedRows += affectedRows || 0;
@@ -428,7 +417,7 @@ export abstract class Database {
                     _error = error;
                     break;
                 }
-                await new Promise(res => setTimeout(res, 1000)); // Wait before retrying the whole transaction
+                await new Promise(res => setTimeout(res, 1000));
             } finally {
                 if (client) {
                     // A failed rollback leaves the connection dirty (esp. Postgres: aborted txn);
@@ -563,20 +552,17 @@ export abstract class Database {
     public abstract getMaxConnections(): number;
 
     /**
-     * How many schema locks this instance holds. Each pins a pool connection (mysql/pgsql) or a
-     * transaction (sqlserver), so `runTransactionsWithConcurrency` subtracts them from the pool size
-     * to avoid over-subscribing while locks are held (A25b).
+     * How many schema locks this instance holds (each pins a pool connection or transaction).
+     * `runTransactionsWithConcurrency` subtracts this from the pool size to avoid
+     * over-subscribing while locks are held (A25b).
      */
     protected getHeldSchemaLockCount(): number { return 0; }
 
     /**
-     * The `ssl.rejectUnauthorized:false` warning and the `ssl`+`sshConfig` conflict warning were
-     * copy-pasted verbatim across mysql.ts and pgsql.ts (and that drift was itself a bug once: SQL
-     * Server's copy was missing the conflict warning, see PR #79 / the sshConfig refusal in
-     * validateConfig). sqlserver.ts also calls this for its own rejectUnauthorized warning; its
-     * `sshConfig` conflict branch is a no-op there in practice since `sshConfig`/`sshStream` on SQL
-     * Server already throws in validateConfig before any connection code runs — this just means
-     * every dialect goes through one copy of the message instead of three.
+     * Shared `rejectUnauthorized:false` + `ssl`/`sshConfig` conflict warnings for all 3 dialects —
+     * previously copy-pasted, which once let SQL Server's copy drift out of sync (PR #79). The
+     * `sshConfig` conflict branch is a no-op on SQL Server (validateConfig already refuses that
+     * combination there), but still routes through one copy of the message.
      */
     protected warnInsecureTlsAndTunnelConflict(ssl: unknown): void {
         if (ssl && typeof ssl === "object" && (ssl as { rejectUnauthorized?: boolean }).rejectUnauthorized === false) {
@@ -588,10 +574,9 @@ export abstract class Database {
     }
 
     /**
-     * acquireSchemaLock's "register the newly-acquired connection" step, identical across mysql.ts
-     * and pgsql.ts: release whatever stale connection was already registered for this table (a
-     * leftover entry would otherwise leak a pooled connection) before pointing the map at the new
-     * one.
+     * acquireSchemaLock's connection-registration step (shared by mysql.ts/pgsql.ts): release any
+     * stale connection already registered for this table before pointing the map at the new one,
+     * so a leftover entry can't leak a pooled connection.
      */
     protected registerSchemaLockConnection<T extends { release(): void }>(connections: Map<string, T>, table: string, client: T): void {
         const stale = connections.get(table);
@@ -600,9 +585,8 @@ export abstract class Database {
     }
 
     /**
-     * acquireSchemaLock's catch-path cleanup, identical across mysql.ts and pgsql.ts: if the map
-     * was never updated to point at `client` (the lock wasn't acquired, or acquiring threw before
-     * registration), release it — the one place that owns `client` at this point.
+     * acquireSchemaLock's catch-path cleanup (shared by mysql.ts/pgsql.ts): release `client` if
+     * the map was never updated to point at it (lock not acquired, or acquiring threw first).
      */
     protected releaseSchemaLockConnectionOnError<T extends { release(): void }>(connections: Map<string, T>, table: string, client: T | undefined): void {
         if (client && connections.get(table) !== client) client.release();

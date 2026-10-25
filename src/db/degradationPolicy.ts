@@ -8,8 +8,8 @@ import { DEFAULTS } from "../config/defaults";
 
 /**
  * Graceful-degradation collaborator: the shared per-row retry engine plus the direct-insert,
- * staging non-atomic, and staging atomic-per-PK adapters. Holds a back-ref to the handler because
- * schema widening is worker-dispatched (configureTables).
+ * staging non-atomic, and staging atomic-per-PK adapters. Keeps a `handler` back-ref since
+ * schema widening is worker-dispatched (`configureTables`).
  */
 export class DegradationPolicy {
     private handler: AutoSQLHandler;
@@ -75,9 +75,8 @@ export class DegradationPolicy {
             const failures: { row: Record<string, any>; error: string }[] = [];
 
             for (const row of pendingRows) {
-                // Pre-sqlize like the bulk path so this fallback normalizes values (separators,
-                // decimal rounding, timezone, booleans) instead of binding raw. Without it a
-                // locale-formatted number could never land via degradation or streaming.
+                // Pre-sqlize like the bulk path (separators, decimal rounding, timezone, booleans)
+                // instead of binding raw — otherwise a locale-formatted number could never land here.
                 const normalisedRow = getInsertValues(workingMeta, row, this.db.getDialectConfig(), this.db.getConfig(), true);
                 const insertQ = this.db.getInsertStatementQuery(table, [normalisedRow], workingMeta, insertType);
                 // Single attempt: this loop already retries across rounds, so the internal retry is
@@ -91,9 +90,8 @@ export class DegradationPolicy {
                 }
             }
 
-            // Remaining work = only rows that failed this round. Assign BEFORE the break so a fully
-            // successful round leaves nothing pending — otherwise inserted rows would stay in
-            // pendingRows and get diverted as "rejects" below.
+            // Assign before the break: a fully successful round must leave pendingRows empty, or
+            // those rows would be diverted as "rejects" below.
             pendingRows = failures.map(f => f.row);
             if (pendingRows.length === 0) break;
 
@@ -172,9 +170,8 @@ export class DegradationPolicy {
 
     /**
      * Per-PK fallback for the atomic history path: [before-image, single-PK merge] in ONE
-     * transaction, so a PK whose merge violates a constraint rolls back with no history and no data.
-     * No widening here, because `configureTables` already fitted the schema to every row, so a
-     * failure is a data problem re-inference cannot fix.
+     * transaction, so a constraint violation rolls back with no history and no data. No widening
+     * here — `configureTables` already fitted the schema, so a failure is a data problem.
      */
     async perPkAtomicStagingMerge(input: InsertInput, stagingInput: InsertInput, historyInput?: InsertInput): Promise<QueryResult> {
         const config = this.db.getConfig();
