@@ -71,7 +71,18 @@ const PROMOTED_RULES = {
     // it. utilities.ts's isValidDataFormat param narrows to `unknown`: the body only does
     // Array.isArray/typeof checks, so the stricter type costs nothing and is the real intent for a
     // function whose whole job is validating an untrusted shape.
-    "@typescript-eslint/no-redundant-type-constituents": "error"
+    "@typescript-eslint/no-redundant-type-constituents": "error",
+    // Four unrelated one-offs: utilities.ts's `Boolean` -> `boolean`; its `normalizeResultKeys<T>`
+    // dropped the single-use generic (callers never relied on it narrowing the return type, which
+    // was always the wider Record<string, any>); escape.ts's renderColumnDefault now throws a
+    // clear error for a column default that isn't string/number/boolean/null/undefined instead of
+    // silently stringifying an object to '[object Object]' into a raw SQL DEFAULT clause (every
+    // real caller only ever passes one of those five, per tests); worker.ts's bare `Function` for
+    // the dynamic autoSQLHandler method dispatch got a real `(...args: any[]) => any` signature.
+    "@typescript-eslint/no-wrapper-object-types": "error",
+    "@typescript-eslint/no-unnecessary-type-parameters": "error",
+    "@typescript-eslint/no-base-to-string": "error",
+    "@typescript-eslint/no-unsafe-function-type": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common

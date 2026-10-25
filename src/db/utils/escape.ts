@@ -125,7 +125,9 @@ export function renderColumnDefault(value: unknown, dialectConfig: DialectConfig
     }
     if (value === null || value === undefined) return "NULL";
     if (typeof value === "boolean" || typeof value === "number") return String(value);
-    const expr = String(value);
-    assertSafeDefaultExpression(expr);
-    return expr;
+    if (typeof value !== "string") {
+        throw new Error(`Unsupported column default value of type '${typeof value}'; expected a string, number, boolean, null, or undefined.`);
+    }
+    assertSafeDefaultExpression(value);
+    return value;
 }

@@ -176,7 +176,7 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         throw new Error("Both 'thousandsIndicatorOverride' and 'decimalIndicatorOverride' must be provided together.");
     }
     let inputStr = String(input)
-    let overridden: Boolean = false
+    let overridden: boolean = false
     if(thousandsIndicatorOverride && decimalIndicatorOverride) {
         const thousandsIndicators = [",", "#*#*", "%*%*"];
         const decimalIndicators = [".", "%*%*", "#*#*"];
@@ -1017,7 +1017,7 @@ export function generateSafeConstraintName(table: string, column: string, type: 
     return `${truncated}_${hash}`;
 }
 
-export function normalizeResultKeys<T extends Record<string, any>>(row: T): Record<string, any> {
+export function normalizeResultKeys(row: Record<string, any>): Record<string, any> {
     return Object.fromEntries(
         Object.entries(row).map(([key, value]) => [key.toLowerCase(), value])
     );

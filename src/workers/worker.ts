@@ -42,7 +42,7 @@ import type { AutoSQLHandler } from "../db/autosql";
                 await new Promise(resolve => setTimeout(resolve, randomTimeInMs));
                 parentPort?.postMessage({ success: true, result: result });
             } else if (typeof autoSQL[method as keyof AutoSQLHandler] === "function") {
-                const result = await (autoSQL[method as keyof AutoSQLHandler] as Function)(...normalizedParams);
+                const result = await (autoSQL[method as keyof AutoSQLHandler] as (...args: any[]) => any)(...normalizedParams);
                 parentPort?.postMessage({ success: true, result });
             } else {
                 throw new Error(`Invalid method: ${method}`);
