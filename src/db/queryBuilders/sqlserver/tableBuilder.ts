@@ -1,10 +1,10 @@
 import type { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig, ColumnDefinition } from "../../../config/types";
-import { sqlServerConfig } from "../../config/sqlServerConfig";
+import { SQL_SERVER_CONFIG } from "../../config/sqlServerConfig";
 import type { DialectConfig } from "../../../config/types";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, escapeLiteral, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
 
-const dialectConfig = sqlServerConfig;
+const DIALECT_CONFIG = SQL_SERVER_CONFIG;
 const q = (name: string) => escapeIdentifier(name, "sqlserver");
 const lit = (value: string | number | boolean) => escapeLiteral(value, "sqlserver");
 
@@ -49,7 +49,7 @@ function renderColumnType(column: ColumnDefinition, cfg: DialectConfig): string 
 
 export class SqlServerTableQueryBuilder {
     static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
-        const maxIndexCount = dialectConfig.maxIndexCount || 64;
+        const maxIndexCount = DIALECT_CONFIG.maxIndexCount || 64;
         let remainingIndexSlots = maxIndexCount;
         let sqlQueries: QueryInput[] = [];
         const schema = databaseConfig?.schema || DEFAULT_SCHEMA;
@@ -63,7 +63,7 @@ export class SqlServerTableQueryBuilder {
         for (const [columnName, column] of Object.entries(headers)) {
             if (!column.type) throw new Error(`Missing type for column ${columnName}`);
 
-            let columnDef = `${q(columnName)} ${renderColumnType(column, dialectConfig)}`;
+            let columnDef = `${q(columnName)} ${renderColumnType(column, DIALECT_CONFIG)}`;
 
             // Auto-increment uses IDENTITY(1,1) (SQL Server has no SERIAL family).
             if (column.autoIncrement) {
@@ -72,7 +72,7 @@ export class SqlServerTableQueryBuilder {
 
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined && !column.autoIncrement) {
-                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`;
             }
 
             if (column.primary) primaryKeys.push(columnName);
@@ -146,10 +146,10 @@ export class SqlServerTableQueryBuilder {
         for (const [columnName, column] of Object.entries(changes.addColumns)) {
             if (!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`); }
 
-            let columnDef = `${q(columnName)} ${renderColumnType(column, dialectConfig)}`;
+            let columnDef = `${q(columnName)} ${renderColumnType(column, DIALECT_CONFIG)}`;
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) {
-                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`;
             } else if (!column.allowNull && column.calculated) {
                 // NOT NULL calculated timestamp on a possibly-populated table needs a DEFAULT or ADD
                 // fails on pre-existing rows. Backfill with CURRENT_TIMESTAMP (calculated cols are timestamps).
@@ -170,7 +170,7 @@ export class SqlServerTableQueryBuilder {
 
             let serverType: string;
             if (column.type) {
-                serverType = renderColumnType(column, dialectConfig);
+                serverType = renderColumnType(column, DIALECT_CONFIG);
             } else {
                 // No type change requested, but ALTER COLUMN still requires a type. Fall back to
                 // previousType; without it there's nothing valid to emit (even for nullability) — skip.
@@ -180,7 +180,7 @@ export class SqlServerTableQueryBuilder {
                     }
                     continue;
                 }
-                serverType = renderColumnType({ ...column, type: column.previousType }, dialectConfig);
+                serverType = renderColumnType({ ...column, type: column.previousType }, DIALECT_CONFIG);
             }
 
             // NOTE: default-constraint handling (drop + re-add) is deferred — a default change in a
@@ -230,7 +230,7 @@ IF LEN(@cre) > 0 EXEC (@cre);`,
             const meta = changes.modifyColumns[columnName];
             const typeSource = meta?.type || meta?.previousType;
             if (!typeSource) return; // No known type → can't emit a valid ALTER COLUMN
-            const serverType = renderColumnType({ ...(meta || { type: typeSource }), type: typeSource }, dialectConfig);
+            const serverType = renderColumnType({ ...(meta || { type: typeSource }), type: typeSource }, DIALECT_CONFIG);
             queries.push({
                 query: `ALTER TABLE ${qualified} ALTER COLUMN ${q(columnName)} ${serverType} NULL;`,
                 params: []

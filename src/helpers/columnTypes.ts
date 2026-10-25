@@ -1,5 +1,5 @@
-import { regexPatterns } from "../config/regex";
-import { groupings } from "../config/groupings";
+import { REGEX_PATTERNS } from "../config/regex";
+import { GROUPINGS } from "../config/groupings";
 import { normalizeNumber, setToArray } from "./utilities";
 
 // Using regex, when provided a data point, predict what data type this will be.
@@ -59,7 +59,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             return "varchar";
         }
 
-        if (regexPatterns.number.test(strData) || regexPatterns.decimal.test(strData)) {
+        if (REGEX_PATTERNS.number.test(strData) || REGEX_PATTERNS.decimal.test(strData)) {
             strData = normalizeNumber(strData, thousandsSeparator, decimalSeparator, onAmbiguousSeparator);
 
             if (!strData) {
@@ -67,21 +67,21 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             }
         }
 
-        if (regexPatterns.boolean.test(strData)) {
+        if (REGEX_PATTERNS.boolean.test(strData)) {
             currentType = "boolean";
-        } else if (regexPatterns.number.test(strData)) {
+        } else if (REGEX_PATTERNS.number.test(strData)) {
             currentType = "int";
-        } else if (regexPatterns.decimal.test(strData)) {
+        } else if (REGEX_PATTERNS.decimal.test(strData)) {
             currentType = "decimal";
-        } else if (regexPatterns.exponential.test(strData)) {
+        } else if (REGEX_PATTERNS.exponential.test(strData)) {
             currentType = "exponent";
-        } else if (regexPatterns.datetimetz.test(strData)) {
+        } else if (REGEX_PATTERNS.datetimetz.test(strData)) {
             currentType = "datetimetz";
-        } else if (regexPatterns.datetime.test(strData)) {
+        } else if (REGEX_PATTERNS.datetime.test(strData)) {
             currentType = "datetime";
-        } else if (regexPatterns.date.test(strData)) {
+        } else if (REGEX_PATTERNS.date.test(strData)) {
             currentType = "date";
-        } else if (regexPatterns.time.test(strData)) {
+        } else if (REGEX_PATTERNS.time.test(strData)) {
             currentType = "time";
         } else if (json) {
             currentType = "json";
@@ -187,19 +187,19 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
             let overallTypeGroup: string | null = null;
 
             if (currentType) {
-                if (groupings.intGroup.includes(currentType)) currentTypeGroup = "int";
-                else if (groupings.specialIntGroup.includes(currentType)) currentTypeGroup = "specialInt";
-                else if (groupings.textGroup.includes(currentType)) currentTypeGroup = "text";
-                else if (groupings.specialTextGroup.includes(currentType)) currentTypeGroup = "specialText";
-                else if (groupings.dateGroup.includes(currentType)) currentTypeGroup = "date";
+                if (GROUPINGS.intGroup.includes(currentType)) currentTypeGroup = "int";
+                else if (GROUPINGS.specialIntGroup.includes(currentType)) currentTypeGroup = "specialInt";
+                else if (GROUPINGS.textGroup.includes(currentType)) currentTypeGroup = "text";
+                else if (GROUPINGS.specialTextGroup.includes(currentType)) currentTypeGroup = "specialText";
+                else if (GROUPINGS.dateGroup.includes(currentType)) currentTypeGroup = "date";
             }
 
             if (overallType) {
-                if (groupings.intGroup.includes(overallType)) overallTypeGroup = "int";
-                else if (groupings.specialIntGroup.includes(overallType)) overallTypeGroup = "specialInt";
-                else if (groupings.textGroup.includes(overallType)) overallTypeGroup = "text";
-                else if (groupings.specialTextGroup.includes(overallType)) overallTypeGroup = "specialText";
-                else if (groupings.dateGroup.includes(overallType)) overallTypeGroup = "date";
+                if (GROUPINGS.intGroup.includes(overallType)) overallTypeGroup = "int";
+                else if (GROUPINGS.specialIntGroup.includes(overallType)) overallTypeGroup = "specialInt";
+                else if (GROUPINGS.textGroup.includes(overallType)) overallTypeGroup = "text";
+                else if (GROUPINGS.specialTextGroup.includes(overallType)) overallTypeGroup = "specialText";
+                else if (GROUPINGS.dateGroup.includes(overallType)) overallTypeGroup = "date";
             }
 
             let collatedType: string | null = null;
@@ -230,9 +230,9 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
                 } else if ((currentType === "decimal" && overallTypeGroup === "int") || (overallType === "decimal" && currentTypeGroup === "int")) {
                     collatedType = "decimal";
                 } else if (overallTypeGroup === "text" || currentTypeGroup === "text") {
-                    for (let i = groupings.textGroup.length - 1; i >= 0; i--) {
-                        if (groupings.textGroup[i] === currentType || groupings.textGroup[i] === overallType) {
-                            collatedType = groupings.textGroup[i];
+                    for (let i = GROUPINGS.textGroup.length - 1; i >= 0; i--) {
+                        if (GROUPINGS.textGroup[i] === currentType || GROUPINGS.textGroup[i] === overallType) {
+                            collatedType = GROUPINGS.textGroup[i];
                             break;
                         }
                     }
@@ -250,23 +250,23 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
                     // decimal+double -> double deliberately: "double" only enters via a pre-existing
                     // DOUBLE column, and narrowing back to decimal would be a lossy/erroring ALTER. Pure
                     // inference never yields "double", so exact decimals aren't silently floated here.
-                    for (let i = groupings.specialIntGroup.length - 1; i >= 0; i--) {
-                        if (groupings.specialIntGroup[i] === currentType || groupings.specialIntGroup[i] === overallType) {
-                            overallType = groupings.specialIntGroup[i];
+                    for (let i = GROUPINGS.specialIntGroup.length - 1; i >= 0; i--) {
+                        if (GROUPINGS.specialIntGroup[i] === currentType || GROUPINGS.specialIntGroup[i] === overallType) {
+                            overallType = GROUPINGS.specialIntGroup[i];
                             break;
                         }
                     }
                 } else if (overallTypeGroup === "int") {
-                    for (let i = groupings.intGroup.length - 1; i >= 0; i--) {
-                        if (groupings.intGroup[i] === currentType || groupings.intGroup[i] === overallType) {
-                            overallType = groupings.intGroup[i];
+                    for (let i = GROUPINGS.intGroup.length - 1; i >= 0; i--) {
+                        if (GROUPINGS.intGroup[i] === currentType || GROUPINGS.intGroup[i] === overallType) {
+                            overallType = GROUPINGS.intGroup[i];
                             break;
                         }
                     }
                 } else if (overallTypeGroup === "text") {
-                    for (let i = groupings.textGroup.length - 1; i >= 0; i--) {
-                        if (groupings.textGroup[i] === currentType || groupings.textGroup[i] === overallType) {
-                            overallType = groupings.textGroup[i];
+                    for (let i = GROUPINGS.textGroup.length - 1; i >= 0; i--) {
+                        if (GROUPINGS.textGroup[i] === currentType || GROUPINGS.textGroup[i] === overallType) {
+                            overallType = GROUPINGS.textGroup[i];
                             break;
                         }
                     }

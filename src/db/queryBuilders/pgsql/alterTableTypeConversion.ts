@@ -1,13 +1,13 @@
 import { isNumeric, isInteger, isFloating, isText, isBoolean, isDate, isTime } from "../../../config/groupings";
 import { escapeIdentifier, assertSafeTypeToken } from "../../utils/escape";
-import { pgsqlConfig } from "../../config/pgsqlConfig";
+import { PGSQL_CONFIG } from "../../config/pgsqlConfig";
 
 const q = (name: string) => escapeIdentifier(name, "pgsql");
 
 // Translate a LOCAL inference type to its Postgres SERVER type for a `::cast` (A12): branches key off
 // local types but the emitted cast must name a real Postgres type (`::double`/`::datetime`/`::tinyint`
 // don't exist, ALTER fails at run time). Mirrors SET DATA TYPE; map is a fixed set of trusted tokens.
-const toServer = (t: string): string => pgsqlConfig.translate.localToServer[t] ?? t;
+const toServer = (t: string): string => PGSQL_CONFIG.translate.localToServer[t] ?? t;
 
 // Generates a `USING` clause for ALTER COLUMN to safely convert data types.
 export function getUsingClause(columnName: string, oldType: string, newType: string): string {

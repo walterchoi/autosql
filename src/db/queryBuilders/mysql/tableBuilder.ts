@@ -1,14 +1,14 @@
 import type { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
-import { mysqlConfig } from "../../config/mysqlConfig";
+import { MYSQL_CONFIG } from "../../config/mysqlConfig";
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
-const dialectConfig = mysqlConfig
+const DIALECT_CONFIG = MYSQL_CONFIG
 const q = (name: string) => escapeIdentifier(name, "mysql");
 
 export class MySQLTableQueryBuilder {
     static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
-        const maxIndexCount = dialectConfig.maxIndexCount || 64;
+        const maxIndexCount = DIALECT_CONFIG.maxIndexCount || 64;
         let remainingIndexSlots = maxIndexCount;
         let sqlQueries: QueryInput[] = [];
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
@@ -21,8 +21,8 @@ export class MySQLTableQueryBuilder {
             if (!column.type) throw new Error(`Missing type for column ${columnName}`);
     
             let columnType = column.type.toLowerCase();
-            if (dialectConfig.translate.localToServer[columnType]) {
-                columnType = dialectConfig.translate.localToServer[columnType];
+            if (DIALECT_CONFIG.translate.localToServer[columnType]) {
+                columnType = DIALECT_CONFIG.translate.localToServer[columnType];
             }
     
             assertSafeTypeToken(columnType);
@@ -31,8 +31,8 @@ export class MySQLTableQueryBuilder {
             // Never emit a display width for `tinyint`: it's cosmetic, and `tinyint(1)` is the
             // boolean convention — a non-boolean tinyint(1) reads back as boolean and triggers
             // destructive re-typing on the next ingest.
-            if (column.length && !dialectConfig.noLength.includes(columnType) && columnType !== "tinyint") {
-                columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
+            if (column.length && !DIALECT_CONFIG.noLength.includes(columnType) && columnType !== "tinyint") {
+                columnDef += `(${assertSafeLength(column.length)}${column.decimal && DIALECT_CONFIG.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
 
             // Convert BOOLEAN → TINYINT(1) for MySQL (MySQL has no native boolean type).
@@ -51,7 +51,7 @@ export class MySQLTableQueryBuilder {
     
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) {
-                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`;
             }
     
             if (column.primary) primaryKeys.push(columnName);
@@ -71,9 +71,9 @@ export class MySQLTableQueryBuilder {
             remainingIndexSlots -= includedUniqueKeys.length;
         }
     
-        sqlQuery = sqlQuery.slice(0, -2) + `) ENGINE=${databaseConfig?.engine || dialectConfig.engine} 
-            DEFAULT CHARSET=${databaseConfig?.charset || dialectConfig.charset} 
-            COLLATE=${databaseConfig?.collate || dialectConfig.collate};`;
+        sqlQuery = sqlQuery.slice(0, -2) + `) ENGINE=${databaseConfig?.engine || DIALECT_CONFIG.engine} 
+            DEFAULT CHARSET=${databaseConfig?.charset || DIALECT_CONFIG.charset} 
+            COLLATE=${databaseConfig?.collate || DIALECT_CONFIG.collate};`;
 
         sqlQueries.push({query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
     
@@ -107,7 +107,7 @@ export class MySQLTableQueryBuilder {
             const columnDecimal = databaseConfig?.metaData?.[table]?.[newName]?.decimal || databaseConfig?.metaData?.[table]?.[oldName]?.decimal || 0
             const columnNullable : boolean = databaseConfig?.metaData?.[table]?.[newName]?.allowNull || databaseConfig?.metaData?.[table]?.[oldName]?.allowNull || false
             let columnLengthSQL: string = '';
-            if (columnLength && !dialectConfig.noLength.includes(columnType || "")) {
+            if (columnLength && !DIALECT_CONFIG.noLength.includes(columnType || "")) {
                 columnLengthSQL += `(${assertSafeLength(columnLength)}${columnDecimal ? `,${assertSafeLength(columnDecimal)}` : ""})`;
             }
             assertSafeTypeToken(columnType);
@@ -118,8 +118,8 @@ export class MySQLTableQueryBuilder {
         for (const [columnName, column] of Object.entries(changes.addColumns)) {
             if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
             let columnType = column.type.toLowerCase()
-            if (dialectConfig.translate.localToServer[columnType]) {
-                columnType = dialectConfig.translate.localToServer[columnType];
+            if (DIALECT_CONFIG.translate.localToServer[columnType]) {
+                columnType = DIALECT_CONFIG.translate.localToServer[columnType];
             }
             assertSafeTypeToken(columnType);
             // Same tinyint invariant as CREATE: boolean → TINYINT(1); non-boolean tinyint carries no
@@ -128,12 +128,12 @@ export class MySQLTableQueryBuilder {
             let columnDef = `${q(columnName)} ${columnType}`;
             if (column.type === "boolean") {
                 columnDef = `${q(columnName)} TINYINT(1)`;
-            } else if (column.length && !dialectConfig.noLength.includes(columnType) && columnType !== "tinyint") {
-                columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
+            } else if (column.length && !DIALECT_CONFIG.noLength.includes(columnType) && columnType !== "tinyint") {
+                columnDef += `(${assertSafeLength(column.length)}${column.decimal && DIALECT_CONFIG.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) {
-                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`;
             } else if (!column.allowNull && column.calculated) {
                 // NOT NULL calculated timestamp (e.g. dwh_created_at) on a possibly-populated table
                 // needs a DEFAULT or ADD COLUMN fails on pre-existing rows. Backfill with the
@@ -149,16 +149,16 @@ export class MySQLTableQueryBuilder {
         for (const [columnName, column] of Object.entries(changes.modifyColumns)) {
             if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
             let columnType = column.type.toLowerCase()
-            if (dialectConfig.translate.localToServer[columnType]) {
-                columnType = dialectConfig.translate.localToServer[columnType];
+            if (DIALECT_CONFIG.translate.localToServer[columnType]) {
+                columnType = DIALECT_CONFIG.translate.localToServer[columnType];
             }
             assertSafeTypeToken(columnType);
             // Same tinyint invariant as CREATE/ADD: boolean → TINYINT(1); non-boolean tinyint carries no display width.
             let columnDef = `${q(columnName)} ${columnType}`;
             if (column.type === "boolean") {
                 columnDef = `${q(columnName)} TINYINT(1)`;
-            } else if (column.length && !dialectConfig.noLength.includes(columnType) && columnType !== "tinyint") {
-                columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
+            } else if (column.length && !DIALECT_CONFIG.noLength.includes(columnType) && columnType !== "tinyint") {
+                columnDef += `(${assertSafeLength(column.length)}${column.decimal && DIALECT_CONFIG.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
 
             // Apply NULL or NOT NULL depending on whether the column is in nullableColumns
@@ -169,7 +169,7 @@ export class MySQLTableQueryBuilder {
             }
 
             if (column.default !== undefined) {
-                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`;
             }
 
             if (column.previousType && column.previousType !== column.type) {

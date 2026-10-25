@@ -1,4 +1,4 @@
-import { regexPatterns } from "../config/regex";
+import { REGEX_PATTERNS } from "../config/regex";
 
 // Dataset-level number-format consensus (self-contained: reads ONLY the in-memory batch). A dataset is
 // assumed to use one locale, so structural evidence in ANY column resolves ambiguity in every column.
@@ -21,7 +21,7 @@ export function classifySeparatorFormat(value: any): "us" | "eu" | null {
     if (typeof value !== "string") return null; // native numbers carry no separators
     let s = value.trim();
     if (!s.includes(",") && !s.includes(".")) return null;                     // no separator → no evidence
-    if (!(regexPatterns.number.test(s) || regexPatterns.decimal.test(s))) return null; // not a numeric candidate
+    if (!(REGEX_PATTERNS.number.test(s) || REGEX_PATTERNS.decimal.test(s))) return null; // not a numeric candidate
     if (s.startsWith("-")) s = s.slice(1);
 
     const commaCount = (s.match(/,/g) || []).length;

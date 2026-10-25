@@ -4,7 +4,7 @@ import type { MetadataHeader, QueryResult, QueryStats } from "../config/types";
 import { getMetaData, compareMetaData, restrictInferredUniques } from "../helpers/metadata";
 import { writeRunAudit } from "../helpers/runAudit";
 import { tableChangesExist } from "../helpers/utilities";
-import { defaults } from "../config/defaults";
+import { DEFAULTS } from "../config/defaults";
 import {
     buildCreateStreamStagingTableQuery,
     buildInsertIntoStreamStagingQuery,
@@ -195,7 +195,7 @@ export class AutoSQLStreamHandle {
         this.ended = true;
         const config = this.db.getConfig();
         const insertType = config.insertType ?? 'UPDATE';
-        const maxRetries = config.streamMaxRetries ?? defaults.streamMaxRetries;
+        const maxRetries = config.streamMaxRetries ?? DEFAULTS.streamMaxRetries;
         // Per-run instrumentation (QueryStats). For a stream these cover the `end()` FLUSH — read
         // staging + infer (prepare) → DDL (configure) → merge (load) — not the incremental write()s.
         const perf = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
@@ -258,7 +258,7 @@ export class AutoSQLStreamHandle {
             }];
 
             const useSchemaLock = config.useSchemaLock;
-            const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
+            const lockTimeout = config.schemaLockTimeout ?? DEFAULTS.schemaLockTimeout;
             const useHistory = config.schemaHistory;
             let historyId: number | undefined;
 

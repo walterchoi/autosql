@@ -1,4 +1,4 @@
-export const pgsqlPermanentErrors = [
+export const PGSQL_PERMANENT_ERRORS = [
   // Syntax errors
   "42601", // Syntax error
   "42000", // Syntax error or access rule violation

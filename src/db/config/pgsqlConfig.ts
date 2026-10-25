@@ -1,6 +1,6 @@
 import type { DialectConfig } from "../../config/types";
 
-export const pgsqlConfig: DialectConfig = {
+export const PGSQL_CONFIG: DialectConfig = {
   dialect: "pgsql",
   encoding: "UTF8",
   collate: "en_US.UTF-8",

@@ -20,6 +20,7 @@ export function fingerprintMatches(key: Buffer, expected: string): boolean {
 }
 
 export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]): Promise<{ stream: ClientChannel; sshClient: Client }> {
+  // eslint-disable-next-line @typescript-eslint/naming-convention -- a class reference, not data
   let SSHClient: typeof ssh2.Client;
 
   try {

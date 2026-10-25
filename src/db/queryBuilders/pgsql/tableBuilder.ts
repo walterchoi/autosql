@@ -1,14 +1,14 @@
 import type { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
-import { pgsqlConfig } from "../../config/pgsqlConfig";
+import { PGSQL_CONFIG } from "../../config/pgsqlConfig";
 import { getUsingClause } from "./alterTableTypeConversion";
 import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
-const dialectConfig = pgsqlConfig
+const DIALECT_CONFIG = PGSQL_CONFIG
 const q = (name: string) => escapeIdentifier(name, "pgsql");
 
 export class PostgresTableQueryBuilder {
     static getCreateTableQuery(table: string, headers: MetadataHeader, databaseConfig?: DatabaseConfig): QueryInput[] {
-        const maxIndexCount = dialectConfig.maxIndexCount || 64;
+        const maxIndexCount = DIALECT_CONFIG.maxIndexCount || 64;
         let remainingIndexSlots = maxIndexCount;
         let sqlQueries: QueryInput[] = [];
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
@@ -21,15 +21,15 @@ export class PostgresTableQueryBuilder {
             if (!column.type) throw new Error(`Missing type for column ${columnName}`);
     
             let columnType = column.type.toLowerCase();
-            if (dialectConfig.translate.localToServer[columnType]) {
-                columnType = dialectConfig.translate.localToServer[columnType];
+            if (DIALECT_CONFIG.translate.localToServer[columnType]) {
+                columnType = DIALECT_CONFIG.translate.localToServer[columnType];
             }
     
             assertSafeTypeToken(columnType);
             let columnDef = `${q(columnName)} ${columnType}`;
 
-            if (column.length && dialectConfig.requireLength.includes(columnType)) {
-                columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
+            if (column.length && DIALECT_CONFIG.requireLength.includes(columnType)) {
+                columnDef += `(${assertSafeLength(column.length)}${column.decimal && DIALECT_CONFIG.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
             }
 
             // Auto-increment uses the SERIAL family. `bigint` must map to BIGSERIAL (int8) — plain
@@ -46,7 +46,7 @@ export class PostgresTableQueryBuilder {
     
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined && !column.autoIncrement) {
-                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`;
             }
     
             if (column.primary) primaryKeys.push(columnName);
@@ -111,19 +111,19 @@ export class PostgresTableQueryBuilder {
 
             if(!column.type) { throw new Error(`Attempted to add a new column '${columnName}' without a type`)}
             let columnType = column.type.toLowerCase()
-            if (dialectConfig.translate.localToServer[columnType]) {
-                columnType = dialectConfig.translate.localToServer[columnType];
+            if (DIALECT_CONFIG.translate.localToServer[columnType]) {
+                columnType = DIALECT_CONFIG.translate.localToServer[columnType];
             }
             assertSafeTypeToken(columnType);
             let columnDef = `${q(columnName)} ${columnType}`;
             // Only length-requiring types carry a length. Postgres has no integer display width —
             // `smallint(3)` / `int(11)` is a syntax error.
-            if (column.length && dialectConfig.requireLength.includes(columnType)) {
+            if (column.length && DIALECT_CONFIG.requireLength.includes(columnType)) {
                 columnDef += `(${assertSafeLength(column.length)}${column.decimal ? `,${assertSafeLength(column.decimal)}` : ""})`;
             }
             if (!column.allowNull) columnDef += " NOT NULL";
             if (column.default !== undefined) {
-                columnDef += ` DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`;
+                columnDef += ` DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`;
             } else if (!column.allowNull && column.calculated) {
                 // NOT NULL calculated timestamp (e.g. dwh_created_at) on a possibly-populated table
                 // needs a DEFAULT or ADD COLUMN fails on pre-existing rows. Backfill with the
@@ -146,15 +146,15 @@ export class PostgresTableQueryBuilder {
     
             if (column.type) {
                 let columnType = column.type.toLowerCase()
-                if (dialectConfig.translate.localToServer[columnType]) {
-                    columnType = dialectConfig.translate.localToServer[columnType];
+                if (DIALECT_CONFIG.translate.localToServer[columnType]) {
+                    columnType = DIALECT_CONFIG.translate.localToServer[columnType];
                 }
                 assertSafeTypeToken(columnType);
                 let columnDef = `SET DATA TYPE ${columnType}`;
                 // Only length-requiring types carry a length — Postgres has no integer display width,
                 // so `SET DATA TYPE smallint(3)` is a syntax error.
-                if (column.length && dialectConfig.requireLength.includes(columnType)) {
-                    columnDef += `(${assertSafeLength(column.length)}${column.decimal && dialectConfig.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
+                if (column.length && DIALECT_CONFIG.requireLength.includes(columnType)) {
+                    columnDef += `(${assertSafeLength(column.length)}${column.decimal && DIALECT_CONFIG.decimals.includes(columnType) ? `,${assertSafeLength(column.decimal || 0)}` : ""})`;
                 }
                 if (column.previousType && column.previousType !== column.type) {
                     const usingExpr = getUsingClause(columnName, column.previousType, column.type);
@@ -169,7 +169,7 @@ export class PostgresTableQueryBuilder {
             // Only re-assert a genuine default. A null default is an introspection artefact (no
             // default reports column_default = NULL); `SET DEFAULT NULL` is a no-op that risks bad SQL.
             if (column.default !== undefined && column.default !== null) {
-                alterColumnMap[columnName].push(`SET DEFAULT ${renderColumnDefault(column.default, dialectConfig)}`);
+                alterColumnMap[columnName].push(`SET DEFAULT ${renderColumnDefault(column.default, DIALECT_CONFIG)}`);
             }
         };
 

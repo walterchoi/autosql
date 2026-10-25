@@ -1,15 +1,15 @@
 import type { DatabaseConfig } from '../config/types';
 import { normalizeNumber, validateConfig, shuffleArray, sqlize } from './utilities';
-import { groupings, isNumeric } from '../config/groupings';
+import { GROUPINGS, isNumeric } from '../config/groupings';
 import { collateTypes } from './columnTypes';
 import { predictType } from './columnTypes';
-import { defaults, nonCategoricalTypes, DEFAULT_LENGTHS } from '../config/defaults';
+import { DEFAULTS, NON_CATEGORICAL_TYPES, DEFAULT_LENGTHS } from '../config/defaults';
 import { predictIndexes } from './keys';
 import { Database } from '../db/database';
 import type { DialectConfig, ColumnDefinition, MetadataHeader, metaDataInterim, AlterTableChanges } from '../config/types';
-import { mysqlConfig } from "../db/config/mysqlConfig";
-import { pgsqlConfig } from "../db/config/pgsqlConfig";
-import { sqlServerConfig } from "../db/config/sqlServerConfig";
+import { MYSQL_CONFIG } from "../db/config/mysqlConfig";
+import { PGSQL_CONFIG } from "../db/config/pgsqlConfig";
+import { SQL_SERVER_CONFIG } from "../db/config/sqlServerConfig";
 
 export function initializeMetaData(headers: string[]): Record<string, any>[] {
     try {
@@ -102,7 +102,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     const dialect = databaseConfig.sqlDialect;
-    const dialectConfig: DialectConfig = dialect === 'mysql' ? mysqlConfig : dialect === 'sqlserver' ? sqlServerConfig : pgsqlConfig;
+    const dialectConfig: DialectConfig = dialect === 'mysql' ? MYSQL_CONFIG : dialect === 'sqlserver' ? SQL_SERVER_CONFIG : PGSQL_CONFIG;
     // Decimal scale ceiling: configured cap if set, else the dialect's numeric limit (keep full
     // precision up to what the DB can hold). Deeper values are rounded (with a warning), or with
     // `decimalToVarchar` stored as text to preserve them exactly.
@@ -222,7 +222,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
             // `exponent` is a specialInt but normalizeNumber() returns null for "1.23e10", so the
             // numeric length branch would compute a bogus decimal length. It maps to a no-length
             // DOUBLE anyway, so route it to the plain string-length branch.
-            if ((groupings.intGroup.includes(type) || groupings.specialIntGroup.includes(type)) && type !== "exponent") {
+            if ((GROUPINGS.intGroup.includes(type) || GROUPINGS.specialIntGroup.includes(type)) && type !== "exponent") {
                 let valueStr = normalizeNumber(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
                 if(!valueStr) {
                     valueStr = String(value).trim();
@@ -293,9 +293,9 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         const uniquePercentage = uniqueSize / valueCount;
         if (!saturated && uniquePercentage == 1 && uniqueSize > 0) {
             metaData[column].unique = true;
-        } else if (uniquePercentage >= (databaseConfig.pseudoUnique || defaults.pseudoUnique) && uniqueSize > 0) {
+        } else if (uniquePercentage >= (databaseConfig.pseudoUnique || DEFAULTS.pseudoUnique) && uniqueSize > 0) {
             metaData[column].pseudounique = true;
-        } else if (!saturated && uniquePercentage <= (databaseConfig.categorical || defaults.categorical) && uniqueSize > 0 && !nonCategoricalTypes.includes(type)) {
+        } else if (!saturated && uniquePercentage <= (databaseConfig.categorical || DEFAULTS.categorical) && uniqueSize > 0 && !NON_CATEGORICAL_TYPES.includes(type)) {
             metaData[column].categorical = true;
         } else if (!saturated && uniqueSize == 1 && metaDataInterim[column].nullCount == 0 && valueCount > 0) {
             metaData[column].singleValue = true;
@@ -306,10 +306,10 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         // Key length limits are enforced in bytes, so use the max byte length for multibyte
         // (e.g. CJK/emoji) data — a 200-char value can still exceed the byte key limit.
         const keyByteLen = Math.max(metaData[column].length, metaDataInterim[column].byteLength);
-        if(keyByteLen > (databaseConfig.maxKeyLength || defaults.maxKeyLength) && metaData[column].unique) {
+        if(keyByteLen > (databaseConfig.maxKeyLength || DEFAULTS.maxKeyLength) && metaData[column].unique) {
             metaData[column].unique = false
         }
-        if(metaData[column].type === 'varchar' && metaData[column].length > (databaseConfig.maxVarcharLength || defaults.maxVarcharLength)) {
+        if(metaData[column].type === 'varchar' && metaData[column].length > (databaseConfig.maxVarcharLength || DEFAULTS.maxVarcharLength)) {
             metaData[column].type = 'text'
         }
     }
@@ -348,7 +348,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
                 // Demote to pseudounique if still highly distinct across the full data, so it can
                 // still serve as an index / composite-key candidate downstream.
                 const ratio = valueCount > 0 ? seen.size / valueCount : 0;
-                if (ratio >= (databaseConfig.pseudoUnique || defaults.pseudoUnique)) {
+                if (ratio >= (databaseConfig.pseudoUnique || DEFAULTS.pseudoUnique)) {
                     metaData[column].pseudounique = true;
                 }
             }
@@ -367,7 +367,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
             const valueType = predictType(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
             if(!valueType) continue;
             metaDataInterim[column].types.add(valueType);
-            if ((groupings.intGroup.includes(valueType) || groupings.specialIntGroup.includes(valueType)) && valueType !== "exponent") {
+            if ((GROUPINGS.intGroup.includes(valueType) || GROUPINGS.specialIntGroup.includes(valueType)) && valueType !== "exponent") {
                 let valueStr = normalizeNumber(value, databaseConfig.thousandsSeparator, databaseConfig.decimalSeparator);
                 if(!valueStr) {
                     valueStr = String(value).trim();
@@ -419,7 +419,7 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
         // TEXT/MEDIUMTEXT/LONGTEXT caps are byte limits, so promote on byte length — else a multibyte
         // value under the char threshold overflows and the DB silently truncates on insert.
         const finalByteLen = Math.max(finalLen, metaDataInterim[column].byteLength);
-        if (metaData[column].type === 'varchar' && finalLen > (databaseConfig.maxVarcharLength || defaults.maxVarcharLength)) {
+        if (metaData[column].type === 'varchar' && finalLen > (databaseConfig.maxVarcharLength || DEFAULTS.maxVarcharLength)) {
             metaData[column].type = 'text';
         }
         if (metaData[column].type === 'text' && finalByteLen >= 65535) {
@@ -475,11 +475,11 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
         } else {
             validatedConfig = validateConfig(databaseOrConfig); // Use provided config
             if(validatedConfig.sqlDialect == 'mysql') {
-                _dialectConfig = mysqlConfig;
+                _dialectConfig = MYSQL_CONFIG;
             } else if(validatedConfig.sqlDialect == 'pgsql') {
-                _dialectConfig = pgsqlConfig;
+                _dialectConfig = PGSQL_CONFIG;
             } else if(validatedConfig.sqlDialect == 'sqlserver') {
-                _dialectConfig = sqlServerConfig;
+                _dialectConfig = SQL_SERVER_CONFIG;
             } else {
                 throw new Error(`Unsupported SQL dialect: ${validatedConfig.sqlDialect}`);
             }

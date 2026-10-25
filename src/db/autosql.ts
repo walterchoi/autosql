@@ -12,7 +12,7 @@ import { DegradationPolicy } from "./degradationPolicy";
 import { StagingPipeline } from "./stagingPipeline";
 import { RowStoreLoadStrategy } from "./loadStrategy";
 import { parseDatabaseMetaData, tableChangesExist, isMetadataHeader, estimateRowSize, isValidDataFormat, organizeSplitTable, organizeSplitData, splitInsertData, getInsertValues, throwIfFailedResults } from "../helpers/utilities";
-import { defaults, MAX_COLUMN_COUNT } from "../config/defaults";
+import { DEFAULTS, MAX_COLUMN_COUNT } from "../config/defaults";
 import { ensureTimestamps } from "../helpers/timestamps";
 import WorkerHelper from "../workers/workerHelper";
 import { buildCompensatingDDL } from "../helpers/compensatingDDL";
@@ -794,7 +794,7 @@ export class AutoSQLHandler {
         const start = new Date();
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
-        const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
+        const lockTimeout = config.schemaLockTimeout ?? DEFAULTS.schemaLockTimeout;
         const useHistory = config.schemaHistory;
 
         try {
@@ -946,7 +946,7 @@ export class AutoSQLHandler {
         return this.db.runWithSeparators(separators, async () => {
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
-        const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
+        const lockTimeout = config.schemaLockTimeout ?? DEFAULTS.schemaLockTimeout;
 
         let totalAffectedRows = 0;
         let lockedInsertInput: InsertInput[] | null = null;
@@ -1096,7 +1096,7 @@ export class AutoSQLHandler {
         }
 
         const config = this.db.getConfig();
-        const prefix = config.streamingStagingPrefix ?? defaults.streamingStagingPrefix;
+        const prefix = config.streamingStagingPrefix ?? DEFAULTS.streamingStagingPrefix;
 
         if (!config.keepOrphanedStagingTables) {
             await this._cleanupOrphanedStreamTables(table, prefix);

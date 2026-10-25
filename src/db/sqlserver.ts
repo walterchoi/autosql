@@ -1,8 +1,8 @@
 import crypto from "crypto";
 import { Database } from "./database";
-import { sqlServerPermanentErrors } from "./permanentErrors/sqlserver";
+import { SQL_SERVER_PERMANENT_ERRORS } from "./permanentErrors/sqlserver";
 import type { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
-import { sqlServerConfig } from "./config/sqlServerConfig";
+import { SQL_SERVER_CONFIG } from "./config/sqlServerConfig";
 import { isValidSingleQuery } from "./utils/validateQuery";
 import { escapeIdentifier, escapeLiteral } from "./utils/escape";
 import { compareMetaData } from "../helpers/metadata";
@@ -13,7 +13,7 @@ import { AutoSQLHandler } from "./autosql";
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
 import { SchemaLockTimeoutError } from "../errors";
 
-const dialectConfig = sqlServerConfig;
+const DIALECT_CONFIG = SQL_SERVER_CONFIG;
 
 // Map an autosql local column type to the mssql bulk-copy type object (used to build the typed sql.Table
 // for request.bulk). `sql` is the mssql module. Anything unrecognised → NVARCHAR(MAX) (staging is text).
@@ -222,11 +222,11 @@ export class SqlServerDatabase extends Database {
     }
 
     public getDialectConfig() {
-        return dialectConfig;
+        return DIALECT_CONFIG;
     }
 
     protected async getPermanentErrors(): Promise<string[]> {
-        return sqlServerPermanentErrors;
+        return SQL_SERVER_PERMANENT_ERRORS;
     }
 
     async testQuery(queryOrParams: QueryInput): Promise<any> {

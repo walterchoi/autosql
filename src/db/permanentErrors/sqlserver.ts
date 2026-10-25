@@ -1,7 +1,7 @@
 // SQL Server surfaces errors by numeric code (err.number), not SQLSTATE. These are permanent
 // (retrying won't help) — deadlock victim (1205) and lock-timeout (1222) are intentionally omitted
 // so they reach runTransaction's whole-transaction retry.
-export const sqlServerPermanentErrors = [
+export const SQL_SERVER_PERMANENT_ERRORS = [
   "102",   // Incorrect syntax
   "156",   // Incorrect syntax near a keyword
   "207",   // Invalid column name

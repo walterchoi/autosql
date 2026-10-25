@@ -2,7 +2,7 @@ import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
 import type { InsertInput, QueryResult, QueryInput, AlterTableChanges } from "../config/types";
 import { getTempTableName, getInsertValues, throwIfFailedResults, normalizeResultKeys, getTrueTableName } from "../helpers/utilities";
-import { defaults } from "../config/defaults";
+import { DEFAULTS } from "../config/defaults";
 
 /**
  * Staging pipeline collaborator: create, populate, resolve conflicts, merge, clean up. Holds a
@@ -220,7 +220,7 @@ export class StagingPipeline {
         // emit no IF EXISTS), which beats the prior race that could corrupt the DDL.
         const config = this.db.getConfig();
         const useSchemaLock = config.useSchemaLock;
-        const lockTimeout = config.schemaLockTimeout ?? defaults.schemaLockTimeout;
+        const lockTimeout = config.schemaLockTimeout ?? DEFAULTS.schemaLockTimeout;
         const removeConstraints: QueryResult[] = [];
         if (useSchemaLock) {
             for (const { table, queries } of dropsByTable) {

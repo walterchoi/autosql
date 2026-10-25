@@ -1,4 +1,4 @@
-export const mysqlPermanentErrors = [
+export const MYSQL_PERMANENT_ERRORS = [
   // Syntax errors
   "ER_SYNTAX_ERROR", // Syntax error or access rule violation
 

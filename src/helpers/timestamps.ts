@@ -7,23 +7,23 @@ export function ensureTimestamps(dbConfig: DatabaseConfig, metaData: MetadataHea
       return metaData; // RETURN if timestamps are not required
     }
 
-    const NORMALIZED_CREATED_TIMESTAMP_NAMES = CREATED_TIMESTAMP_NAMES.map(normalizeName);
-    const NORMALIZED_MODIFIED_TIMESTAMP_NAMES = MODIFIED_TIMESTAMP_NAMES.map(normalizeName);
-    const NORMALIZED_DWH_LOADED_TIMESTAMP_NAMES = DWH_LOADED_TIMESTAMP_NAMES.map(normalizeName);
+    const normalizedCreatedTimestampNames = CREATED_TIMESTAMP_NAMES.map(normalizeName);
+    const normalizedModifiedTimestampNames = MODIFIED_TIMESTAMP_NAMES.map(normalizeName);
+    const normalizedDwhLoadedTimestampNames = DWH_LOADED_TIMESTAMP_NAMES.map(normalizeName);
 
     const normalizedColumns = Object.keys(metaData).map(normalizeName);
-  
+
     // Check if columns already exist
     const hasCreatedAt = normalizedColumns.some(col =>
-      NORMALIZED_CREATED_TIMESTAMP_NAMES.includes(col)
+      normalizedCreatedTimestampNames.includes(col)
     );
-    
+
     const hasModifiedAt = normalizedColumns.some(col =>
-      NORMALIZED_MODIFIED_TIMESTAMP_NAMES.includes(col)
+      normalizedModifiedTimestampNames.includes(col)
     );
-    
+
     const hasLoadedAt = normalizedColumns.some(col =>
-      NORMALIZED_DWH_LOADED_TIMESTAMP_NAMES.includes(col)
+      normalizedDwhLoadedTimestampNames.includes(col)
     );
   
     // Add missing timestamp columns

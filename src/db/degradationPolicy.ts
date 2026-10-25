@@ -4,7 +4,7 @@ import type { InsertInput, QueryResult, MetadataHeader, QueryInput } from "../co
 import { getInsertValues, tableChangesExist, throwIfFailedResults, sqlize } from "../helpers/utilities";
 import { getMetaData, compareMetaData, restrictInferredUniques } from "../helpers/metadata";
 import { buildBootstrapRejectedRowsQuery, buildInsertRejectedRowsQuery } from "../helpers/streamHelpers";
-import { defaults } from "../config/defaults";
+import { DEFAULTS } from "../config/defaults";
 
 /**
  * Graceful-degradation collaborator: the shared per-row retry engine plus the direct-insert,
@@ -27,7 +27,7 @@ export class DegradationPolicy {
      */
     async applyPerRowFallback(insertInput: InsertInput[], allInsertResults: QueryResult[]): Promise<QueryResult[]> {
         const config = this.db.getConfig();
-        const maxRetries = config.streamMaxRetries ?? defaults.streamMaxRetries;
+        const maxRetries = config.streamMaxRetries ?? DEFAULTS.streamMaxRetries;
         for (let i = 0; i < allInsertResults.length; i++) {
             if (allInsertResults[i]?.success) continue;
             const input = insertInput[i];
@@ -150,7 +150,7 @@ export class DegradationPolicy {
      */
     async applyStagingPerRowFallback(insertInput: InsertInput[], allInsertResults: QueryResult[]): Promise<QueryResult[]> {
         const config = this.db.getConfig();
-        const maxRetries = config.streamMaxRetries ?? defaults.streamMaxRetries;
+        const maxRetries = config.streamMaxRetries ?? DEFAULTS.streamMaxRetries;
         for (let i = 0; i < allInsertResults.length; i++) {
             if (allInsertResults[i]?.success) continue;
             const input = insertInput[i];

@@ -1,9 +1,9 @@
 import WorkerPool from "./workerPool";
 import type { DatabaseConfig } from "../config/types";
-import { defaults } from "../config/defaults";
+import { DEFAULTS } from "../config/defaults";
 
 class WorkerHelper {
-  static async run(dbConfig: DatabaseConfig, method: string, paramsArray: any[], workerSize: number = dbConfig.maxWorkers ?? defaults.maxWorkers) {
+  static async run(dbConfig: DatabaseConfig, method: string, paramsArray: any[], workerSize: number = dbConfig.maxWorkers ?? DEFAULTS.maxWorkers) {
     // Never spawn more workers than there are tasks (A8): configuring a single table shouldn't stand up
     // an 8-thread pool, each with its own DB connection pool.
     workerSize = Math.max(1, Math.min(workerSize, paramsArray.length || 1));

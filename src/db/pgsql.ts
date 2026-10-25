@@ -2,9 +2,9 @@ import crypto from "crypto";
 import type { Pool, PoolClient } from "pg";
 import type * as pg from "pg";
 import { Database } from "./database";
-import { pgsqlPermanentErrors } from './permanentErrors/pgsql';
+import { PGSQL_PERMANENT_ERRORS } from './permanentErrors/pgsql';
 import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
-import { pgsqlConfig } from "./config/pgsqlConfig";
+import { PGSQL_CONFIG } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { escapeIdentifier, escapeLiteral } from './utils/escape';
 import { compareMetaData } from '../helpers/metadata';
@@ -15,7 +15,7 @@ import { AutoSQLHandler } from "./autosql";
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
 import { serializeRowsToCopyText } from "../helpers/bulkLoad";
 import { SchemaLockTimeoutError } from "../errors";
-const dialectConfig = pgsqlConfig
+const DIALECT_CONFIG = PGSQL_CONFIG
 
 export class PostgresDatabase extends Database {
     private schemaLockConnections: Map<string, PoolClient> = new Map();
@@ -26,6 +26,7 @@ export class PostgresDatabase extends Database {
     }
 
     async establishDatabaseConnection(): Promise<void> {
+        // eslint-disable-next-line @typescript-eslint/naming-convention -- a module/class reference, not data
         let Pg: typeof pg;
         try {
             Pg = require("pg");
@@ -52,7 +53,7 @@ export class PostgresDatabase extends Database {
             // Pin client encoding to UTF8 so multibyte text transfers intact regardless of the
             // client's locale-derived default (e.g. WIN1252 on Windows). Defense-in-depth only: does
             // NOT rescue malformed source bytes (see sanitizeInvalidChars for those).
-            client_encoding: this.config.encoding || dialectConfig.encoding || "UTF8",
+            client_encoding: this.config.encoding || DIALECT_CONFIG.encoding || "UTF8",
             // `ssl: false` is treated the same as omitting it (plaintext) — only a truthy `ssl` is threaded.
             ...(ssl ? { ssl } : {}),
             stream: this.config.sshStream ? () => this.config.sshStream! : undefined
@@ -164,11 +165,11 @@ export class PostgresDatabase extends Database {
     }
 
     public getDialectConfig() {
-        return dialectConfig;
+        return DIALECT_CONFIG;
     }
 
     protected async getPermanentErrors(): Promise<string[]> {
-        return pgsqlPermanentErrors
+        return PGSQL_PERMANENT_ERRORS
     }
 
     async testQuery(queryOrParams: QueryInput): Promise<any> {

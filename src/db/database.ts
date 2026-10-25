@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { isValidSingleQuery } from './utils/validateQuery';
 import type { QueryInput, DatabaseConfig, DialectConfig, AlterTableChanges, MetadataHeader, QueryResult, InsertInput } from '../config/types';
 import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
-import { maxQueryAttempts } from "../config/defaults";
+import { MAX_QUERY_ATTEMPTS } from "../config/defaults";
 import type { AutoSQLHandler } from "./autosql";
 import { setSSH } from '../helpers/ssh';
 
@@ -113,18 +113,18 @@ export abstract class Database {
     }
 
     static create(config: DatabaseConfig): Database {
-        const DIALECTS: Record<string, new (config: DatabaseConfig) => Database> = {
+        const dialects: Record<string, new (config: DatabaseConfig) => Database> = {
             mysql: MySQLDatabase,
             pgsql: PostgresDatabase,
             sqlserver: SqlServerDatabase
         };
 
         const dialect = config.sqlDialect?.toLowerCase();
-        if (!DIALECTS[dialect]) {
+        if (!dialects[dialect]) {
             throw new Error(`Unsupported SQL dialect: ${dialect}`);
         }
 
-        return new DIALECTS[dialect](config);
+        return new dialects[dialect](config);
     }
 
     public getDialect() {
@@ -149,7 +149,7 @@ export abstract class Database {
 
     public async establishConnection(): Promise<void> {
         let attempts = 0;
-        const maxAttempts = maxQueryAttempts || 3;
+        const maxAttempts = MAX_QUERY_ATTEMPTS || 3;
 
         while (attempts < maxAttempts) {
             try {
@@ -198,8 +198,8 @@ export abstract class Database {
     }
 
     public async checkSchemaExists(schemaName: string | string[]): Promise<Record<string, boolean>> {
-        const QueryInput = this.getCheckSchemaQuery(schemaName);
-        const result = await this.runQuery(QueryInput);
+        const query = this.getCheckSchemaQuery(schemaName);
+        const result = await this.runQuery(query);
 
         // A failed query means we could NOT determine existence (connectivity/auth/permissions), not
         // that the schema is absent. Masking as `false` would mislead a caller into re-creating an
@@ -310,21 +310,21 @@ export abstract class Database {
         // Matters for NON-idempotent statements (single-row INSERT): on an ambiguous failure (conn
         // dropped AFTER the server applied the row) the internal retry would duplicate it.
         // `perRowInsertWithRetry` passes 1 for exactly this (A15).
-        const maxAttempts = maxAttemptsOverride ?? maxQueryAttempts ?? 3;
+        const maxAttempts = maxAttemptsOverride ?? MAX_QUERY_ATTEMPTS ?? 3;
         let attempts = 0;
         let _error: any;
         const start = new Date();
         let end: Date;
 
-        const QueryInput: QueryInput = typeof queryOrParams === "string" ? { query: queryOrParams, params: [] } : queryOrParams;
+        const query: QueryInput = typeof queryOrParams === "string" ? { query: queryOrParams, params: [] } : queryOrParams;
 
-        if (!isValidSingleQuery(QueryInput.query)) {
+        if (!isValidSingleQuery(query.query)) {
             return { start, end: new Date(), duration: 0, success: false, error: "Multiple SQL statements detected. Use transactions instead." };
         }
 
         while (attempts < maxAttempts) {
             try {
-                const { rows, affectedRows } = await this.executeQuery(QueryInput);
+                const { rows, affectedRows } = await this.executeQuery(query);
 
                 end = new Date();
                 return {
@@ -381,7 +381,7 @@ export abstract class Database {
         // succeed. A DDL-containing transaction runs exactly once, because MySQL implicitly commits
         // before each DDL and re-running would re-apply the already-committed DML.
         const containsDDL = queries.some(q => /^\s*(create|alter|drop|truncate|rename)\b/i.test(q.query || ""));
-        const maxAttempts = containsDDL ? 1 : (maxQueryAttempts || 3);
+        const maxAttempts = containsDDL ? 1 : (MAX_QUERY_ATTEMPTS || 3);
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             let client: any;
@@ -395,9 +395,9 @@ export abstract class Database {
                 client = await this.acquireConnection();
                 await this.startTransaction(client);
 
-                for (const QueryInput of queries) {
-                    if (!QueryInput?.query?.trim()) continue; // Skip empty queries
-                    const { rows, affectedRows } = await this.executeQuery(QueryInput, client);
+                for (const query of queries) {
+                    if (!query?.query?.trim()) continue; // Skip empty queries
+                    const { rows, affectedRows } = await this.executeQuery(query, client);
                     results = results.concat(rows);
                     totalAffectedRows += affectedRows || 0;
                 }
@@ -516,8 +516,8 @@ export abstract class Database {
             const tableExists = countRow ? Number(Object.values(countRow)[0] ?? 0) > 0 : false;
             if (!tableExists) return null;
 
-            const MetaQueryInput = this.getTableMetaDataQuery(schema, table);
-            const result = await this.runQuery(MetaQueryInput);
+            const metaQuery = this.getTableMetaDataQuery(schema, table);
+            const result = await this.runQuery(metaQuery);
             if (!result.success || !result.results) {
                 throw new Error(`Failed to fetch metadata: ${result.error}`);
             }

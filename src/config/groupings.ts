@@ -1,4 +1,4 @@
-export const groupings = {
+export const GROUPINGS = {
     "intGroup": ["boolean", "binary", "tinyint", "smallint", "int", "numeric", "bigint"],
     "specialIntGroup": ["decimal", "double", "exponent"],
     "textGroup": ["varchar", "text", "mediumtext", "longtext"],
