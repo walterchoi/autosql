@@ -119,6 +119,15 @@ const STRICT_TYPE_CHECKED_AT_WARN = Object.fromEntries(
         })
 );
 
+// consistent-type-imports isn't part of strictTypeChecked at all (see PROMOTED_RULES' comment on
+// it), so the loop above never sees it and it would otherwise silently vanish from `src/`'s rule
+// set. Added alongside, not merged via a blind `{...STRICT_TYPE_CHECKED_AT_WARN, ...PROMOTED_RULES}`
+// spread — that would re-lose every preset rule's options the same way the bare-string remap did
+// before (return-await's error-handling-correctness-only, etc).
+const EXTRA_PROMOTED_RULES = Object.fromEntries(
+    Object.entries(PROMOTED_RULES).filter(([rule]) => !(rule in STRICT_TYPE_CHECKED_AT_WARN))
+);
+
 export default tseslint.config(
     { ignores: ["dist/**", "coverage/**", "node_modules/**"] },
     {
@@ -143,7 +152,7 @@ export default tseslint.config(
         // production type-safety gap; measured at ~2,300 problems on this file set alone before
         // deciding not to apply it there.
         files: ["src/**/*.ts"],
-        rules: STRICT_TYPE_CHECKED_AT_WARN
+        rules: { ...STRICT_TYPE_CHECKED_AT_WARN, ...EXTRA_PROMOTED_RULES }
     },
     {
         // src/ only: Google TS style guide's scope-based naming rule. A module-level (file-scope)
