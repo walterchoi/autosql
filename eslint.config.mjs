@@ -1,12 +1,45 @@
 import tseslint from "typescript-eslint";
 
-// Landing step 1 (see prompt/autosql-improvements/NEXT-CLI-PROMPT-lint-and-dedup-audit.md): config +
-// script + CI step, every rule at "warn", zero source changes. Rules are promoted to "error" one at a
-// time in follow-up commits so a reviewer can see what each promotion actually changes.
-//
-// Deliberately NOT `tseslint.configs.recommendedTypeChecked` — that preset defaults dozens of
-// unrelated/stylistic rules to "error" we haven't vetted. Hand-picking the rules the audit actually
-// asked for (bug-finding, not reformatting) keeps this landing reviewable.
+// Already-vetted rules and their final severity/options, applied on top of strict-type-checked's
+// "everything else at warn" below. 4 of these 5 are already part of strict-type-checked (so this
+// is really just "keep them at error, with our options" rather than a new promotion);
+// consistent-type-imports is a separate, non-type-checked rule the preset doesn't include at all.
+const PROMOTED_RULES = {
+    // autosql's whole stream contract is "these methods reject and MUST be awaited" — today
+    // enforced only by documentation. Highest-value rule in this config.
+    "@typescript-eslint/no-floating-promises": "error",
+    "@typescript-eslint/no-misused-promises": "error",
+    "@typescript-eslint/await-thenable": "error",
+    // Respects the codebase's existing convention (predates this config: `_table`, `_client`
+    // already appear in src/) that a leading underscore marks a deliberately-unused binding.
+    "@typescript-eslint/no-unused-vars": ["error", {
+        argsIgnorePattern: "^_",
+        varsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_",
+        // workerPool.ts's `const { logger, sshClient, sshStream, ...cloneable } = config`
+        // destructures-to-omit on purpose (A8: strip non-cloneable keys before worker_threads
+        // structured-clones the config) — the omitted names are never meant to be read.
+        ignoreRestSiblings: true
+    }],
+    "@typescript-eslint/consistent-type-imports": "error",
+    // Deferred deliberately: 240 existing call sites need real type design, not a mechanical
+    // fix. Tracked as its own follow-up initiative, not promoted alongside everything else here.
+    "@typescript-eslint/no-explicit-any": "warn"
+};
+
+// src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common
+// starting point for a TS library serious about type safety) — but landed the same way every
+// rule in this file has been: at "warn" with zero source changes first, so each later promotion
+// to "error" is its own reviewable commit. PROMOTED_RULES overrides the handful already vetted.
+const STRICT_TYPE_CHECKED_AT_WARN = Object.fromEntries(
+    tseslint.configs.strictTypeChecked
+        .flatMap(block => (block.rules ? Object.entries(block.rules) : []))
+        // Preserve "off" as-is (the preset deliberately disables some core ESLint rules in favour
+        // of TS's own checking, e.g. `no-undef` — downgrading those to "warn" would turn them back
+        // ON and produce false positives TS already rules out, like flagging `setTimeout`).
+        .map(([rule, severity]) => [rule, PROMOTED_RULES[rule] ?? (severity === "off" ? "off" : "warn")])
+);
+
 export default tseslint.config(
     { ignores: ["dist/**", "coverage/**", "node_modules/**"] },
     {
@@ -21,27 +54,17 @@ export default tseslint.config(
                 tsconfigRootDir: import.meta.dirname
             }
         },
-        plugins: { "@typescript-eslint": tseslint.plugin },
-        rules: {
-            // autosql's whole stream contract is "these methods reject and MUST be awaited" — today
-            // enforced only by documentation. Highest-value rule in this config.
-            "@typescript-eslint/no-floating-promises": "error",
-            "@typescript-eslint/no-misused-promises": "error",
-            "@typescript-eslint/await-thenable": "error",
-            // Respects the codebase's existing convention (predates this config: `_table`, `_client`
-            // already appear in src/) that a leading underscore marks a deliberately-unused binding.
-            "@typescript-eslint/no-unused-vars": ["error", {
-                argsIgnorePattern: "^_",
-                varsIgnorePattern: "^_",
-                caughtErrorsIgnorePattern: "^_",
-                // workerPool.ts's `const { logger, sshClient, sshStream, ...cloneable } = config`
-                // destructures-to-omit on purpose (A8: strip non-cloneable keys before worker_threads
-                // structured-clones the config) — the omitted names are never meant to be read.
-                ignoreRestSiblings: true
-            }],
-            "@typescript-eslint/no-explicit-any": "warn",
-            "@typescript-eslint/consistent-type-imports": "error"
-        }
+        plugins: { "@typescript-eslint": tseslint.plugin }
+    },
+    {
+        // src/ only: strict-type-checked (102 rules) landed at warn, vetted ones at their real
+        // severity. NOT applied to tests/ (see below) — the white-box test style here mocks
+        // internals via `any`-typed fakes (`const db: any = Database.create(...)`), which trips
+        // every `no-unsafe-*` rule on every mock interaction. That's test-mocking noise, not a
+        // production type-safety gap; measured at ~2,300 problems on this file set alone before
+        // deciding not to apply it there.
+        files: ["src/**/*.ts"],
+        rules: STRICT_TYPE_CHECKED_AT_WARN
     },
     {
         // src/ only: Google TS style guide's scope-based naming rule. A module-level (file-scope)
@@ -68,8 +91,15 @@ export default tseslint.config(
         }
     },
     {
+        // tests/ only: the original hand-picked rule set (not strict-type-checked — see above),
+        // plus the looser naming-convention.
         files: ["tests/**/*.ts"],
         rules: {
+            "@typescript-eslint/no-floating-promises": "error",
+            "@typescript-eslint/no-misused-promises": "error",
+            "@typescript-eslint/await-thenable": "error",
+            "@typescript-eslint/no-unused-vars": PROMOTED_RULES["@typescript-eslint/no-unused-vars"],
+            "@typescript-eslint/consistent-type-imports": "error",
             // Tests use `any` and `(handle as any)` freely and on purpose.
             "@typescript-eslint/no-explicit-any": "off",
             // Looser than src/: only catches a genuinely non-conforming local (snake_case, or a
