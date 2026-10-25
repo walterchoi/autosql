@@ -90,7 +90,7 @@ export class PostgresDatabase extends Database {
             );
             await new Promise<void>((resolve, reject) => {
                 stream.on("error", reject);
-                stream.on("finish", () => resolve());
+                stream.on("finish", () => { resolve(); });
                 stream.write(serializeRowsToCopyText(rows));
                 stream.end();
             });

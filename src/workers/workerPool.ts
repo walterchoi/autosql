@@ -113,7 +113,7 @@ class WorkerPool {
   private dispatch(worker: Worker, task: QueuedTask): void {
     let timer: NodeJS.Timeout | undefined;
     if (this.taskTimeoutMs > 0) {
-      timer = setTimeout(() => this.handleTimeout(worker), this.taskTimeoutMs);
+      timer = setTimeout(() => { this.handleTimeout(worker); }, this.taskTimeoutMs);
       // Don't let the timeout alone keep the process alive.
       if (typeof timer.unref === "function") timer.unref();
     }

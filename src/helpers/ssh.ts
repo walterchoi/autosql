@@ -44,7 +44,7 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
     privateKey = await readFile(sshKeys.private_key_path, "utf-8");
   }
 
-  const warn = logger?.warn ?? ((m: string) => console.warn(m));
+  const warn = logger?.warn ?? ((m: string) => { console.warn(m); });
 
   const sshConfig: any = {
     host: sshKeys.host,
@@ -57,7 +57,7 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
       debug: (msg: string) => {
         if (msg.includes("Outgoing") || msg.includes("Client")) {
           // Route SSH debug frames through the configured logger, not straight to console.
-          (logger?.log ?? ((m: string) => console.log(m)))(msg);
+          (logger?.log ?? ((m: string) => { console.log(m); }))(msg);
         }
       }
     })
@@ -90,7 +90,7 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
           sshKeys.destination_address,
           sshKeys.destination_port,
           (err, stream) => {
-            if (err) return reject(err);
+            if (err) { reject(err); return; }
 
             stream.on("close", () => sshClient.end());
             resolve(stream);

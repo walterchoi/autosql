@@ -639,9 +639,9 @@ export class AutoSQLHandler {
                         );
                         for (const w of warnings) this.db.warn(w);
                         if (compQueries.length > 0) {
-                            await this.db.runTransaction(compQueries).catch(e =>
-                                this.db.error(`DDL compensation failed for '${input.table}': ${e.message}`)
-                            );
+                            await this.db.runTransaction(compQueries).catch(e => {
+                                this.db.error(`DDL compensation failed for '${input.table}': ${e.message}`);
+                            });
                         }
                     }
                 }
@@ -1171,9 +1171,9 @@ export class AutoSQLHandler {
             if (this.activeStreamStagingTables.has(name)) continue; // live stream on this instance — not an orphan
             this.db.warn(`autoSQLStream: dropping orphaned stream staging table '${name}' from a previous crashed run.`);
             const dropQ = buildDropStreamStagingTableQuery(name, config);
-            await this.db.runTransaction([dropQ]).catch(e =>
-                this.db.error(`Failed to drop orphaned stream staging table '${name}': ${e.message}`)
-            );
+            await this.db.runTransaction([dropQ]).catch(e => {
+                this.db.error(`Failed to drop orphaned stream staging table '${name}': ${e.message}`);
+            });
         }
     }
 }

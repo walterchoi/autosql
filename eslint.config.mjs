@@ -43,7 +43,11 @@ const PROMOTED_RULES = {
     // site here had no catch/finally depending on the await, so dropping it is behavior-neutral.
     // Sites inside a try/finally (e.g. loadStrategy.ts's staging path) were correctly left alone:
     // removing await there would let `finally` run before the returned promise settles.
-    "@typescript-eslint/return-await": "error"
+    "@typescript-eslint/return-await": "error",
+    // Each site was a `.catch(e => this.db.error(...))`/`setTimeout(() => fn())`-shaped arrow
+    // shorthand implicitly returning a logger/void call's result — wrapped in braces so the
+    // callback returns nothing instead of a discarded value.
+    "@typescript-eslint/no-confusing-void-expression": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common
