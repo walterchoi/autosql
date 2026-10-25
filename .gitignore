@@ -19,4 +19,4 @@ tests/utils/config.local.json
 
 # Local notes (not for version control)
 notes/
-.claude.tmp_lint/
+.claude
