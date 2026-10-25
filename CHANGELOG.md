@@ -1,4 +1,4 @@
-## [Unreleased]
+## [2.8.0] - 2026-10-25
 
 - **`PostgresIndexQueryBuilder.getUniqueIndexesQuery`'s `schema` parameter is now actually applied.**
   It was accepted but silently dropped — `pg_class.relname` isn't schema-qualified, so without a
@@ -33,6 +33,19 @@
   stale-connection handling (mysql/pgsql) are now each one shared implementation instead of 2-3
   copies. No behaviour change — each was proven unchanged with a characterization test before the
   move.
+- Internal: full-codebase comment audit — doc comments trimmed to state what a thing does, inline
+  comments trimmed to why (and only when something is non-obvious), restated-the-code comments
+  removed. ~460 lines cut/condensed across `src/`. No behaviour change, though it did catch and fix
+  a couple of inaccurate/misplaced comments along the way.
+- **Documentation restructured.** The README had grown to 1,063 lines, with real duplication
+  between its "Configuration" and "Insert Options" sections (the same option documented twice).
+  It's now a ~110-line quick start, with everything else moved to `docs/`: `configuration.md`
+  (the full `DatabaseConfig` reference, de-duplicated), `api.md` (the `Database` class, preview,
+  utilities), `streaming.md` (`openStream`, resuming, cursors, `autoSQLChunked`),
+  `schema-history.md` (drift detection, multi-writer locks), `security.md` (SSH/TLS/least-
+  privilege), and `local-development.md` (the Docker test setup). Also fixed two gaps found while
+  consolidating: the multi-writer safety docs never mentioned SQL Server's advisory-lock mechanism,
+  and the TLS section contradicted itself about which dialects it covers.
 
 ## [2.7.0] - 2026-10-22
 
