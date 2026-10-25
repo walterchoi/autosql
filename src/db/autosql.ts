@@ -65,13 +65,10 @@ export class AutoSQLHandler {
     }
 
     /**
-     * Infer ONE dataset-level {thousands, decimal} pair from structural evidence pooled across all
-     * columns, so a decisive column resolves ambiguous siblings. Reads only `data`. Meant to run
-     * under `db.runWithSeparators(...)`, which overlays it for inference, load-time sqlize and
-     * worker dispatch.
-     *
-     * Returns undefined (load keeps the assume-decimal default plus the A24c per-column warning)
-     * when separators are already configured, or evidence is absent or contradictory.
+     * Infer one dataset-level {thousands, decimal} pair from structural evidence pooled across all
+     * columns, so a decisive column resolves ambiguous siblings. Meant to run under
+     * `db.runWithSeparators(...)`. Returns undefined (keeps the assume-decimal default) when
+     * separators are already configured, or evidence is absent/contradictory.
      */
     private resolveSeparatorConsensus(data: Record<string, any>[]): { thousands: string; decimal: string } | undefined {
         const config = this.db.getConfig();
@@ -102,9 +99,8 @@ export class AutoSQLHandler {
                 ? { thousands: config.thousandsSeparator, decimal: config.decimalSeparator }
                 : undefined;
 
-            // TODO: also surface the per-column A24c ambiguity warning here. It is emitted to
-            // logger.warn during inference, so capturing it needs a log-capture seam (an ALS channel
-            // like schemaContext), deferred to keep v1 free of that infra.
+            // TODO: also surface the per-column A24c ambiguity warning here — needs a log-capture
+            // seam (an ALS channel like schemaContext), deferred to keep v1 free of that infra.
             const tables: TablePreview[] = [];
             for (const input of insertInput) {
                 const { currentMetaData, tableExists } = await this.fetchTableMetadata(input.table);
@@ -279,7 +275,7 @@ export class AutoSQLHandler {
             } else {
                 this.db.log("Precomputed table changes detected, using them directly.");
                 tableChanges = currentMetaDataOrTableChanges;
-                updatedMetadata = newMetaData; // No merging needed
+                updatedMetadata = newMetaData;
                 tableExists = true;
             }
 
@@ -379,7 +375,7 @@ export class AutoSQLHandler {
             const rawSplitMetadata = parseDatabaseMetaData(currentSplit as Record<string, any>[], this.db.getDialectConfig());
             let parsedSplitMetadata: Record<string, MetadataHeader>;
             if (!rawSplitMetadata) {
-                parsedSplitMetadata = { [table]: {} }; // Ensure it has a valid structure
+                parsedSplitMetadata = { [table]: {} };
             } else if (Object.values(rawSplitMetadata).some(value => typeof value === "object" && !Array.isArray(value))) {
                 parsedSplitMetadata = rawSplitMetadata as Record<string, MetadataHeader>;
             } else {
@@ -418,9 +414,8 @@ export class AutoSQLHandler {
         let runQuery: boolean;
         let insertType: "UPDATE" | "INSERT"
 
-        // Fall back to configured insertType (then "UPDATE") so the direct-insert path honours
-        // `config.insertType`. It previously defaulted straight to "UPDATE", so an "INSERT" config
-        // was silently ignored for the bulk batch while the per-row fallback honoured it.
+        // Fall back to config.insertType (then "UPDATE") — it previously defaulted straight to
+        // "UPDATE", silently ignoring an "INSERT" config for the bulk batch.
         const configInsertType = this.db.getConfig().insertType;
 
         if (typeof inputOrTable === "object" && "table" in inputOrTable && "data" in inputOrTable) {
@@ -464,15 +459,13 @@ export class AutoSQLHandler {
     }
 
     async handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[], options?: AutoSQLOptions) {
-        // With `existingSchema` (N1 fast path) trust the caller and skip live introspection, the main
-        // per-run round-trip for a stable pipeline. It must be a prior run's RESOLVED schema, so it
-        // already carries the managed dwh_*/surrogate columns and the timestamp step won't re-add them.
+        // N1 fast path: `existingSchema` skips live introspection. Must be a prior run's RESOLVED
+        // schema (already carrying managed dwh_*/surrogate columns), or the timestamp step below re-adds them.
         const currentMetaData = options?.existingSchema
             ?? (await this.fetchTableMetadata(table)).currentMetaData;
 
-        // A-4 fast path: `assumeSchema` is authoritative. Declaring every data column skips per-value
-        // inference entirely; partial coverage infers the rest and lets the provided definitions win.
-        // Also side-steps inference footguns (e.g. small ints mis-typed as boolean).
+        // A-4 fast path: `assumeSchema` is authoritative — declaring every data column skips
+        // per-value inference (and its footguns, e.g. small ints mis-typed as boolean) entirely.
         let newMetaData: MetadataHeader;
         const assumeSchema = options?.assumeSchema;
         if (assumeSchema && Object.keys(assumeSchema).length > 0) {
@@ -503,10 +496,9 @@ export class AutoSQLHandler {
             this.db.updateTableMetadata(table, mergedMetaData, "metaData");
         }
 
-        // Add the dwh_* timestamps AFTER comparison so they carry the calculatedDefault that
-        // populates them on insert; comparing first would merge in the value-less introspected
-        // definition on re-ingest and insert NULL. On an existing table a dwh column not already
-        // there is genuinely new and must join addColumns, or the staging copy fails.
+        // Add dwh_* timestamps AFTER comparison so they carry calculatedDefault (comparing first
+        // would insert NULL on re-ingest). A dwh column new to an existing table must still join
+        // addColumns below, or the staging copy fails.
         const beforeTimestamps = new Set(Object.keys(mergedMetaData));
         mergedMetaData = ensureTimestamps(this.db.getConfig(), mergedMetaData, new Date());
         if (currentMetaData && initialComparedMetaData) {
@@ -536,15 +528,10 @@ export class AutoSQLHandler {
     }
 
     private async prepareInsertData(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<InsertInput[]> {
-        // Step 1: Handle Metadata
         const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(table, data, primaryKey, options);
-    
-        // Step 2: Attempt Table Split
         let insertInput: InsertInput[] = await this.attemptTableSplit(table, data, mergedMetaData);
-    
-        // Step 3: Handle the case when split is not needed or failed
+
         if (!insertInput || insertInput.length === 0) {
-            // Step 3.1: Handle metadata comparison if not split
             let comparedMetaData = initialComparedMetaData;
             if (comparedMetaData === undefined) {
                 comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
@@ -569,8 +556,8 @@ export class AutoSQLHandler {
     
         let configuredTables: (QueryResult | QueryInput[])[];
     
-        // Step 1: Auto-configure tables (with Workers or Directly). Only fan out to workers when
-        // there's more than one table to configure — a single table isn't worth a worker pool (A8).
+        // Only fan out to workers when there's more than one table — a single table isn't worth a
+        // worker pool (A8).
         if (this.db.getConfig().useWorkers && insertInput.length > 1) {
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
             try {
@@ -600,8 +587,8 @@ export class AutoSQLHandler {
             configuredTables = await Promise.all(insertInput.map((input) => this.autoConfigureTable(input)));
         }
     
-        // Step 2: Split immediate results from deferred DDL queries, preserving
-        //    index correspondence with insertInput for rollback correlation.
+        // Split immediate results from deferred DDL queries, preserving index correspondence
+        // with insertInput for rollback correlation.
         const initialResults: QueryResult[] = [];
         const pendingDDL: Array<{ queries: QueryInput[]; inputIndex: number }> = [];
 
@@ -613,7 +600,6 @@ export class AutoSQLHandler {
             }
         });
 
-        // Step 3: Execute DDL transactions and attempt compensating rollback on failure
         let allResults: QueryResult[];
         if (pendingDDL.length > 0) {
             const transactionResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(
@@ -652,7 +638,6 @@ export class AutoSQLHandler {
             allResults = [...initialResults];
         }
 
-        // Step 4: Handle failures
         throwIfFailedResults(allResults, "table configuring queries")
     
         this.db.log("All tables configured and executed successfully.");
@@ -665,14 +650,12 @@ export class AutoSQLHandler {
         }
     
         let insertQueries: (QueryResult | QueryInput[])[];
-    
-        // Step 1: Handle single insert separately
+
         if (insertInput.length === 1) {
             insertQueries = [
                 await this.autoInsertData({ ...insertInput[0], runQuery: false })
             ];
         } else {
-            // Step 2: Defer execution & modify inputs
             insertInput = insertInput.map((input) => ({ ...input, runQuery: false }));
 
             if (this.db.getConfig().useWorkers && insertInput.length > 1) {
@@ -708,14 +691,12 @@ export class AutoSQLHandler {
             }
         }
     
-        // Step 3: Execute Insert Transactions
         const insertTransactionInputs: QueryInput[][] = insertQueries as QueryInput[][];
         const allInsertResults: QueryResult[] = await this.db.runTransactionsWithConcurrency(insertTransactionInputs);
-    
-        // Step 4: Handle Failures
+
         // Graceful degradation is opt-in and only for the non-atomic direct-insert path: the caller
-        // passes perRowFallback and the user configured rejectedRowsTable. Without it a failed batch
-        // throws, which is right when the caller hasn't said where bad rows should go.
+        // passes perRowFallback and the user configured rejectedRowsTable. Without it a failed
+        // batch throws, which is right when the caller hasn't said where bad rows should go.
         const config = this.db.getConfig();
         if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r?.success)) {
             return this.degradation.applyPerRowFallback(insertInput, allInsertResults);
@@ -815,7 +796,6 @@ export class AutoSQLHandler {
                 insertInput = [...insertInput, ...nestedInputs];
                 phases.prepare = perf() - tPrepare;
 
-                // Schema history: drift detection + record start
                 if (useHistory) {
                     if (config.detectDrift ?? true) {
                         await this.history.detectDrift(table);
@@ -838,12 +818,11 @@ export class AutoSQLHandler {
                     if (historyId !== undefined) {
                         const updatedMeta = insertInput[0]?.comparedMetaData?.updatedMetaData;
                         if (updatedMeta) {
-                            // Store the drift baseline as the checksum of the RE-INTROSPECTED table, not
-                            // the inferred `updatedMeta` — drift detection next run reads the introspected
-                            // schema, and inferred-vs-introspected would false-positive on legitimate type
-                            // round-trips (A6). `new_schema` stays `updatedMeta` (inferred) for
-                            // point-in-time reconstruction; a null introspection stores a null checksum
-                            // (treated as "no baseline"), which also covers the A19 couldn't-read case.
+                            // Drift baseline is the checksum of the RE-INTROSPECTED table, not the
+                            // inferred `updatedMeta` (A6) — next run's drift check reads introspected
+                            // schema, so comparing against inferred would false-positive on legitimate
+                            // type round-trips. A null introspection stores a null checksum ("no
+                            // baseline"), also covering the A19 couldn't-read case.
                             const liveMeta = await this.db.getTableMetaData(config.schema || config.database || "", table);
                             await this.history.recordSuccess(historyId, updatedMeta, liveMeta);
                         }
@@ -934,9 +913,8 @@ export class AutoSQLHandler {
                     if (firstValue !== null) yield firstValue;
                     let r; while (!(r = await iterator.next()).done) yield r.value;
                 } finally {
-                    // Forward early termination to the SOURCE iterator so a cursor-backed `chunks`
-                    // runs its own cleanup. We took over manual iteration for the first-chunk peek,
-                    // so the for-await's automatic `.return()` reaches this wrapper, not the source.
+                    // Forward early termination to the SOURCE iterator — manual iteration for the
+                    // first-chunk peek means the for-await's `.return()` reaches this wrapper, not it.
                     await iterator.return?.();
                 }
             }
@@ -981,10 +959,10 @@ export class AutoSQLHandler {
                     lockedInsertInput = chunkInsertInput;
                 } else {
                     // Later chunks reuse the locked schema but must GUARD AGAINST DRIFT: locking the
-                    // first chunk's types means a later chunk can carry a value the column can't hold
-                    // (ids 1..100 infer tinyint, then id 128 overflows). Re-infer this chunk and
-                    // compare ONLY its data columns, since the managed columns aren't in the chunk and
-                    // must not read as "to drop". Widen only when a column needs it.
+                    // first chunk's types means a later chunk can carry a value the column can't
+                    // hold (ids 1..100 infer tinyint, then id 128 overflows). Re-infer this chunk
+                    // and compare ONLY its data columns — managed columns aren't in the chunk and
+                    // must not read as "to drop". Widen only when needed.
                     const lockedMeta = lockedInsertInput[0].metaData;
                     const tPrepare = perf();
                     const inferred = await getMetaData(config, chunk, primaryKey);

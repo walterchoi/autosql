@@ -85,8 +85,8 @@ export class HistoryCoordinator {
                 data: [],
                 metaData: cleanedMeta,
                 previousMetaData: currentHistoryMetaData,
-                // Carry the prefix/suffix so the history/temp/real table names resolve correctly (incl.
-                // custom prefixes) both in the before-image query and in the atomic path's table map.
+                // Carry the prefix/suffix so history/temp/real table names resolve consistently in
+                // both the before-image query and the atomic path's table map.
                 stagingPrefix: matchingInput?.stagingPrefix,
                 historyTableSuffix: matchingInput?.historyTableSuffix,
               };

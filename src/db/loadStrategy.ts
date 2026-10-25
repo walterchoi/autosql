@@ -40,9 +40,8 @@ export class RowStoreLoadStrategy implements LoadStrategy {
         const input = ctx.insertInput;
         if (config.useStagingInsert) {
             // Row-level history takes the atomic path (before-image + merge in ONE transaction) so
-            // history and data commit or roll back together, leaving no crash window between them.
-            // rejectedRowsTable forces this branch too, since it needs addHistory for before-images;
-            // only the merge-failure handling differs (see perRowFallback below).
+            // history/data commit or roll back together. rejectedRowsTable also forces this branch
+            // (it needs addHistory for before-images) — only the merge-failure handling differs below.
             const useAtomicHistory = !!(config.addHistory && config.historyTables?.length);
             try {
                 await this.staging.prepareStagingTables(input);
