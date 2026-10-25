@@ -213,7 +213,7 @@ export class PostgresDatabase extends Database {
         if (!this.connection) {
             await this.establishConnection();
         }
-        return await (this.connection as Pool).connect();
+        return (this.connection as Pool).connect();
     }
 
     protected releaseConnection(client: PoolClient): void {

@@ -46,7 +46,7 @@ export class HistoryCoordinator {
         const eligibleInputs = uniqueTables.filter(table => config.historyTables!.includes(table));
         if (eligibleInputs.length == 0) { return []; }
 
-        return await Promise.all(
+        return Promise.all(
             eligibleInputs.map(async (table) => {
               const matchingInput = insertInput.find(i => i.table === table);
               const historyName = getHistoryTableName(table, matchingInput?.historyTableSuffix);
@@ -98,7 +98,7 @@ export class HistoryCoordinator {
         const historyInputs = await this.buildHistoryInputs(insertInput);
         if (!historyInputs.length) return [];
         await this.handler['configureTables'](historyInputs)
-        return await this.insertToHistoryTables(historyInputs)
+        return this.insertToHistoryTables(historyInputs)
     }
 
     /**

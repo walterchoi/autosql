@@ -38,7 +38,12 @@ const PROMOTED_RULES = {
     "@typescript-eslint/no-require-imports": "error",
     // Every instance was a genuinely redundant `as T`/`!` — the compiler already inferred the
     // same type without it. Promoted now that the full `src/` tree is clean under it.
-    "@typescript-eslint/no-unnecessary-type-assertion": "error"
+    "@typescript-eslint/no-unnecessary-type-assertion": "error",
+    // Rule only flags `return await` outside a try (or a try with no finally) — every flagged
+    // site here had no catch/finally depending on the await, so dropping it is behavior-neutral.
+    // Sites inside a try/finally (e.g. loadStrategy.ts's staging path) were correctly left alone:
+    // removing await there would let `finally` run before the returned promise settles.
+    "@typescript-eslint/return-await": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common

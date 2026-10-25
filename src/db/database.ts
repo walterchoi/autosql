@@ -255,7 +255,7 @@ export abstract class Database {
             throw new Error("Invalid table configuration: table name and headers are required.");
         }
     
-        return await this.getAlterTableQuery(table, oldHeaders, newHeaders);
+        return this.getAlterTableQuery(table, oldHeaders, newHeaders);
     }
 
     public dropTableQuery(table: string): QueryInput {

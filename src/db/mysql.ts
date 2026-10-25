@@ -195,7 +195,7 @@ export class MySQLDatabase extends Database {
         if (!this.connection) {
             await this.establishConnection();
         }
-        return await (this.connection as Pool).getConnection();
+        return (this.connection as Pool).getConnection();
     }
 
     protected releaseConnection(client: PoolConnection): void {

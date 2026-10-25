@@ -61,7 +61,7 @@ export class RowStoreLoadStrategy implements LoadStrategy {
                 await this.staging.removeStagingTables(input).catch(e => this.db.error(`${ctx.label}: failed to drop staging table(s) for '${ctx.table}': ${e instanceof Error ? e.message : String(e)}`));
             }
         } else {
-            return await this.handler['insertData'](input, { perRowFallback: true });
+            return this.handler['insertData'](input, { perRowFallback: true });
         }
     }
 }

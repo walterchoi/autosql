@@ -55,9 +55,9 @@ export class StagingPipeline {
         }));
         await this.handler['configureTables'](stagingInputs)
         if (this.db.getConfig().bulkLoad) {
-            return await this.bulkLoadStaging(stagingInputs)
+            return this.bulkLoadStaging(stagingInputs)
         }
-        return await this.handler['insertData'](stagingInputs)
+        return this.handler['insertData'](stagingInputs)
     }
 
     /**
@@ -296,7 +296,7 @@ export class StagingPipeline {
         // The addHistory case uses insertFromStagingTablesAtomic so history/data stay consistent.
         const config = this.db.getConfig();
         if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r?.success)) {
-            return await this.handler['degradation'].applyStagingPerRowFallback(insertInput, allInsertResults);
+            return this.handler['degradation'].applyStagingPerRowFallback(insertInput, allInsertResults);
         }
 
         throwIfFailedResults(allInsertResults, 'insert from staging table queries')

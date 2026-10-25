@@ -458,7 +458,7 @@ export class AutoSQLHandler {
           });
 
         if (insertStatements.length > 0 && runQuery) {
-            return await this.db.runTransaction(insertStatements);
+            return this.db.runTransaction(insertStatements);
         }
         return insertStatements;
     }
@@ -529,7 +529,7 @@ export class AutoSQLHandler {
             const exceedsColumnLimit = columnCount >= MAX_COLUMN_COUNT;
     
             if (exceedsLimit || exceedsColumnLimit) {
-                return await this.splitTableData(table, data, mergedMetaData);
+                return this.splitTableData(table, data, mergedMetaData);
             }
         }
         return [];
@@ -718,7 +718,7 @@ export class AutoSQLHandler {
         // throws, which is right when the caller hasn't said where bad rows should go.
         const config = this.db.getConfig();
         if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r?.success)) {
-            return await this.degradation.applyPerRowFallback(insertInput, allInsertResults);
+            return this.degradation.applyPerRowFallback(insertInput, allInsertResults);
         }
 
         throwIfFailedResults(allInsertResults, "data insert queries")
