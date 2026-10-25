@@ -25,4 +25,15 @@ describe("SSH host-key fingerprint verification (A7)", () => {
         expect(fingerprintMatches(key, other)).toBe(false);
         expect(fingerprintMatches(key, "SHA256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA")).toBe(false);
     });
+
+    test("tolerates a lower-case 'sha256:' prefix", () => {
+        expect(fingerprintMatches(key, ref.replace(/^SHA256:/, "sha256:"))).toBe(true);
+    });
+
+    test("refuses a case-flipped digest (base64 is case-sensitive)", () => {
+        const [prefix, digest] = ref.split(":");
+        const flipped = `${prefix}:${[...digest].map(ch => (ch === ch.toUpperCase() ? ch.toLowerCase() : ch.toUpperCase())).join("")}`;
+        expect(flipped).not.toBe(ref); // only a meaningful negative test if the flip actually changed it
+        expect(fingerprintMatches(key, flipped)).toBe(false);
+    });
 });
