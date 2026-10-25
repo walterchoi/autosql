@@ -24,7 +24,18 @@ const PROMOTED_RULES = {
     "@typescript-eslint/consistent-type-imports": "error",
     // Deferred deliberately: 240 existing call sites need real type design, not a mechanical
     // fix. Tracked as its own follow-up initiative, not promoted alongside everything else here.
-    "@typescript-eslint/no-explicit-any": "warn"
+    "@typescript-eslint/no-explicit-any": "warn",
+    // Both fight a deliberate pattern rather than finding a real bug, so kept at error with
+    // scoped inline exceptions at each site instead of disabled outright:
+    // - no-extraneous-class: the 9 query-builder "class { static ... }" shapes and
+    //   WorkerHelper were converted to plain object namespaces (no caller changes needed —
+    //   nothing ever `new`'d, extended, or exported them); the handful of remaining exceptions
+    //   are genuine class/constructor references (Readable, Pg, SSHClient — see naming-convention).
+    // - no-require-imports: the lazy require()s for the optional peer drivers (mysql2/pg/
+    //   mssql/ssh2/pg-copy-streams) are deliberate — a static import would force every consumer
+    //   to install all three/five drivers.
+    "@typescript-eslint/no-extraneous-class": "error",
+    "@typescript-eslint/no-require-imports": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common
