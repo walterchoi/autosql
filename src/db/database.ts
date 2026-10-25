@@ -211,10 +211,10 @@ export abstract class Database {
         const resultsArray = result.results ?? [];
 
         if (Array.isArray(schemaName)) {
-            return schemaName.reduce((acc, db) => {
+            return schemaName.reduce<Record<string, boolean>>((acc, db) => {
                 acc[db] = resultsArray[0]?.[db] === 1;
                 return acc;
-            }, {} as Record<string, boolean>);
+            }, {});
         }
 
         return { [schemaName]: resultsArray[0]?.[schemaName] === 1 };

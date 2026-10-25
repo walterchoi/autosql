@@ -63,7 +63,9 @@ const PROMOTED_RULES = {
     // Each site is `delete obj[computedKey]` on a per-column (not per-row) object — switched to
     // `Reflect.deleteProperty` rather than restructuring to a Map, since none of these are
     // performance-sensitive.
-    "@typescript-eslint/no-dynamic-delete": "error"
+    "@typescript-eslint/no-dynamic-delete": "error",
+    // Mechanical: `.reduce((acc, x) => ..., {} as T)` → `.reduce<T>((acc, x) => ..., {})`.
+    "@typescript-eslint/prefer-reduce-type-parameter": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common

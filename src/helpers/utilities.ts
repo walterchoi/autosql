@@ -347,10 +347,10 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
     const metadata: Record<string, MetadataHeader> = {};
 
     rows.forEach((row) => {
-        const normalizedRow = Object.keys(row).reduce((acc, key) => {
+        const normalizedRow = Object.keys(row).reduce<Record<string, any>>((acc, key) => {
             acc[key.toLowerCase()] = row[key];
             return acc;
-        }, {} as Record<string, any>);
+        }, {});
 
         if (!normalizedRow.column_name) return; // Skip invalid rows
 
@@ -550,10 +550,10 @@ export function isValidDataFormat(data: Record<string, any>[] | any): boolean {
 
 export const normalizeKeysArray = (data: Record<string, any>[]): Record<string, any>[] => {
     return data.map(obj =>
-        Object.keys(obj).reduce((acc, key) => {
+        Object.keys(obj).reduce<Record<string, any>>((acc, key) => {
             acc[key.toLowerCase()] = obj[key];
             return acc;
-        }, {} as Record<string, any>)
+        }, {})
     );
 };
 
@@ -580,7 +580,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
     const primaryKeys: MetadataHeader = {};
     const newColumns: MetadataHeader = {};
     const allTablesEmpty = Object.values(normalizedMetaData).every(table => Object.keys(table).length === 0);
-    const newGroupedByTable = Object.entries(newMetaData).reduce((acc, [columnName, columnDef]) => {
+    const newGroupedByTable = Object.entries(newMetaData).reduce<Record<string, MetadataHeader>>((acc, [columnName, columnDef]) => {
         if (allTablesEmpty) {
             if (columnDef.primary) {
                 primaryKeys[columnName] = columnDef;
@@ -608,7 +608,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
         }
 
         return acc;
-    }, {} as Record<string, MetadataHeader>);
+    }, {});
 
     let tableName = Object.keys(newGroupedByTable).pop() || getNextTableName(Object.keys(newGroupedByTable).pop() || table);
     const unallocatedColumns = { ...newColumns };
