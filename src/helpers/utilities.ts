@@ -544,7 +544,7 @@ export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supporte
     return { rowSize: totalSize, exceedsLimit: totalSize > maxRowSize, nearlyExceedsLimit: totalSize > maxRowSize * 0.8 };
 }
 
-export function isValidDataFormat(data: Record<string, any>[] | any): boolean {
+export function isValidDataFormat(data: unknown): boolean {
     return Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null && !Array.isArray(data[0]);
 }
 

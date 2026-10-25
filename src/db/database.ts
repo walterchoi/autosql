@@ -16,7 +16,7 @@ function driverErrorCode(err: any): string | undefined {
 }
 
 export abstract class Database {
-    protected connection: any | null = null;
+    protected connection: any = null;
     protected config: DatabaseConfig;
     public autoSQLHandler!: AutoSQLHandler;
     protected abstract getPermanentErrors(): Promise<string[]>;
