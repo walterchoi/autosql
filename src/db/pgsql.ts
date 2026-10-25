@@ -29,6 +29,9 @@ export class PostgresDatabase extends Database {
         // eslint-disable-next-line @typescript-eslint/naming-convention -- a module/class reference, not data
         let Pg: typeof pg;
         try {
+            // Lazy require, not a static import: pg is an OPTIONAL peer dependency — a static import
+            // would force every consumer to install all three drivers.
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             Pg = require("pg");
         } catch {
             throw new Error("Missing required dependency 'pg'. Please install it to use PgDatabase.");
@@ -74,6 +77,9 @@ export class PostgresDatabase extends Database {
         }
         let copyFrom: any;
         try {
+            // Lazy require, not a static import: pg-copy-streams is an OPTIONAL peer dependency,
+            // only needed for Postgres bulk loads.
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             copyFrom = require("pg-copy-streams").from;
         } catch {
             throw new Error("Missing optional dependency 'pg-copy-streams' (required for bulkLoad on PostgreSQL).");

@@ -24,6 +24,9 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
   let SSHClient: typeof ssh2.Client;
 
   try {
+    // Lazy require, not a static import: ssh2 is an OPTIONAL peer dependency, only needed when
+    // a caller actually sets sshConfig.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     SSHClient = require("ssh2").Client;
   } catch {
     throw new Error(

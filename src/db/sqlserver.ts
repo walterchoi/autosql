@@ -78,6 +78,9 @@ export class SqlServerDatabase extends Database {
 
     async establishDatabaseConnection(): Promise<void> {
         try {
+            // Lazy require, not a static import: mssql is an OPTIONAL peer dependency — a static
+            // import would force every consumer to install all three drivers.
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             this.sql = require("mssql");
         } catch {
             throw new Error("Missing required dependency 'mssql'. Please install it to use SqlServerDatabase.");

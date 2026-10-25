@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { Readable } from "stream";
 import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
 import { Database } from "./database";
 import { MYSQL_PERMANENT_ERRORS } from './permanentErrors/mysql';
@@ -27,6 +28,9 @@ export class MySQLDatabase extends Database {
     async establishDatabaseConnection(): Promise<void> {
         let mysql: any;
         try {
+            // Lazy require, not a static import: mysql2 is an OPTIONAL peer dependency — a static
+            // import would force every consumer to install all three drivers.
+            // eslint-disable-next-line @typescript-eslint/no-require-imports
             mysql = require("mysql2/promise");
         } catch {
             throw new Error("Missing required dependency 'mysql2'. Please install it to use MySQLDatabase.");
@@ -91,8 +95,6 @@ export class MySQLDatabase extends Database {
         if (rows.length === 0) {
             return { start, end: new Date(), duration: 0, success: true, affectedRows: 0 };
         }
-        // eslint-disable-next-line @typescript-eslint/naming-convention -- a class reference, not data
-        const { Readable } = require("stream");
         const schema = this.getConfig().schema;
         const schemaPrefix = schema ? `${escapeIdentifier(schema, "mysql")}.` : "";
         const colList = columns.map(c => escapeIdentifier(c, "mysql")).join(", ");
