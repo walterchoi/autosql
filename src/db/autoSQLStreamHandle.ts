@@ -91,11 +91,9 @@ export class AutoSQLStreamHandle {
     /**
      * Append a chunk of rows to this run's staging table.
      *
-     * Rejects on failure and MUST be awaited: an un-awaited failing write() becomes an unhandled
-     * rejection and its error is lost. A rejected write() leaves staging indeterminate, so either
-     * retry the same chunk (write() is append-only, so re-sending is safe) or {@link abort}. Do NOT
-     * call {@link end} expecting the gap to be ignored; end() merges whatever is staged, so a lost
-     * chunk becomes missing rows.
+     * Must be awaited — an un-awaited rejection is lost, and leaves staging indeterminate. Retry
+     * the same chunk (append-only, so safe) or {@link abort}; don't call {@link end} expecting a
+     * failed write to be skipped — it merges whatever staged, so a lost chunk means missing rows.
      */
     async write(chunk: Record<string, any>[], opts?: { cursor?: string }): Promise<void> {
         if (this.ended) throw new Error(`autoSQLStream: write() called after end()/abort()`);
@@ -114,8 +112,8 @@ export class AutoSQLStreamHandle {
             const config = this.db.getConfig();
 
             if (!this.stagingCreated) {
-                // Columns from the UNION of the first chunk's rows — not just chunk[0], which would
-                // silently drop a key first appearing in a later row of the same chunk (A18).
+                // Union of the first chunk's rows, not just chunk[0] — a key first appearing later
+                // in the chunk would otherwise silently drop (A18).
                 const cols = new Set<string>();
                 for (const row of chunk) for (const k of Object.keys(row)) cols.add(k);
                 // Reserved, or the injected column collides and the CREATE fails unhelpfully.
@@ -142,11 +140,11 @@ export class AutoSQLStreamHandle {
                 }
             }
             if (unknown.length > 0) {
-                // Widen rather than refuse: absorbing a drifted source is what autosql does
-                // everywhere else, and refusing would strand a resume mid-load. `safeMode` means no
-                // DDL, so there the only non-lossy option left is to refuse. A keyless stream keeps
-                // the established throw — its columns came from its own first chunk moments earlier,
-                // so an unknown key is caller inconsistency, not drift between runs.
+                // Widen rather than refuse (consistent with autosql elsewhere); refusing would
+                // strand a resume mid-load. safeMode forbids DDL, so refusal is the only non-lossy
+                // option there. A keyless stream still throws — its columns came from its own
+                // first chunk moments earlier, so an unknown key there is caller inconsistency,
+                // not drift.
                 if (this.resumable && !config.safeMode) {
                     const alterQ = buildAddStreamStagingColumnsQuery(this.stagingTable, unknown, config);
                     const alterResult = await this.db.runTransaction([alterQ]);
@@ -186,8 +184,8 @@ export class AutoSQLStreamHandle {
      * Merge all staged rows into the target (infer schema, apply DDL, bulk INSERT…SELECT with a
      * per-row retry fallback), then drop staging.
      *
-     * Rejects on failure and must be awaited. end() merges whatever is staged and knows nothing of
-     * write() calls that failed or were never awaited, so a lost chunk silently becomes missing rows.
+     * Rejects on failure and must be awaited — it merges whatever is staged, so a write() that
+     * failed or was never awaited becomes silently missing rows.
      */
     async end(): Promise<QueryResult> {
       return this.db.runWithSchema(this.schema, async () => {
@@ -196,15 +194,13 @@ export class AutoSQLStreamHandle {
         const config = this.db.getConfig();
         const insertType = config.insertType ?? 'UPDATE';
         const maxRetries = config.streamMaxRetries ?? DEFAULTS.streamMaxRetries;
-        // Per-run instrumentation (QueryStats). For a stream these cover the `end()` FLUSH — read
-        // staging + infer (prepare) → DDL (configure) → merge (load) — not the incremental write()s.
+        // QueryStats here cover the end() FLUSH (read+infer→DDL→merge), not the incremental write()s.
         const perf = () => (typeof performance !== "undefined" ? performance.now() : Date.now());
         const phases: { prepare?: number; configure?: number; load?: number } = {};
         let promoted = false; // gates the drop in `finally`
 
         try {
             if (!this.stagingCreated) {
-                // Nothing was written
                 return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
             }
 
@@ -213,10 +209,10 @@ export class AutoSQLStreamHandle {
             if (!selectResult.success || !selectResult.results) {
                 throw new Error(`autoSQLStream: failed to read staging data: ${selectResult.error}`);
             }
-            // Dedup BEFORE inference, not just at merge. A resumed run re-sends the page it died on,
-            // so a key legitimately appears twice in staging — and inference reading that decides the
-            // key is not unique and WIDENS it (an `id` re-send produced a composite `(id, name)` PK).
-            // Keep the last-staged row per key, matching the merge's own dedup.
+            // Dedup BEFORE inference, not just at merge: a resumed run's re-sent page makes a key
+            // appear twice in staging, and inference reading that infers a composite key instead
+            // of unique (e.g. `id` becomes `(id, name)`). Keep the last-staged row per key,
+            // matching merge's own dedup.
             const rawRows: Record<string, any>[] = this.resumable && this.primaryKey?.length
                 ? dedupByKeyKeepingLast(selectResult.results, this.primaryKey)
                 : selectResult.results;
@@ -227,15 +223,15 @@ export class AutoSQLStreamHandle {
                 return out;
             });
             if (stagingRows.length === 0) {
-                // Nothing to lose by dropping an empty table, so don't leak it to the sweeper.
+                // Empty table: nothing to lose dropping it, so don't leak it to the orphan sweeper.
                 promoted = true;
                 return { start, end: new Date(), success: true, duration: 0, affectedRows: 0, table: this.table };
             }
 
-            // Overlay the resolved separators on inference AND the per-row fallback: the bulk merge
-            // casts via the DB, so a grouped value like "1,234" is rejected there and lands per-row,
-            // where sqlize normalizes under these separators. numberFormat needs no overlay, being
-            // already on this.config.
+            // Overlay the resolved separators for inference AND the per-row fallback: the bulk
+            // merge casts via the DB, so a grouped value like "1,234" fails there and lands
+            // per-row, where sqlize normalizes it under these separators. numberFormat needs no
+            // overlay — already on this.config.
             const separators = this.handler['resolveSeparatorConsensus'](stagingRows);
             const flushConfig = separators
                 ? { ...config, thousandsSeparator: separators.thousands, decimalSeparator: separators.decimal }
@@ -291,8 +287,8 @@ export class AutoSQLStreamHandle {
             let affectedRows = mergeResult.affectedRows ?? 0;
 
             if (!mergeResult.success) {
-                // Fallback: per-row retry with schema widening, under the resolved separators so the
-                // per-row sqlize (via getConfig()) normalizes values with the detected format.
+                // Fallback: per-row retry w/ schema widening, under the resolved separators so
+                // sqlize (via getConfig()) normalizes to the detected format.
                 affectedRows = await this.db.runWithSeparators(separators, () =>
                     this._perRowMerge(stagingRows, updatedMetaData, insertType, maxRetries));
             }
@@ -325,9 +321,9 @@ export class AutoSQLStreamHandle {
             await writeRunAudit(this.db, { table: this.table, success: false, rows: 0, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: true, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined });
             return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined };
         } finally {
-            // A resumable stream keeps its table when the rows didn't land: the failure may be
-            // transient, and dropping here would discard rows accumulated over earlier runs, the
-            // exact loss this feature exists to prevent. Per-run tables are useless after the call.
+            // A resumable stream keeps its table when rows didn't land — the failure may be
+            // transient, and dropping would discard rows accumulated over earlier runs, the exact
+            // loss this feature exists to prevent. A per-run table is useless after the call either way.
             const keepForResume = this.resumable && !promoted;
             if (this.stagingCreated && !keepForResume) {
                 const dropQ = buildDropStreamStagingTableQuery(this.stagingTable, this.db.getConfig());
@@ -398,10 +394,8 @@ export class AutoSQLStreamHandle {
 
     /**
      * Stop without promoting and without discarding, so a later run can adopt the staging table.
-     *
-     * Throws on a non-resumable stream: its table name is per-invocation, so suspending would leak a
-     * table nothing can ever find again, and both that and silently dropping the rows are worse than
-     * a loud refusal.
+     * Throws on a non-resumable stream — its table name is per-invocation, so suspending would
+     * leak an unreachable table; refusing loudly is better than that or silently dropping the rows.
      */
     suspend(): Promise<void> {
         if (!this.resumable) {
@@ -417,9 +411,8 @@ export class AutoSQLStreamHandle {
 
     /**
      * Discard the run: drop the staging table without merging. Safe to call even if {@link write}
-     * was never called, and the correct way to bail out after a failed write(). On a resumable
-     * stream this discards work accumulated across earlier runs too — use {@link suspend} to keep it.
-     * Returns a promise that should be awaited.
+     * was never called — the correct way to bail out after a failed write(). On a resumable
+     * stream this discards work from earlier runs too; use {@link suspend} to keep it.
      */
     async abort(): Promise<void> {
         this.ended = true;

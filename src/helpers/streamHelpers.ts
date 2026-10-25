@@ -26,10 +26,9 @@ export function isAutosqlStreamTable(tableName: string, table: string, prefix: s
 const RESUMABLE_MARKER = 'rs_';
 
 /**
- * Name a resumable staging table from a caller-owned session key.
- *
- * A pure function of the key, so a later run resolves the same table. Hashed rather than
- * interpolated so a caller-owned string can never affect the identifier's shape or length.
+ * Name a resumable staging table from a caller-owned session key — a pure function of the key,
+ * so a later run resolves the same table. Hashed so the caller-owned string can't affect the
+ * identifier's shape or length.
  */
 export function buildResumableStagingTableName(table: string, prefix: string, sessionKey: string): string {
     const hash = crypto.createHash('sha256').update(sessionKey).digest('hex').slice(0, 8);
@@ -37,10 +36,9 @@ export function buildResumableStagingTableName(table: string, prefix: string, se
 }
 
 /**
- * Orphan cleanup skips these: owned by a caller's session, so outliving the run that created one is
- * its normal state, not evidence of a crash. Deliberately an explicit check rather than a side
- * effect of {@link isAutosqlStreamTable}'s regex rejecting `rs_`, so the exclusion survives that
- * regex changing.
+ * Orphan cleanup skips these — owned by a caller's session, so outliving the run that created it
+ * is normal, not a crash. An explicit check rather than relying on {@link isAutosqlStreamTable}'s
+ * regex rejecting `rs_`, so the exclusion survives that regex changing.
  */
 export function isResumableStreamTable(tableName: string, table: string, prefix: string): boolean {
     const expected = `${prefix}${table}__${RESUMABLE_MARKER}`;
@@ -72,7 +70,6 @@ function schemaPrefixFor(config: DatabaseConfig): string {
     return config.schema ? `${escapeIdentifier(config.schema, config.sqlDialect)}.` : '';
 }
 
-/** CREATE TABLE DDL for the untyped (all TEXT) staging table. Columns come from the first chunk. */
 /**
  * Staging-only bookkeeping, never merged into the target. `_autosql_seq` carries the ordering: an
  * opaque cursor can't be sorted and `_autosql_staged_at` ties within MySQL's one-second resolution.
@@ -89,6 +86,7 @@ export function isStagingMetaColumn(column: string): boolean {
     return column.startsWith(STAGING_COLUMN_PREFIX);
 }
 
+/** CREATE TABLE DDL for the untyped (all TEXT) staging table. Columns come from the first chunk. */
 export function buildCreateStreamStagingTableQuery(
     stagingTable: string,
     columns: string[],
@@ -156,8 +154,7 @@ export function buildAddStreamStagingColumnsQuery(
     return { query: `ALTER TABLE ${tableRef} ${adds}`, params: [] };
 }
 
-/** INSERT one chunk. Values are cast to strings (TEXT columns) and parameter-bound. */
-// Objects/arrays must serialise to JSON, not String()'s "[object Object]" / "a,b,c" (A18) — matching
+// Objects/arrays serialise to JSON, not String()'s "[object Object]" / "a,b,c" (A18) — matching
 // sqlize's JSON handling on the batch path, so a JSON-bearing source round-trips the same via
 // openStream as via autoSQL.
 function streamCell(v: any): string | null {
@@ -166,6 +163,7 @@ function streamCell(v: any): string | null {
     return String(v);
 }
 
+/** INSERT one chunk. Values are cast to strings (TEXT columns) and parameter-bound. */
 export function buildInsertIntoStreamStagingQuery(
     stagingTable: string,
     columns: string[],
@@ -259,11 +257,10 @@ const MYSQL_DATETIME = ['datetime', 'datetimetz', 'timestamp'];
 const MYSQL_TIME    = ['time'];
 const MYSQL_BOOL    = ['boolean'];
 
-// Postgres has no tinyint/mediumint — they map to smallint/integer (same as the CREATE-path
-// translation), so the stream-merge cast must map them too. Without this a tinyint column falls
-// through uncast and the text→smallint INSERT is rejected (`column "id" is of type smallint but
-// expression is of type text`). Previously masked because a bare 0/1 inferred as boolean; now that
-// 0/1 is a small integer (R3), the merge must cast it.
+// Postgres has no tinyint/mediumint — map to smallint/integer (matches the CREATE-path
+// translation). Without this a tinyint column falls through uncast and the INSERT is rejected
+// (`column "id" is of type smallint but expression is of type text`). Previously masked because
+// 0/1 inferred as boolean; now it's a small integer (R3), so the merge must cast it.
 const PG_INT     = ['int', 'integer', 'mediumint'];
 const PG_BIGINT  = ['bigint'];
 const PG_SMALL   = ['smallint', 'tinyint'];
@@ -284,11 +281,10 @@ const SS_DATETIME = ['datetime', 'datetimetz', 'timestamp', 'timestamptz'];
 const SS_TIME     = ['time'];
 const SS_BOOL     = ['boolean'];
 
-// Identical control flow over different type lists and cast syntax (mysqlCast/pgCast/sqlserverCast
-// used to repeat this as three near-copies): each dialect checks its own type groups in order,
-// decimal is special-cased for its length/scale, and anything left unmatched is text-like and
-// passes through unwrapped. What varies per dialect is just the type-group → target-type mapping
-// and how the cast itself is wrapped around the quoted column.
+// Shared control flow across dialects (previously three near-identical mysqlCast/pgCast/
+// sqlserverCast copies): each checks its type groups in order, decimal is special-cased, and an
+// unmatched type passes through unwrapped as text. Only the type→target mapping and cast syntax
+// vary per dialect.
 interface CastGroup { types: string[]; target: string; }
 interface CastDialect {
     wrap: (quotedCol: string, target: string) => string;
