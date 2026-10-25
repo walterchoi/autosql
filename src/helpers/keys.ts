@@ -22,13 +22,11 @@ function surrogateColumnDefinition(): ColumnDefinition {
 
 /**
  * Apply the opt-in surrogate primary key: an auto-increment column added when a dataset has no
- * natural key, so the table can still be created and Postgres upserts have a conflict target.
- * Deliberately STICKY to the existing table so re-ingestion is idempotent, because compareMetaData
- * must see no key change on run 2 or it drops the surrogate and thrashes the PK.
+ * natural key. Deliberately STICKY to the existing table — compareMetaData must see no key change
+ * on a re-ingest, or it drops the surrogate and thrashes the PK.
  *
- *  - Existing table WITH a surrogate: keep that column as sole PK whatever this batch inferred, so a
- *    coincidentally-unique batch cannot introduce a competing natural key.
- *  - Existing table WITHOUT one: never introduce it; respect the schema as created.
+ *  - Existing table WITH a surrogate: keep it as sole PK, ignoring whatever this batch inferred.
+ *  - Existing table WITHOUT one: never introduce it.
  *  - New table: inject one only when predictIndexes found no natural PK.
  */
 export function applySurrogateKey(
@@ -73,7 +71,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
     // columns (O(2^N)), each scanned over all rows — a real hang on a wide, key-less table.
     const maxComposite = Math.max(1, maxCompositeKeyColumns ?? 4);
     try {
-        const headers: MetadataHeader = JSON.parse(JSON.stringify(meta_data)); // Deep copy to avoid mutation
+        const headers: MetadataHeader = JSON.parse(JSON.stringify(meta_data));
         const maxKeyLength = maxKeyLengthInput || DEFAULTS.maxKeyLength;
         let primaryKeyFound = false;
 
@@ -100,7 +98,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         for (const [columnName, column] of Object.entries(headers)) {
             const columnType = column.type ?? "varchar";
             const columnLength = Math.max(column.length ?? 0, maxByteLenByColumn[columnName] ?? 0) || 255
-            const isDecimal = (column.decimal !== 0 && column.decimal !== undefined) || column.type == 'decimal' || GROUPINGS.specialIntGroup.includes(columnType); // Identify decimal columns
+            const isDecimal = (column.decimal !== 0 && column.decimal !== undefined) || column.type == 'decimal' || GROUPINGS.specialIntGroup.includes(columnType);
             const isText = GROUPINGS.textGroup.includes(columnType) && columnType !== "varchar";
             const isDate = GROUPINGS.dateGroup.includes(columnType);
 
@@ -126,7 +124,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                 } else {
                     requiredPrimaryKeys.push(columnName);
                 }
-            } else if (column.unique && !column.allowNull) { // Only NOT-NULL unique columns are primary key candidates
+            } else if (column.unique && !column.allowNull) {
                 potentialPrimaryKeys.push(columnName);
             } else if ((column.pseudounique || column.categorical) && !column.allowNull) {
                 potentialCompositeKeys.push(columnName)
@@ -203,7 +201,7 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                     for (const combo of combinations) {
                         const fullCombo = Array.from(new Set([...requiredPrimaryKeys, ...combo]));
                         if (isCombinationUnique(data, fullCombo)) {
-                            selectedPrimaryKey = fullCombo; // Assign combo with date column
+                            selectedPrimaryKey = fullCombo;
                             foundUniqueCombination = true;
                             break;
                         }

@@ -14,18 +14,16 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         let strData : string | null = null;
         let json : boolean = false;
 
-        // Fast path for native JS scalars. JSON sources deliver most values as native numbers/booleans,
-        // yet the string path stringifies every value and runs JSON.parse + the full regex chain +
-        // normalizeNumber — the dominant per-value inference cost. A native boolean/finite-number is
-        // unambiguous, so short-circuit into the shared numeric-differentiation/length logic. (Non-finite
-        // numbers, Dates, objects and strings still take the full string path.)
+        // Fast path for native JS scalars: a boolean/finite-number is unambiguous, so skip the
+        // stringify + regex chain + normalizeNumber the string path runs for every value — the
+        // dominant per-value inference cost. Non-finite numbers, Dates, objects and strings still
+        // take the full string path.
         if (typeof data === "boolean") {
             return "boolean";
         }
         if (typeof data === "number" && Number.isFinite(data)) {
             strData = String(data);
-            // Check exponential form first: a huge integer can stringify as "1e+21" (typed `exponent`,
-            // not `int`). Leading-zero identifiers and locale separators never apply to a native number.
+            // A huge integer can stringify as "1e+21" — check exponential form first.
             if (/[eE]/.test(strData)) {
                 currentType = "exponent";
             } else if (Number.isInteger(data)) {
@@ -39,13 +37,11 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         } else if (typeof data === "string") {
             strData = data
         } else {
-            strData = String(data); // For non-objects, just convert to string
+            strData = String(data);
         }
-        // `json` only affects the final fallback (a value matching no other type). Inputs that reach it
-        // AND parse as JSON are arrays/objects/quoted-strings — strData starts with `[`, `{`, or `"`;
-        // numbers/booleans/dates match the regex chain first. Gating the parse on that first char is
-        // behaviour-identical but skips JSON.parse on plain string/number/date and, crucially, the
-        // try/catch EXCEPTION THROW (very slow in V8) a non-JSON string triggered every time.
+        // Gate the JSON.parse attempt on the first char (`[`/`{`/`"`) instead of always trying it:
+        // behaviour-identical since only those shapes can parse, but skips the try/catch exception
+        // throw (slow in V8) that a non-JSON string triggered on every value otherwise.
         if (/^\s*[[{"]/.test(strData)) {
             try {
                 JSON.parse(strData);
@@ -63,7 +59,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             strData = normalizeNumber(strData, thousandsSeparator, decimalSeparator, onAmbiguousSeparator);
 
             if (!strData) {
-                return "varchar"; // Invalid format
+                return "varchar";
             }
         }
 
@@ -88,7 +84,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
         } else {
             currentType = "varchar";
         }
-        } // end string-path branch (native number/boolean took the fast path above)
+        } // end string path (native number/boolean took the fast path above)
 
         if (currentType === "int") {
             const numValue = Number(strData);
@@ -114,7 +110,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
                         currentType = "varchar";
                     }
                 } catch {
-                    currentType = "varchar"; // If conversion fails, it's not a valid number
+                    currentType = "varchar";
                 }
             }
         }
@@ -123,7 +119,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
             if (strData.length > 4294967295) {
                 throw new Error("data_too_long: Data is too long for JSON field");
             }
-            return "json"; // Always keep JSON if detected
+            return "json";
         }
         if (currentType === "varchar") {
             const length = strData.length;
@@ -163,7 +159,7 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
         }
 
         if (types.length === 0) {
-            return "varchar"; // Default fallback if all inputs were null
+            return "varchar";
         }
 
         const uniqueTypes = [...new Set(types)];
@@ -246,10 +242,9 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
 
             if (overallTypeGroup === currentTypeGroup) {
                 if (overallTypeGroup === "specialInt") {
-                    // Widen toward the later group entry (decimal < double < exponent). Resolves
-                    // decimal+double -> double deliberately: "double" only enters via a pre-existing
-                    // DOUBLE column, and narrowing back to decimal would be a lossy/erroring ALTER. Pure
-                    // inference never yields "double", so exact decimals aren't silently floated here.
+                    // Widen toward the later entry (decimal < double < exponent). decimal+double ->
+                    // double is deliberate: "double" only enters via a pre-existing DOUBLE column,
+                    // and narrowing back to decimal would be a lossy/erroring ALTER.
                     for (let i = GROUPINGS.specialIntGroup.length - 1; i >= 0; i--) {
                         if (GROUPINGS.specialIntGroup[i] === currentType || GROUPINGS.specialIntGroup[i] === overallType) {
                             overallType = GROUPINGS.specialIntGroup[i];

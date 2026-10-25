@@ -81,7 +81,7 @@ export function buildColumnProfile(
             const el = entity.toLowerCase();
             const matchedTable = tableNames.find(t => {
                 const tl = t.toLowerCase();
-                return tl === el || tl === el + "s" || tl === el + "es"; // simple singular/plural
+                return tl === el || tl === el + "s" || tl === el + "es";
             });
             profile.foreignKey = matchedTable ? { referencesEntity: entity, matchedTable } : { referencesEntity: entity };
         }

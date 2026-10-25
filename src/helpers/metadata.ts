@@ -116,11 +116,11 @@ function getDataHeadersSync(data: Record<string, any>[], databaseConfig: Databas
 
     if (sampling !== undefined && sampling > 0 && samplingMinimum !== undefined && data.length > samplingMinimum) {
         let sampleSize = Math.round(data.length * sampling);
-        sampleSize = Math.max(sampleSize, samplingMinimum); // Ensure minimum sample size
+        sampleSize = Math.max(sampleSize, samplingMinimum);
 
         const shuffledData = shuffleArray(data);
-        sampleData = shuffledData.slice(0, sampleSize); // Shuffle and take sample
-        remainingData = shuffledData.slice(sampleSize); // Store remaining data
+        sampleData = shuffledData.slice(0, sampleSize);
+        remainingData = shuffledData.slice(sampleSize);
     }
 
     // Cap uniqueSet per column at sampled rows + 1: enough to observe every distinct sample value
@@ -237,9 +237,9 @@ function getDataHeadersSync(data: Record<string, any>[], databaseConfig: Databas
                 metaDataInterim[column].trueMaxDecimal = Math.max(metaDataInterim[column].trueMaxDecimal, metaDataInterim[column].decimal, decimalLen);
                 metaDataInterim[column].decimal = Math.min(metaDataInterim[column].decimal, decimalScaleCap);
 
-                // Precision = max integer digits + max scale, as independent running maxes. Summing
-                // this row's integer length with the running scale (old behaviour) under-counted when
-                // the widest-integer and widest-scale values were different rows (e.g. decimal(3,2)
+                // Precision = max integer digits + max scale, tracked as independent running maxes
+                // (summing this row's integer length with the running scale under-counts when the
+                // widest-integer and widest-scale values are different rows, e.g. decimal(3,2)
                 // overflowing on 10.5).
                 metaDataInterim[column].length = Math.max(metaDataInterim[column].length, (metaDataInterim[column].intLen ?? 0) + metaDataInterim[column].decimal);
             } else {
@@ -474,17 +474,15 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
     try {
         let validatedConfig: DatabaseConfig;
         let dbInstance: Database | undefined;
-        // Not read below (nothing here needs the resolved DialectConfig) — kept only for the
-        // unsupported-dialect validation in the else branch's throw, and to preserve whatever
-        // dbInstance.getDialectConfig() does on the Database-instance path.
+        // Unused below; kept only so the else branch still throws on an unsupported dialect.
         let _dialectConfig: DialectConfig;
 
         if (databaseOrConfig instanceof Database) {
             dbInstance = databaseOrConfig;
-            validatedConfig = validateConfig(dbInstance.getConfig()); // Use existing Database config
+            validatedConfig = validateConfig(dbInstance.getConfig());
             _dialectConfig = dbInstance.getDialectConfig();
         } else {
-            validatedConfig = validateConfig(databaseOrConfig); // Use provided config
+            validatedConfig = validateConfig(databaseOrConfig);
             if(validatedConfig.sqlDialect == 'mysql') {
                 _dialectConfig = MYSQL_CONFIG;
             } else if(validatedConfig.sqlDialect == 'pgsql') {
@@ -573,13 +571,10 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
         }
     }
 
-    // Identify renamed columns. A rename is inferred only when exactly one removed column matches
-    // exactly one added column by definition; ambiguous cases stay drop+add to avoid wrong-column
-    // renames.
-    //
-    // Deliberately conservative: a rename cannot be known from metadata alone, and DB-parsed
-    // `oldHeaders` rarely match inferred `newHeaders` exactly, so most evolutions fall through to
-    // drop+add. Do NOT loosen the match to type-only; that reintroduces wrong-column data association.
+    // A rename is inferred only when exactly one removed column matches exactly one added column
+    // by full definition fingerprint; ambiguous cases stay drop+add. Deliberately conservative —
+    // a rename can't be known from metadata alone, and loosening the match to type-only would
+    // risk associating data with the wrong column.
     const fingerprint = (col: ColumnDefinition): string =>
         JSON.stringify(Object.fromEntries(Object.entries(col).sort()));
 
@@ -710,7 +705,6 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
         }
     }
 
-    // Identify true primary key changes (excluding length-only modifications)
     const structuralPrimaryKeyChanges = newPrimaryKeys.filter(pk => !oldPrimaryKeys.includes(pk));
 
     if (structuralPrimaryKeyChanges.length > 0 || renamedPrimaryKeys.length > 0) {
@@ -718,11 +712,10 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
 
         for (const { oldName, newName } of renamedPrimaryKeys) {
             if (primaryKeyChanges.includes(oldName)) {
-                primaryKeyChanges.push(newName); // Add new key
+                primaryKeyChanges.push(newName);
             }
         }
 
-        // Remove old names of renamed primary keys from the final key list
         for (const { oldName } of renamedPrimaryKeys) {
             primaryKeyChanges = primaryKeyChanges.filter(pk => pk !== oldName);
         }

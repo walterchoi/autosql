@@ -5,9 +5,8 @@ export const DEFAULTS = {
     samplingMinimum: 100,
     maxKeyLength: 255,
     maxVarcharLength: 1024,
-    // Cap composite-primary-key search to this many columns. Bounds an otherwise O(2^N) search (every
-    // subset of pseudo-unique columns × all rows) — a hang risk on a wide table with no natural key.
-    // 4 covers effectively every real composite key; raise only for a genuine 5+ column natural key.
+    // Caps the composite-primary-key search, otherwise O(2^N) over pseudo-unique columns — a hang
+    // risk on a wide table with no natural key. Raise only for a genuine 5+ column natural key.
     maxCompositeKeyColumns: 4,
     autoIndexing: true,
     inferUnique: true,
@@ -16,16 +15,13 @@ export const DEFAULTS = {
     insertStack: 100,
     safeMode: false,
     deleteColumns: false,
-    // decimalMaxLength intentionally has NO hard default: unset → decimal stored at the full scale the
-    // data needs, up to the dialect's DialectConfig.maxDecimalScale. Set it to cap scale (e.g. 2 for
-    // currency). See decimalToVarchar for the preserve-as-text-instead-of-round option.
+    // (decimalMaxLength has no default here: unset means full scale up to the dialect's max.)
     decimalToVarchar: false,
     autoSplit: false,
     useWorkers: true,
     maxWorkers: 8,
-    // Per-worker-task timeout in SECONDS. 0 disables it (default). A dying worker is always caught by
-    // the pool's exit/error handlers; this only guards an alive-but-wedged worker (e.g. a hung DB
-    // call). Off by default so a legitimately long batch isn't spuriously failed.
+    // Seconds; 0 disables. A dying worker is already caught by the pool's exit/error handlers —
+    // this only guards an alive-but-wedged one. Off by default so a long batch isn't spuriously failed.
     workerTaskTimeout: 0,
     stagingPrefix: "temp_staging__",
     historyTableSuffix: "__history",
