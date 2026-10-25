@@ -226,8 +226,8 @@ export class SqlServerDatabase extends Database {
         return DIALECT_CONFIG;
     }
 
-    protected async getPermanentErrors(): Promise<string[]> {
-        return SQL_SERVER_PERMANENT_ERRORS;
+    protected getPermanentErrors(): Promise<string[]> {
+        return Promise.resolve(SQL_SERVER_PERMANENT_ERRORS);
     }
 
     async testQuery(queryOrParams: QueryInput): Promise<any> {

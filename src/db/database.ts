@@ -108,8 +108,8 @@ export abstract class Database {
      * target. No-op in the base impl, because only MySQL has the 3-byte `utf8` vs 4-byte `utf8mb4`
      * split; Postgres `UTF8` already stores 4-byte chars.
      */
-    public async getCharsetUpgradeQueries(_table: string): Promise<QueryInput[]> {
-        return [];
+    public getCharsetUpgradeQueries(_table: string): Promise<QueryInput[]> {
+        return Promise.resolve([]);
     }
 
     static create(config: DatabaseConfig): Database {

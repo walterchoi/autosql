@@ -25,7 +25,7 @@ export class MySQLDatabase extends Database {
         this.autoSQLHandler = new AutoSQLHandler(this);
     }
 
-    async establishDatabaseConnection(): Promise<void> {
+    establishDatabaseConnection(): Promise<void> {
         let mysql: any;
         try {
             // Lazy require, not a static import: mysql2 is an OPTIONAL peer dependency — a static
@@ -55,6 +55,7 @@ export class MySQLDatabase extends Database {
             ...(ssl ? { ssl: ssl === true ? {} : ssl } : {}),
             ...(this.config.sshStream ? { stream: this.config.sshStream } : {})
         });
+        return Promise.resolve();
     }
 
     /**
@@ -157,8 +158,8 @@ export class MySQLDatabase extends Database {
         return DIALECT_CONFIG;
     }
 
-    protected async getPermanentErrors(): Promise<string[]> {
-        return MYSQL_PERMANENT_ERRORS;
+    protected getPermanentErrors(): Promise<string[]> {
+        return Promise.resolve(MYSQL_PERMANENT_ERRORS);
     }
 
     async testQuery(queryOrParams: QueryInput): Promise<any> {

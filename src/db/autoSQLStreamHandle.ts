@@ -403,15 +403,16 @@ export class AutoSQLStreamHandle {
      * table nothing can ever find again, and both that and silently dropping the rows are worse than
      * a loud refusal.
      */
-    async suspend(): Promise<void> {
+    suspend(): Promise<void> {
         if (!this.resumable) {
-            throw new Error(
+            return Promise.reject(new Error(
                 `autoSQLStream: suspend() requires a stream opened with a sessionKey — a per-run staging table cannot be resumed, ` +
                 `so suspending it would leave an unreachable table behind. Use end() to merge or abort() to discard.`
-            );
+            ));
         }
         this.ended = true;
         this.handler.releaseStreamStaging(this.stagingTable);
+        return Promise.resolve();
     }
 
     /**

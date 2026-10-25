@@ -25,7 +25,7 @@ export class PostgresDatabase extends Database {
         this.autoSQLHandler = new AutoSQLHandler(this);
     }
 
-    async establishDatabaseConnection(): Promise<void> {
+    establishDatabaseConnection(): Promise<void> {
         // eslint-disable-next-line @typescript-eslint/naming-convention -- a module/class reference, not data
         let Pg: typeof pg;
         try {
@@ -56,6 +56,7 @@ export class PostgresDatabase extends Database {
             ...(ssl ? { ssl } : {}),
             stream: this.config.sshStream ? () => this.config.sshStream! : undefined
         });
+        return Promise.resolve();
     }
 
     public getMaxConnections(): number {
@@ -165,8 +166,8 @@ export class PostgresDatabase extends Database {
         return DIALECT_CONFIG;
     }
 
-    protected async getPermanentErrors(): Promise<string[]> {
-        return PGSQL_PERMANENT_ERRORS
+    protected getPermanentErrors(): Promise<string[]> {
+        return Promise.resolve(PGSQL_PERMANENT_ERRORS)
     }
 
     async testQuery(queryOrParams: QueryInput): Promise<any> {

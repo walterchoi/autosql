@@ -90,7 +90,10 @@ export function fillColumnDefaults(schema: MetadataHeader): MetadataHeader {
     return result;
 }
 
-export async function getDataHeaders(data: Record<string, any>[], databaseConfig: DatabaseConfig): Promise<MetadataHeader> {
+// Entirely synchronous (type inference over an in-memory array), but callers rely on the
+// exported getDataHeaders() rejecting rather than throwing (e.g. `await expect(...).rejects
+// .toThrow(...)` in boolean-columns.test.ts) — so it's wrapped below instead of exported directly.
+function getDataHeadersSync(data: Record<string, any>[], databaseConfig: DatabaseConfig): MetadataHeader {
     const sampling = databaseConfig.sampling;
     const samplingMinimum = databaseConfig.samplingMinimum;
     let metaData : MetadataHeader = {};
@@ -457,6 +460,14 @@ export async function getDataHeaders(data: Record<string, any>[], databaseConfig
     }
 
     return metaData
+}
+
+export function getDataHeaders(data: Record<string, any>[], databaseConfig: DatabaseConfig): Promise<MetadataHeader> {
+    try {
+        return Promise.resolve(getDataHeadersSync(data, databaseConfig));
+    } catch (error) {
+        return Promise.reject(error);
+    }
 }
 
 export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, data: Record<string, any>[], primaryKey?: string[]) : Promise<MetadataHeader> {

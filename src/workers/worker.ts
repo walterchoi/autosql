@@ -5,7 +5,9 @@ import type { AutoSQLHandler } from "../db/autosql";
 // Fire-and-forget: this IIFE is the whole worker_thread entry script. Nothing in this file awaits
 // it (there is no caller to await it against) — every path inside already reports its outcome via
 // parentPort.postMessage, so an unhandled rejection here would mean the IIFE's own try/catch failed.
-void (async () => {
+// Synchronous top to bottom (the real async work lives in the per-message handler below), so no
+// `async`/`void` wrapper is needed here.
+(() => {
   try {
     // Ensure workerData is received properly
     if (!workerData || !workerData.dbConfig) {

@@ -47,7 +47,18 @@ const PROMOTED_RULES = {
     // Each site was a `.catch(e => this.db.error(...))`/`setTimeout(() => fn())`-shaped arrow
     // shorthand implicitly returning a logger/void call's result — wrapped in braces so the
     // callback returns nothing instead of a discarded value.
-    "@typescript-eslint/no-confusing-void-expression": "error"
+    "@typescript-eslint/no-confusing-void-expression": "error",
+    // Each flagged async had zero awaits. Most are dialect-interface stubs/overrides (e.g.
+    // getPermanentErrors, establishDatabaseConnection) that are genuinely synchronous but must
+    // keep returning a Promise for interface consistency with sibling dialects that DO await —
+    // those drop `async` and return `Promise.resolve(...)`/`Promise.reject(...)` explicitly so a
+    // synchronous throw still surfaces as a rejection, not an uncaught throw, for callers that
+    // `await` or `.rejects.toThrow(...)` them (autoSQLStreamHandle's suspend(), metadata.ts's
+    // getDataHeaders — the latter split into a private sync `getDataHeadersSync` plus a thin
+    // Promise-wrapping export, since its throws are deep inside a large validation/inference body).
+    // worker.ts's top-level IIFE just dropped `async`/`void` outright — it's fire-and-forget with
+    // no caller to see a rejection either way, and was synchronous top to bottom already.
+    "@typescript-eslint/require-await": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common
