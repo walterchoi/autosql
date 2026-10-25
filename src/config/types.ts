@@ -53,7 +53,7 @@ export interface OpenStreamOptions {
    * Opt in to staging that survives between runs. Identifies the load SESSION, not one run of it:
    * a run or attempt id would hand every retry a fresh table, so resuming would silently become
    * restarting. ⚠ One writer per key — autosql does not serialise them.
-   * See README, "Resuming a stream across runs".
+   * See docs/streaming.md, "Resuming a stream across runs".
    */
   sessionKey?: string;
 }

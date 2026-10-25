@@ -73,7 +73,7 @@ function schemaPrefixFor(config: DatabaseConfig): string {
 /**
  * Staging-only bookkeeping, never merged into the target. `_autosql_seq` carries the ordering: an
  * opaque cursor can't be sorted and `_autosql_staged_at` ties within MySQL's one-second resolution.
- * See README, "Resuming across runs with a cursor".
+ * See docs/streaming.md, "Resuming across runs with a cursor".
  */
 export const STAGING_CURSOR_COLUMN = '_autosql_cursor';
 export const STAGING_STAGED_AT_COLUMN = '_autosql_staged_at';

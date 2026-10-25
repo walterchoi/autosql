@@ -353,7 +353,7 @@ export class AutoSQLStreamHandle {
 
     /**
      * What is currently staged, for a caller that lost its run. Reads the table, not this handle, so
-     * it is valid when another process staged the rows. See README.
+     * it is valid when another process staged the rows. See docs/streaming.md.
      */
     async stagingState(): Promise<{
         stagedRows: number;

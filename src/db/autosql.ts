@@ -1055,8 +1055,8 @@ export class AutoSQLHandler {
      * (`write`/`end`/`abort`) follow the same reject-on-failure, must-await contract —
      * they are not fire-and-forget. See {@link AutoSQLStreamHandle.write}.
      *
-     * `opts.sessionKey` opts into staging that survives between runs. See README, "Resuming a
-     * stream across runs".
+     * `opts.sessionKey` opts into staging that survives between runs. See docs/streaming.md,
+     * "Resuming a stream across runs".
      */
     async openStream(
         table: string,
