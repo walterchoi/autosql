@@ -171,3 +171,62 @@ describe("releaseSchemaLock — connection disposal (F7)", () => {
         expect(db.schemaLockConnections.has("t")).toBe(false);
     });
 });
+
+// ---------------------------------------------------------------------------
+// acquireSchemaLock — stale-connection handling (lint-and-dedup audit, Tier 2)
+// ---------------------------------------------------------------------------
+// White-box, written BEFORE collapsing the identical "release any stale connection registered
+// for this table" + "release the new client if the map wasn't updated to it" blocks (mysql.ts/
+// pgsql.ts) into shared Database helpers. `db.connection` is pre-set to a fake pool so
+// acquireSchemaLock skips establishConnection() entirely — no live DB needed.
+
+describe("acquireSchemaLock — stale-connection handling (Tier 2 characterization)", () => {
+    test("mysql: releases a stale connection already registered for the table before overwriting it", async () => {
+        const db: any = Database.create(BASE_CONFIG);
+        const stale = { release: jest.fn(), query: jest.fn() };
+        db.schemaLockConnections.set("t", stale);
+        const fresh = { release: jest.fn(), query: jest.fn().mockResolvedValue([[{ acquired: 1 }], []]) };
+        db.connection = { getConnection: jest.fn().mockResolvedValue(fresh) };
+
+        await db.acquireSchemaLock("t", 5);
+
+        expect(stale.release).toHaveBeenCalledTimes(1);
+        expect(fresh.release).not.toHaveBeenCalled();
+        expect(db.schemaLockConnections.get("t")).toBe(fresh);
+    });
+
+    test("mysql: releases the newly-acquired connection (not thrown away) when GET_LOCK times out", async () => {
+        const db: any = Database.create(BASE_CONFIG);
+        const client = { release: jest.fn(), query: jest.fn().mockResolvedValue([[{ acquired: 0 }], []]) };
+        db.connection = { getConnection: jest.fn().mockResolvedValue(client) };
+
+        await expect(db.acquireSchemaLock("t", 5)).rejects.toThrow(SchemaLockTimeoutError);
+        expect(client.release).toHaveBeenCalledTimes(1);
+        expect(db.schemaLockConnections.has("t")).toBe(false);
+    });
+
+    test("pgsql: releases a stale connection already registered for the table before overwriting it", async () => {
+        const db: any = Database.create({ sqlDialect: "pgsql", host: "localhost", user: "u", password: "p", database: "d" });
+        const stale = { release: jest.fn(), query: jest.fn() };
+        db.schemaLockConnections.set("t", stale);
+        const fresh = { release: jest.fn(), query: jest.fn().mockResolvedValue({ rows: [{ acquired: true }] }) };
+        db.connection = { connect: jest.fn().mockResolvedValue(fresh) };
+
+        await db.acquireSchemaLock("t", 5);
+
+        expect(stale.release).toHaveBeenCalledTimes(1);
+        expect(fresh.release).not.toHaveBeenCalled();
+        expect(db.schemaLockConnections.get("t")).toBe(fresh);
+    });
+
+    test("pgsql: releases the newly-acquired connection when the lock can't be acquired before the deadline", async () => {
+        const db: any = Database.create({ sqlDialect: "pgsql", host: "localhost", user: "u", password: "p", database: "d" });
+        const client = { release: jest.fn(), query: jest.fn().mockResolvedValue({ rows: [{ acquired: false }] }) };
+        db.connection = { connect: jest.fn().mockResolvedValue(client) };
+
+        // timeoutSeconds: 0 → deadline is now, so the poll loop never iterates and it fails fast.
+        await expect(db.acquireSchemaLock("t", 0)).rejects.toThrow(SchemaLockTimeoutError);
+        expect(client.release).toHaveBeenCalledTimes(1);
+        expect(db.schemaLockConnections.has("t")).toBe(false);
+    });
+});

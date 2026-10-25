@@ -1,8 +1,9 @@
 import type { MetadataHeader, QueryInput, AlterTableChanges, DatabaseConfig } from "../../../config/types";
 import { MYSQL_CONFIG } from "../../config/mysqlConfig";
 import { getUsingClause } from "./alterTableTypeConversion";
-import { generateSafeConstraintName, getTempTableName } from "../../../helpers/utilities";
+import { getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier, assertSafeTypeToken, assertSafeLength, renderColumnDefault } from "../../utils/escape";
+import { buildCreateIndexQueries } from "../shared/tableBuilderShared";
 const DIALECT_CONFIG = MYSQL_CONFIG
 const q = (name: string) => escapeIdentifier(name, "mysql");
 
@@ -80,15 +81,8 @@ export const MySQLTableQueryBuilder = {
 
         sqlQueries.push({query: sqlQuery, params: []}); // Store CREATE TABLE query as first item
     
-        const limitedIndexes = indexes.slice(0, remainingIndexSlots);
-        for (const index of limitedIndexes) {
-            const indexName = generateSafeConstraintName(table, index, "index");
-            sqlQueries.push({
-                query: `CREATE INDEX ${q(indexName)} ON ${schemaPrefix}${q(table)} (${q(index)});`,
-                params: []
-            });
-        }
-    
+        sqlQueries.push(...buildCreateIndexQueries("mysql", table, indexes, remainingIndexSlots, schemaPrefix));
+
         return sqlQueries;
     },
 

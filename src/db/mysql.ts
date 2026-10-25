@@ -38,12 +38,7 @@ export class MySQLDatabase extends Database {
         // TLS passthrough. mysql2 rejects `ssl: true` (wants an object/named profile), so normalise
         // `true` → `{}` (enable TLS, default verification); an object is passed as-is.
         const ssl = this.config.ssl;
-        if (ssl && typeof ssl === "object" && ssl.rejectUnauthorized === false) {
-            this.config.logger?.warn?.("autosql: ssl.rejectUnauthorized is false — TLS certificate verification is DISABLED (use only for dev/self-signed).");
-        }
-        if (ssl && (this.config.sshConfig || this.config.sshStream)) {
-            this.config.logger?.warn?.("autosql: both `ssl` and `sshConfig` are set — pick one encrypted path (direct TLS OR an SSH tunnel); TLS over an SSH stream is not a supported combination.");
-        }
+        this.warnInsecureTlsAndTunnelConflict(ssl);
         this.connection = mysql.createPool({
             host: this.config.host,
             user: this.config.user,
@@ -131,13 +126,9 @@ export class MySQLDatabase extends Database {
                     `Another process may be modifying this table's schema. Increase schemaLockTimeout or retry later.`
                 );
             }
-            // Release any stale connection registered for this table before overwriting, so a
-            // leftover entry can't leak a pooled connection.
-            const stale = this.schemaLockConnections.get(table);
-            if (stale && stale !== client) stale.release();
-            this.schemaLockConnections.set(table, client);
+            this.registerSchemaLockConnection(this.schemaLockConnections, table, client);
         } catch (error) {
-            if (client && this.schemaLockConnections.get(table) !== client) client.release();
+            this.releaseSchemaLockConnectionOnError(this.schemaLockConnections, table, client);
             throw error;
         }
     }

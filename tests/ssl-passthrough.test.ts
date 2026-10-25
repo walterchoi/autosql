@@ -121,4 +121,20 @@ describe("§8 SQL Server ssl → tedious options mapping", () => {
             encrypt: true, trustServerCertificate: false, cryptoCredentialsDetails: { cert: "C", key: "K", servername: "db.example.com" },
         });
     });
+
+    // Written ahead of collapsing this warning (and mysql's/pgsql's copy of it) onto the base
+    // Database class — sqlServerTlsOptions's own warn call wasn't previously under test, only its
+    // returned options mapping (the tests above). Mirrors §6/§7's mysql/pgsql assertions.
+    test("{rejectUnauthorized:false} also warns that verification is disabled", () => {
+        const warn = jest.fn();
+        const db: any = Database.create({ sqlDialect: "sqlserver", host: "h", user: "u", password: "p", database: "d", ssl: { rejectUnauthorized: false }, logger: { warn } });
+        db.sqlServerTlsOptions();
+        expect(warn).toHaveBeenCalledWith(expect.stringMatching(/verification is DISABLED/i));
+    });
+    test("{rejectUnauthorized:true} does NOT warn", () => {
+        const warn = jest.fn();
+        const db: any = Database.create({ sqlDialect: "sqlserver", host: "h", user: "u", password: "p", database: "d", ssl: { rejectUnauthorized: true }, logger: { warn } });
+        db.sqlServerTlsOptions();
+        expect(warn).not.toHaveBeenCalled();
+    });
 });

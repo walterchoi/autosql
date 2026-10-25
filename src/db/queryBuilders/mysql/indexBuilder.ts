@@ -1,6 +1,7 @@
 import type { QueryInput } from "../../../config/types";
 import { getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier } from "../../utils/escape";
+import { getAddPrimaryKeyQuery } from "../shared/indexBuilderShared";
 
 const q = (name: string) => escapeIdentifier(name, "mysql");
 
@@ -62,11 +63,7 @@ export const MySQLIndexQueryBuilder = {
     },
 
     getAddPrimaryKeyQuery(table: string, primaryKeys: string[], schema?: string): QueryInput {
-        const schemaPrefix = schema ? `${q(schema)}.` : "";
-        return {
-            query: `ALTER TABLE ${schemaPrefix}${q(table)} ADD PRIMARY KEY (${primaryKeys.map(pk => q(pk)).join(", ")});`,
-            params: []
-        };
+        return getAddPrimaryKeyQuery("mysql", table, primaryKeys, schema);
     },
 
     getUniqueIndexesQuery(table: string, columnName?: string, schema?: string): QueryInput {
