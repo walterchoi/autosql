@@ -259,8 +259,6 @@ export class SqlServerDatabase extends Database {
         return error;
     }
 
-    protected async executeQuery(query: string, client?: any): Promise<any>;
-    protected async executeQuery(QueryInput: QueryInput, client?: any): Promise<any>;
     protected async executeQuery(queryOrParams: QueryInput, client?: any): Promise<{ rows: any[]; affectedRows: number }> {
         if (!this.connection) await this.establishConnection();
 

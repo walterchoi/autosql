@@ -233,8 +233,6 @@ export class PostgresDatabase extends Database {
         if (client) { try { client.release(true); } catch { /* already broken */ } }
     }
 
-    protected async executeQuery(query: string, client?: PoolClient): Promise<any>;
-    protected async executeQuery(QueryInput: QueryInput, client?: PoolClient): Promise<any>;
     protected async executeQuery(queryOrParams: QueryInput, client?: PoolClient): Promise<{ rows: any[]; affectedRows: number }> {
         if (!this.connection) {
             await this.establishConnection();

@@ -82,7 +82,14 @@ const PROMOTED_RULES = {
     "@typescript-eslint/no-wrapper-object-types": "error",
     "@typescript-eslint/no-unnecessary-type-parameters": "error",
     "@typescript-eslint/no-base-to-string": "error",
-    "@typescript-eslint/no-unsafe-function-type": "error"
+    "@typescript-eslint/no-unsafe-function-type": "error",
+    // All three dialects' `executeQuery` carried two overloads (`query: string` / `QueryInput:
+    // QueryInput`) restating subsets of a type that was already `string | QueryWithParams` —
+    // QueryInput is a union that already includes `string`, so the implementation signature alone
+    // (`queryOrParams: QueryInput`) covers both. Not part of the public API (protected, and
+    // src/index.ts doesn't re-export these dialect classes), so narrowing callers from
+    // `Promise<any>` to the real `Promise<{ rows, affectedRows }>` is a pure improvement.
+    "@typescript-eslint/unified-signatures": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common

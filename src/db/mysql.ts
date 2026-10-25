@@ -214,8 +214,6 @@ export class MySQLDatabase extends Database {
         if (client) { try { client.destroy(); } catch { /* already broken */ } }
     }
 
-    protected async executeQuery(query: string, client?: PoolConnection): Promise<any>;
-    protected async executeQuery(QueryInput: QueryInput, client?: PoolConnection): Promise<any>;
     protected async executeQuery(queryOrParams: QueryInput, client?: PoolConnection): Promise<{ rows: any[]; affectedRows: number }> {
         if (!this.connection) {
             await this.establishConnection();
