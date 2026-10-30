@@ -100,6 +100,14 @@ export class AutoSQLStreamHandle {
         return this.columnSet;
     }
 
+    // Same message+code shape as Database.createSchema's failure path: the code is both appended
+    // to the message (for logs) and attached to `.code` (for a caller that wants to branch on it).
+    private failWithCode(message: string, errorCode?: string): never {
+        const err: any = new Error(errorCode ? `${message} [${errorCode}]` : message);
+        if (errorCode) err.code = errorCode;
+        throw err;
+    }
+
     /**
      * Append a chunk of rows to this run's staging table.
      *
@@ -138,7 +146,7 @@ export class AutoSQLStreamHandle {
                 const createQ = buildCreateStreamStagingTableQuery(this.stagingTable, this.columns, config);
                 const createResult = await this.db.runTransaction([createQ]);
                 if (!createResult.success) {
-                    throw new Error(`autoSQLStream: failed to create stream staging table '${this.stagingTable}': ${createResult.error ?? "unknown error"}`);
+                    this.failWithCode(`autoSQLStream: failed to create stream staging table '${this.stagingTable}': ${createResult.error ?? "unknown error"}`, createResult.errorCode);
                 }
                 this.stagingCreated = true;
             }
@@ -161,7 +169,7 @@ export class AutoSQLStreamHandle {
                     const alterQ = buildAddStreamStagingColumnsQuery(this.stagingTable, unknown, config);
                     const alterResult = await this.db.runTransaction([alterQ]);
                     if (!alterResult.success) {
-                        throw new Error(`autoSQLStream: failed to widen staging table '${this.stagingTable}' with new column(s) ${unknown.join(', ')}: ${alterResult.error ?? "unknown error"}`);
+                        this.failWithCode(`autoSQLStream: failed to widen staging table '${this.stagingTable}' with new column(s) ${unknown.join(', ')}: ${alterResult.error ?? "unknown error"}`, alterResult.errorCode);
                     }
                     for (const k of unknown) { this.requireColumns().push(k); this.requireColumnSet().add(k); }
                     this.widenedColumns.push(...unknown);
@@ -186,7 +194,7 @@ export class AutoSQLStreamHandle {
                 const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.requireColumns(), sub, config, cursor);
                 const insertResult = await this.db.runTransaction([insertQ]);
                 if (!insertResult.success) {
-                    throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error ?? "unknown error"}`);
+                    this.failWithCode(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error ?? "unknown error"}`, insertResult.errorCode);
                 }
             }
         });
@@ -196,8 +204,10 @@ export class AutoSQLStreamHandle {
      * Merge all staged rows into the target (infer schema, apply DDL, bulk INSERT…SELECT with a
      * per-row retry fallback), then drop staging.
      *
-     * Rejects on failure and must be awaited — it merges whatever is staged, so a write() that
-     * failed or was never awaited becomes silently missing rows.
+     * Never rejects — a failure resolves to `{success: false, error, errorCode}` instead (every
+     * failure path here is caught, same contract as {@link Database.runQuery}/`runTransaction`).
+     * Must still be awaited and its `.success` checked: it merges whatever write() staged, so an
+     * un-awaited or unchecked call can silently miss the result of a failed merge.
      */
     async end(): Promise<QueryResult> {
       return this.db.runWithSchema(this.schema, async () => {
@@ -219,7 +229,7 @@ export class AutoSQLStreamHandle {
             const selectQ = buildSelectFromStreamStagingQuery(this.stagingTable, config);
             const selectResult = await this.db.runQuery(selectQ);
             if (!selectResult.success || !selectResult.results) {
-                throw new Error(`autoSQLStream: failed to read staging data: ${selectResult.error ?? "unknown error"}`);
+                this.failWithCode(`autoSQLStream: failed to read staging data: ${selectResult.error ?? "unknown error"}`, selectResult.errorCode);
             }
             // Dedup BEFORE inference, not just at merge: a resumed run's re-sent page makes a key
             // appear twice in staging, and inference reading that infers a composite key instead

@@ -1,5 +1,14 @@
 ## [Unreleased]
 
+- **Fixed: `AutoSQLStreamHandle.end()`'s docblock contradicted its actual behavior** — it claimed
+  "Rejects on failure and must be awaited," but every failure path there is caught and resolves to
+  `{success: false, error, errorCode}` instead (same never-rejects contract as
+  `Database.runQuery`/`runTransaction`). Docblock corrected; no behavior change. Also:
+  `write()`/`end()`'s internal errors (failed create/widen/insert/read of the staging table) now
+  attach `.code` from the underlying `QueryResult.errorCode`, matching the structured-error-code
+  convention used elsewhere in autosql, so a caller can branch on the failure type instead of
+  string-matching the message. Found and reported by a peer session reading this code for an
+  unrelated integration.
 - Continuing the lint rollout (2.8.0): `restrict-template-expressions`/`restrict-plus-operands`
   dropped from 116 findings to 4 (the 4 remaining overlap the deferred `no-explicit-any` work and
   stay `warn`). `src/` now allows `number` in template literals (numbers always stringify
