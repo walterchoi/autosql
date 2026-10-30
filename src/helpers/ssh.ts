@@ -66,8 +66,9 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
   // whatever key the server presents, silently MITM-able. Verify and refuse a mismatch when
   // pinned; otherwise warn loudly (parity with the TLS `rejectUnauthorized: false` warning).
   if (sshKeys.hostFingerprint) {
+    const hostFingerprint = sshKeys.hostFingerprint;
     sshConfig.hostVerifier = (key: Buffer): boolean => {
-      const ok = fingerprintMatches(key, sshKeys.hostFingerprint!);
+      const ok = fingerprintMatches(key, hostFingerprint);
       if (!ok) {
         warn(`SSH host-key verification FAILED for ${sshKeys.host}: presented key ${sshHostKeyFingerprint(key)} does not match the pinned hostFingerprint. Refusing the tunnel.`);
       }

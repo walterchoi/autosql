@@ -88,6 +88,18 @@ export class AutoSQLStreamHandle {
         }
     }
 
+    // `columns`/`columnSet` are set once — by the constructor (adopted columns) or by write()'s
+    // first-chunk setup — before any code past that point reads them again. These narrow that
+    // invariant for TS instead of asserting it away.
+    private requireColumns(): string[] {
+        if (this.columns === null) throw new Error("autoSQLStream: columns are not yet established (write() must run first).");
+        return this.columns;
+    }
+    private requireColumnSet(): Set<string> {
+        if (this.columnSet === null) throw new Error("autoSQLStream: columns are not yet established (write() must run first).");
+        return this.columnSet;
+    }
+
     /**
      * Append a chunk of rows to this run's staging table.
      *
@@ -136,7 +148,7 @@ export class AutoSQLStreamHandle {
             const unknown: string[] = [];
             for (const row of chunk) {
                 for (const k of Object.keys(row)) {
-                    if (!this.columnSet!.has(k) && !unknown.includes(k)) unknown.push(k);
+                    if (!this.requireColumnSet().has(k) && !unknown.includes(k)) unknown.push(k);
                 }
             }
             if (unknown.length > 0) {
@@ -151,27 +163,27 @@ export class AutoSQLStreamHandle {
                     if (!alterResult.success) {
                         throw new Error(`autoSQLStream: failed to widen staging table '${this.stagingTable}' with new column(s) ${unknown.join(', ')}: ${alterResult.error ?? "unknown error"}`);
                     }
-                    for (const k of unknown) { this.columns!.push(k); this.columnSet!.add(k); }
+                    for (const k of unknown) { this.requireColumns().push(k); this.requireColumnSet().add(k); }
                     this.widenedColumns.push(...unknown);
                     this.db.warn(`autoSQLStream: staging table '${this.stagingTable}' widened with new column(s) ${unknown.join(', ')} that appeared after it was created.`);
                 } else {
                     const why = this.resumable
                         ? `safeMode is set, so the staging table cannot be altered to fit it`
                         : `a stream requires a stable column set`;
-                    throw new Error(`autoSQLStream: row has column '${unknown[0]}' that was not present when the stream started (columns: ${this.columns!.filter(c => !unknown.includes(c)).join(', ')}). ${why} — include '${unknown[0]}' in the first written rows, or use a separate stream/load for it.`);
+                    throw new Error(`autoSQLStream: row has column '${unknown[0]}' that was not present when the stream started (columns: ${this.requireColumns().filter(c => !unknown.includes(c)).join(', ')}). ${why} — include '${unknown[0]}' in the first written rows, or use a separate stream/load for it.`);
                 }
             }
 
             // SQL Server caps a request at 2,100 bound parameters, so split the chunk into sub-batches of
             // ≤ floor(2000 / colCount) rows (one request each). Other dialects send the whole chunk in one.
             // A bound cursor is one more parameter per row, so it counts toward the cap.
-            const boundPerRow = this.columns!.length + (cursor !== undefined ? 1 : 0);
+            const boundPerRow = this.requireColumns().length + (cursor !== undefined ? 1 : 0);
             const perStatement = config.sqlDialect === 'sqlserver'
                 ? Math.max(1, Math.floor(2000 / boundPerRow))
                 : chunk.length;
             for (let i = 0; i < chunk.length; i += perStatement) {
                 const sub = chunk.slice(i, i + perStatement);
-                const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, sub, config, cursor);
+                const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.requireColumns(), sub, config, cursor);
                 const insertResult = await this.db.runTransaction([insertQ]);
                 if (!insertResult.success) {
                     throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error ?? "unknown error"}`);

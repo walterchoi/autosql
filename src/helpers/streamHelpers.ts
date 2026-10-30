@@ -175,8 +175,13 @@ export function buildInsertIntoStreamStagingQuery(
     const tableRef = `${schemaPrefixFor(config)}${qi(stagingTable, dialect)}`;
     // seq and staged_at are DB-defaulted, so the cursor is the only one ever bound.
     const insertColumns = cursor !== undefined ? [...columns, STAGING_CURSOR_COLUMN] : columns;
-    const cellFor = (row: Record<string, any>, col: string) =>
-        col === STAGING_CURSOR_COLUMN ? cursor! : streamCell(row[col]);
+    const cellFor = (row: Record<string, any>, col: string) => {
+        if (col !== STAGING_CURSOR_COLUMN) return streamCell(row[col]);
+        // Invariant: STAGING_CURSOR_COLUMN is only in insertColumns (and thus only ever passed to
+        // cellFor) when cursor is defined — see insertColumns above.
+        if (cursor === undefined) throw new Error("buildInsertIntoStreamStagingQuery: STAGING_CURSOR_COLUMN requested with no cursor.");
+        return cursor;
+    };
     const escapedCols = insertColumns.map(c => qi(c, dialect)).join(', ');
 
     const params: any[] = [];
@@ -431,7 +436,8 @@ export function buildMergeFromStreamQuery(
 export function buildBootstrapRejectedRowsQuery(config: DatabaseConfig): QueryInput[] {
     const dialect   = config.sqlDialect;
     const schema    = config.rejectedRowsSchema || config.schema;
-    const tableName = config.rejectedRowsTable!;
+    if (!config.rejectedRowsTable) throw new Error("rejectedRowsTable is required to build this query but is not configured.");
+    const tableName = config.rejectedRowsTable;
     const prefix    = schema ? `${escapeIdentifier(schema, dialect)}.` : '';
     const tableRef  = `${prefix}${qi(tableName, dialect)}`;
 
@@ -474,7 +480,8 @@ export function buildInsertRejectedRowsQuery(
 ): QueryInput {
     const dialect   = config.sqlDialect;
     const schema    = config.rejectedRowsSchema || config.schema;
-    const tableName = config.rejectedRowsTable!;
+    if (!config.rejectedRowsTable) throw new Error("rejectedRowsTable is required to build this query but is not configured.");
+    const tableName = config.rejectedRowsTable;
     const prefix    = schema ? `${escapeIdentifier(schema, dialect)}.` : '';
     const tableRef  = `${prefix}${qi(tableName, dialect)}`;
 

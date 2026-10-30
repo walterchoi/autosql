@@ -233,7 +233,7 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
                             break;
                         }
                     }
-                } else if (["specialText", "date"].includes(overallTypeGroup!) || ["specialText", "date"].includes(currentTypeGroup!)) {
+                } else if ((overallTypeGroup !== null && ["specialText", "date"].includes(overallTypeGroup)) || (currentTypeGroup !== null && ["specialText", "date"].includes(currentTypeGroup))) {
                     collatedType = "varchar";
                 }
 

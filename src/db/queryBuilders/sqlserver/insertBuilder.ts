@@ -39,7 +39,7 @@ export const SqlServerInsertQueryBuilder = {
     getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         const { table, rows, header, insertType } = resolveStatementInput(tableOrInput, data, metaData, databaseConfig, inputInsertType);
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- resolveStatementInput's string-table branch gets `rows` via a non-null assertion on the optional `data` param; a caller omitting `data` genuinely reaches here with rows undefined.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- isInput only checks "table" in v; a malformed InsertInput-shaped object without data still reaches here with rows undefined.
         if (!rows || rows.length === 0) throw new Error(`No data provided for insert into table "${table}"`);
 
         const columns = insertColumns(header, databaseConfig);

@@ -43,6 +43,7 @@ export class PostgresDatabase extends Database {
             // servername) directly, so pass through unchanged. Omitted → no `ssl` key (back-compat).
             const ssl = this.config.ssl;
             this.warnInsecureTlsAndTunnelConflict(ssl);
+            const sshStream = this.config.sshStream;
             this.connection = new Pg.Pool({
                 host: this.config.host,
                 user: this.config.user,
@@ -56,7 +57,7 @@ export class PostgresDatabase extends Database {
                 client_encoding: this.config.encoding || DIALECT_CONFIG.encoding || "UTF8",
                 // `ssl: false` is treated the same as omitting it (plaintext) — only a truthy `ssl` is threaded.
                 ...(ssl ? { ssl } : {}),
-                stream: this.config.sshStream ? () => this.config.sshStream! : undefined
+                stream: sshStream ? () => sshStream : undefined
             });
             return Promise.resolve();
         } catch (error) {

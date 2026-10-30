@@ -590,15 +590,17 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
     const addedByFp = new Map<string, string[]>();
     for (const col of addedNewColNames) {
         const fp = fingerprint(newHeaders[col]);
-        if (!addedByFp.has(fp)) addedByFp.set(fp, []);
-        addedByFp.get(fp)!.push(col);
+        const bucket = addedByFp.get(fp) ?? [];
+        bucket.push(col);
+        addedByFp.set(fp, bucket);
     }
 
     const removedByFp = new Map<string, string[]>();
     for (const col of removedOldCols) {
         const fp = fingerprint(oldHeaders[col]);
-        if (!removedByFp.has(fp)) removedByFp.set(fp, []);
-        removedByFp.get(fp)!.push(col);
+        const bucket = removedByFp.get(fp) ?? [];
+        bucket.push(col);
+        removedByFp.set(fp, bucket);
     }
 
     for (const [fp, oldCols] of removedByFp) {

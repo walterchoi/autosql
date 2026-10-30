@@ -30,6 +30,14 @@ const PROMOTED_RULES = {
     // instead, same pattern as no-misused-spread. Those exceptions mark exactly the sites a
     // future `noUncheckedIndexedAccess` initiative would turn into real, provable fixes.
     "@typescript-eslint/no-unnecessary-condition": "error",
+    // Every `!` was replaced with a real fix, not just silenced: an assertion helper that throws a
+    // clear error instead of lying about a lazily-initialized field (autoSQLStreamHandle's
+    // columns/columnSet), capturing a value once before a closure instead of re-reading a getter
+    // each time (schema, sshStream, hostFingerprint, historyTables), an explicit get-or-create for
+    // a Map, an explicit `!== null` check, or an explicit throw for a value a caller is required to
+    // have provided (insertBuilderShared's string-table branch, rejectedRowsTable wherever it feeds
+    // SQL rather than just a log line).
+    "@typescript-eslint/no-non-null-assertion": "error",
     // Deferred deliberately: 240 existing call sites need real type design, not a mechanical
     // fix. Tracked as its own follow-up initiative, not promoted alongside everything else here.
     "@typescript-eslint/no-explicit-any": "warn",

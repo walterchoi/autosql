@@ -41,7 +41,7 @@ export class DegradationPolicy {
             // Preserve already-resolved key columns during widening re-inference so it can't re-infer
             // different keys for the failed rows.
             const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col].primary);
-            this.db.warn(`autoSQL: batch insert for '${input.table}' failed (${allInsertResults[i]?.error ?? 'unknown error'}); retrying per-row with schema widening, diverting unrecoverable rows to '${config.rejectedRowsTable!}'.`);
+            this.db.warn(`autoSQL: batch insert for '${input.table}' failed (${allInsertResults[i]?.error ?? 'unknown error'}); retrying per-row with schema widening, diverting unrecoverable rows to '${config.rejectedRowsTable ?? "(rejectedRowsTable not set)"}'.`);
             const { inserted } = await this.perRowInsertWithRetry(
                 input.table, input.data, input.metaData, insertType, maxRetries,
                 primaryKey.length ? primaryKey : undefined
@@ -160,7 +160,7 @@ export class DegradationPolicy {
                 continue;
             }
             const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col].primary);
-            this.db.warn(`autoSQL: staged merge for '${input.table}' failed (${allInsertResults[i]?.error ?? 'unknown error'}); retrying per-row, diverting unrecoverable rows to '${config.rejectedRowsTable!}'.`);
+            this.db.warn(`autoSQL: staged merge for '${input.table}' failed (${allInsertResults[i]?.error ?? 'unknown error'}); retrying per-row, diverting unrecoverable rows to '${config.rejectedRowsTable ?? "(rejectedRowsTable not set)"}'.`);
             const { inserted } = await this.perRowInsertWithRetry(
                 input.table, input.data, input.metaData, 'UPDATE', maxRetries,
                 primaryKey.length ? primaryKey : undefined
@@ -183,7 +183,7 @@ export class DegradationPolicy {
         if (!pkCols.length) {
             throw new Error(`autoSQL: staged merge for '${input.table}' failed and cannot degrade per-row (no primary key to divert on).`);
         }
-        this.db.warn(`autoSQL: staged merge for '${input.table}' failed; retrying per-row atomically (before-image + merge in one transaction), diverting unrecoverable rows to '${config.rejectedRowsTable!}'.`);
+        this.db.warn(`autoSQL: staged merge for '${input.table}' failed; retrying per-row atomically (before-image + merge in one transaction), diverting unrecoverable rows to '${config.rejectedRowsTable ?? "(rejectedRowsTable not set)"}'.`);
 
         let inserted = 0;
         const rejected: Record<string, any>[] = [];

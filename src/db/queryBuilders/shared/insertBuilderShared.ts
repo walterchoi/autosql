@@ -17,21 +17,25 @@ export function resolveStatementInput(tableOrInput: string | InsertInput, data?:
     if (isInput(tableOrInput)) {
         return { table: tableOrInput.table, rows: tableOrInput.data, header: headerOf(tableOrInput), insertType: insertTypeOf(tableOrInput, cfg) };
     }
-    return { table: tableOrInput, rows: data!, header: metaData!, insertType: inputInsertType || cfg?.insertType || "UPDATE" };
+    if (data === undefined) throw new Error(`No data provided for insert into table "${tableOrInput}"`);
+    if (metaData === undefined) throw new Error(`resolveStatementInput: metaData is required when called with a table name instead of an InsertInput`);
+    return { table: tableOrInput, rows: data, header: metaData, insertType: inputInsertType || cfg?.insertType || "UPDATE" };
 }
 
 export function resolveStagingInput(tableOrInput: string | InsertInput, metaData?: MetadataHeader, cfg?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): ResolvedStaging {
     if (isInput(tableOrInput)) {
         return { table: tableOrInput.table, header: headerOf(tableOrInput), insertType: insertTypeOf(tableOrInput, cfg), stagingPrefix: tableOrInput.stagingPrefix };
     }
-    return { table: tableOrInput, header: metaData!, insertType: inputInsertType || cfg?.insertType || "UPDATE", stagingPrefix: undefined };
+    if (metaData === undefined) throw new Error(`resolveStagingInput: metaData is required when called with a table name instead of an InsertInput`);
+    return { table: tableOrInput, header: metaData, insertType: inputInsertType || cfg?.insertType || "UPDATE", stagingPrefix: undefined };
 }
 
 export function resolveHistoryInput(tableOrInput: string | InsertInput, metaData?: MetadataHeader): ResolvedHistory {
     if (isInput(tableOrInput)) {
         return { table: tableOrInput.table, header: headerOf(tableOrInput), stagingPrefix: tableOrInput.stagingPrefix, historyTableSuffix: tableOrInput.historyTableSuffix };
     }
-    return { table: tableOrInput, header: metaData! };
+    if (metaData === undefined) throw new Error(`resolveHistoryInput: metaData is required when called with a table name instead of an InsertInput`);
+    return { table: tableOrInput, header: metaData };
 }
 
 // Columns for the INSERT list: drop the DB-generated auto-increment surrogate (only in surrogateKey

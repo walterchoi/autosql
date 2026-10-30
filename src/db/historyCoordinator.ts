@@ -39,11 +39,12 @@ export class HistoryCoordinator {
      */
     private async buildHistoryInputs(insertInput: InsertInput[]): Promise<InsertInput[]> {
         const config = this.db.getConfig();
-        if (!config.addHistory || !config.historyTables?.length) return [];
+        const historyTables = config.historyTables;
+        if (!config.addHistory || !historyTables?.length) return [];
         if (!config.useStagingInsert) { throw new Error('Cannot add history tables without using staging insert'); }
 
         const uniqueTables = Array.from(new Set(insertInput.map(input => input.table)));
-        const eligibleInputs = uniqueTables.filter(table => config.historyTables!.includes(table));
+        const eligibleInputs = uniqueTables.filter(table => historyTables.includes(table));
         if (eligibleInputs.length == 0) { return []; }
 
         return Promise.all(

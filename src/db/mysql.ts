@@ -291,7 +291,8 @@ export class MySQLDatabase extends Database {
             alterTableChanges = alterTableChangesOrOldHeaders;
         }
         const queries: QueryInput[] = [];
-        const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "mysql")}.` : "";
+        const schema = this.getConfig().schema;
+        const schemaPrefix = schema ? `${escapeIdentifier(schema, "mysql")}.` : "";
 
         // R9: surface schema changes that are computed but blocked by the safe-default flags.
         if (!isStagingTable) this.warnBlockedSchemaChanges(table, alterTableChanges);

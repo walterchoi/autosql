@@ -397,7 +397,8 @@ export class SqlServerDatabase extends Database {
             if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {
                 throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error ?? "unknown error"}`);
             }
-            const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "sqlserver")}.` : "";
+            const schema = this.getConfig().schema;
+            const schemaPrefix = schema ? `${escapeIdentifier(schema, "sqlserver")}.` : "";
             const indexesToDrop = uniqueIndexesResult.results
                 .map((row) => normalizeResultKeys(row))
                 .filter((row) => row.columns)

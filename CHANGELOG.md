@@ -29,6 +29,17 @@
   with a one-line reason instead of being deleted, same pattern as `no-misused-spread`. No behavior
   change — ~40 exceptions mark exactly the sites a future `noUncheckedIndexedAccess` initiative
   would turn into real, provable fixes.
+- Continuing the lint rollout: `no-non-null-assertion` promoted to `error` for `src/`. Every `!`
+  was replaced with a real fix rather than silenced: an assertion helper that throws a clear error
+  instead of a bare non-null assertion on a lazily-initialized field, capturing a value once before
+  a closure instead of re-reading it from a getter each time, an explicit get-or-create for a Map,
+  or a real `!== null`/`!== undefined` check.
+  - **Behavior change**: `getInsertStatementQuery`, `getInsertFromStagingQuery`, and
+    `getInsertChangedRowsToHistoryQuery` called with a table-name string (instead of an
+    `InsertInput`) and no `metaData` now throw a clear `"metaData is required…"` error immediately.
+    Previously this reached a raw `TypeError` from `Object.keys(undefined)` further down the same
+    call. Omitting `data` is unchanged — still the existing `No data provided for insert into table
+    "…"` message, just thrown one function earlier.
 
 ## [2.8.0] - 2026-10-25
 
