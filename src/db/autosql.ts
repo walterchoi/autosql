@@ -2,6 +2,7 @@ import type { MySQLDatabase } from "./mysql";
 import type { PostgresDatabase } from "./pgsql";
 import type { SqlServerDatabase } from "./sqlserver";
 import type { Database } from "./database";
+import { driverErrorCode } from "./database";
 import type { InsertInput, MetadataHeader, AlterTableChanges, QueryResult, QueryInput, AutoSQLOptions, OpenStreamOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig, DataRow } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults, restrictInferredUniques } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
@@ -305,7 +306,7 @@ export class AutoSQLHandler {
                 this.db.log(`Table exists, no changes detected. Skipping ALTER TABLE.`);
                 const end = new Date();
                 const affectedRows = 0;
-                const rows: any[] = []
+                const rows: DataRow[] = []
                 return {
                     start,
                     end,
@@ -813,7 +814,7 @@ export class AutoSQLHandler {
                     if (primary?.comparedMetaData && tableChangesExist(primary.comparedMetaData.changes)) {
                         historyId = await this.history.recordStart(
                             table,
-                            (primary.previousMetaData && !Array.isArray(primary.previousMetaData) && 'addColumns' in primary.previousMetaData ? {} : primary.previousMetaData) as any || {},
+                            (primary.previousMetaData && !Array.isArray(primary.previousMetaData) && 'addColumns' in primary.previousMetaData ? {} : primary.previousMetaData) as MetadataHeader | null || {},
                             primary.comparedMetaData.changes
                         );
                     }
@@ -877,11 +878,12 @@ export class AutoSQLHandler {
             await writeRunAudit(this.db, { table, success: true, rows: data.length, affectedRows, durationMs, rowsPerSecond: stats.rowsPerSecond, phases: stats.phases, staged: stats.staged, bulkLoad: stats.bulkLoad });
 
             return { start, end, success: true, duration: durationMs, affectedRows, results: allResults, table, metaData: resolvedMetaData, stats };
-        } catch (error: any) {
+        } catch (error) {
             const end = new Date();
             const durationMs = end.getTime() - start.getTime();
-            await writeRunAudit(this.db, { table, success: false, rows: data.length, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!config.useStagingInsert, bulkLoad: !!config.bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined });
-            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined };
+            const errorCode = driverErrorCode(error);
+            await writeRunAudit(this.db, { table, success: false, rows: data.length, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!config.useStagingInsert, bulkLoad: !!config.bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode });
+            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode };
         }
       }));
     }
@@ -1039,17 +1041,19 @@ export class AutoSQLHandler {
                 table,
                 stats
             };
-        } catch (error: any) {
+        } catch (error) {
             const end = new Date();
             const durationMs = end.getTime() - start.getTime();
-            await writeRunAudit(this.db, { table, success: false, rows: totalRows, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!this.db.getConfig().useStagingInsert, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined });
+            const errorCode = driverErrorCode(error);
+            await writeRunAudit(this.db, { table, success: false, rows: totalRows, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: !!this.db.getConfig().useStagingInsert, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode });
             return {
                 start,
                 end,
                 duration: durationMs,
                 affectedRows: 0,
                 success: false,
-                error: error instanceof Error ? error.message : String(error)
+                error: error instanceof Error ? error.message : String(error),
+                errorCode
             };
         }
         });
@@ -1127,7 +1131,7 @@ export class AutoSQLHandler {
         if (!result.results?.length) return null;
         // The handle tracks the CALLER's shape; these would look like data downstream.
         return result.results
-            .map((r: any) => r.column_name ?? r.COLUMN_NAME)
+            .map((r: DataRow) => r.column_name ?? r.COLUMN_NAME)
             .filter((c: string) => !isStagingMetaColumn(c));
     }
 

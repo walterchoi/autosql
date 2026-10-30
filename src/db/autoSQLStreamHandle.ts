@@ -1,4 +1,5 @@
 import type { Database } from "./database";
+import { driverErrorCode } from "./database";
 import type { AutoSQLHandler } from "./autosql";
 import type { MetadataHeader, QueryResult, QueryStats, DataRow } from "../config/types";
 import { getMetaData, compareMetaData, restrictInferredUniques } from "../helpers/metadata";
@@ -103,7 +104,7 @@ export class AutoSQLStreamHandle {
     // Same message+code shape as Database.createSchema's failure path: the code is both appended
     // to the message (for logs) and attached to `.code` (for a caller that wants to branch on it).
     private failWithCode(message: string, errorCode?: string): never {
-        const err: any = new Error(errorCode ? `${message} [${errorCode}]` : message);
+        const err: Error & { code?: string } = new Error(errorCode ? `${message} [${errorCode}]` : message);
         if (errorCode) err.code = errorCode;
         throw err;
     }
@@ -336,12 +337,13 @@ export class AutoSQLStreamHandle {
             await writeRunAudit(this.db, { table: this.table, success: true, rows: stagingRows.length, affectedRows, durationMs, rowsPerSecond: stats.rowsPerSecond, phases: stats.phases, staged: true, bulkLoad: !!config.bulkLoad });
             promoted = true;
             return { start, end, success: true, duration: durationMs, affectedRows, table: this.table, stats };
-        } catch (error: any) {
+        } catch (error) {
             const end = new Date();
             const durationMs = end.getTime() - start.getTime();
+            const errorCode = driverErrorCode(error);
             // rows/affected unknown here (the failure may precede the staging read) — record 0 with the error.
-            await writeRunAudit(this.db, { table: this.table, success: false, rows: 0, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: true, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined });
-            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode: error?.code != null ? String(error.code) : undefined };
+            await writeRunAudit(this.db, { table: this.table, success: false, rows: 0, affectedRows: 0, durationMs, rowsPerSecond: 0, staged: true, bulkLoad: !!this.db.getConfig().bulkLoad, error: error instanceof Error ? error.message : String(error), errorCode });
+            return { start, end, duration: durationMs, affectedRows: 0, success: false, error: error instanceof Error ? error.message : String(error), errorCode };
         } finally {
             // A resumable stream keeps its table when rows didn't land — the failure may be
             // transient, and dropping would discard rows accumulated over earlier runs, the exact
@@ -389,7 +391,7 @@ export class AutoSQLStreamHandle {
         return this.db.runWithSchema(this.schema, async () => {
             const result = await this.db.runQuery(buildStagingStateQuery(this.stagingTable, this.db.getConfig()));
             if (!result.success || !result.results?.length) return empty;
-            const pick = (r: any, k: string) => r[k] ?? r[k.toUpperCase()];
+            const pick = (r: DataRow, k: string) => r[k] ?? r[k.toUpperCase()];
             const rows = result.results;
             let stagedRows = 0;
             const cursors: string[] = [];

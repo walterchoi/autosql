@@ -6,13 +6,23 @@ import { MAX_QUERY_ATTEMPTS } from "../config/defaults";
 import type { AutoSQLHandler } from "./autosql";
 import { setSSH } from '../helpers/ssh';
 
+// Kept as its own function (not inlined into a ternary alongside an `undefined` check) — mixing
+// the two in one expression makes typescript-eslint lose track of the narrowed type and flag the
+// String() fallback as unsafe, even though it's just `unknown`.
+function caughtErrorMessage(e: unknown): string {
+    return e instanceof Error ? e.message : String(e);
+}
+
 /**
  * Normalise a driver error's structured code for QueryResult.errorCode: non-empty string (mysql2
  * `code` / pg SQLSTATE) or number (SQL Server). Empty-string `code` → undefined; numeric `0` → "0".
  */
-function driverErrorCode(err: any): string | undefined {
-    const code = err?.code;
-    return code != null && code !== "" ? String(code) : undefined;
+export function driverErrorCode(err: unknown): string | undefined {
+    if (typeof err !== "object" || err === null || !("code" in err)) return undefined;
+    const code = err.code;
+    if (typeof code === "string") return code !== "" ? code : undefined;
+    if (typeof code === "number") return String(code);
+    return undefined;
 }
 
 export abstract class Database {
@@ -152,7 +162,7 @@ export abstract class Database {
                 }
                 await this.establishDatabaseConnection();
                 return;
-            } catch (error: any) {
+            } catch (error) {
                 this.error(`Database connection attempt ${attempts + 1} failed: ${error instanceof Error ? error.message : String(error)}`);
 
                 // Close any SSH tunnel opened on this attempt so a retry/final-throw doesn't leak an
@@ -164,7 +174,7 @@ export abstract class Database {
                 }
 
                 const permanentErrors = await this.getPermanentErrors();
-                if (permanentErrors.includes(error.code)) {
+                if (permanentErrors.includes(driverErrorCode(error) ?? "")) {
                     this.error("Permanent error detected. Aborting retry.");
                     throw error;
                 }
@@ -226,7 +236,7 @@ export abstract class Database {
         }
         // runQuery reports a SQL error as success:false rather than throwing.
         if (!result.success) {
-            const err: any = new Error(`Failed to create schema "${schemaName}": ${result.error ?? "unknown error"}${result.errorCode ? ` [${result.errorCode}]` : ""}`);
+            const err: Error & { code?: string } = new Error(`Failed to create schema "${schemaName}": ${result.error ?? "unknown error"}${result.errorCode ? ` [${result.errorCode}]` : ""}`);
             if (result.errorCode) err.code = result.errorCode;
             throw err;
         }
@@ -305,7 +315,7 @@ export abstract class Database {
         // passes 1 for exactly this (A15).
         const maxAttempts = maxAttemptsOverride ?? MAX_QUERY_ATTEMPTS;
         let attempts = 0;
-        let _error: any;
+        let _error: unknown;
         const start = new Date();
         let end: Date;
 
@@ -329,11 +339,12 @@ export abstract class Database {
                     results: rows
                 };
 
-            } catch (error: any) {
+            } catch (error) {
                 const permanentErrors = await this.getPermanentErrors();
-                if (permanentErrors.includes(error.code)) {
+                const code = driverErrorCode(error);
+                if (code !== undefined && permanentErrors.includes(code)) {
                     end = new Date();
-                    return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error.message, errorCode: driverErrorCode(error) };
+                    return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error instanceof Error ? error.message : String(error), errorCode: code };
                 }
     
                 attempts++;
@@ -346,7 +357,7 @@ export abstract class Database {
         }
     
         end = new Date();
-        return { start, end, duration: end.getTime() - start.getTime(), success: false, error: _error?.message, errorCode: driverErrorCode(_error) };
+        return { start, end, duration: end.getTime() - start.getTime(), success: false, error: _error === undefined ? undefined : caughtErrorMessage(_error), errorCode: driverErrorCode(_error) };
     }
 
     public async runTransaction(queriesOrStrings: QueryInput[]): Promise<QueryResult> {
@@ -358,12 +369,12 @@ export abstract class Database {
             if (!this.connection) {
                 await this.establishConnection();
             }
-        } catch (error: any) {
+        } catch (error) {
             const end = new Date();
             return { start, end, duration: end.getTime() - start.getTime(), success: false, error: error instanceof Error ? error.message : String(error), errorCode: driverErrorCode(error) };
         }
         let end: Date;
-        let _error: any;
+        let _error: unknown;
 
         const queries = queriesOrStrings.map(query =>
             typeof query === "string" ? { query, params: [] } : query
@@ -405,7 +416,7 @@ export abstract class Database {
                     success: true,
                     results
                 };
-            } catch (error: any) {
+            } catch (error) {
                 this.error(`Transaction error (attempt ${attempt}/${maxAttempts}): ${error instanceof Error ? error.message : String(error)}`);
                 if (client) {
                     try {
@@ -417,7 +428,8 @@ export abstract class Database {
                 }
 
                 const permanentErrors = await this.getPermanentErrors();
-                if (permanentErrors.includes(error.code) || attempt >= maxAttempts) {
+                const code = driverErrorCode(error);
+                if ((code !== undefined && permanentErrors.includes(code)) || attempt >= maxAttempts) {
                     _error = error;
                     break;
                 }
@@ -438,7 +450,7 @@ export abstract class Database {
             end,
             duration: end.getTime() - start.getTime(),
             success: false,
-            error: _error?.message,
+            error: _error === undefined ? undefined : caughtErrorMessage(_error),
             errorCode: driverErrorCode(_error)
         };
     }
@@ -450,7 +462,7 @@ export abstract class Database {
             if (!this.connection) {
                 await this.establishConnection();
             }
-        } catch (error: any) {
+        } catch (error) {
             const now = new Date();
             const msg = error instanceof Error ? error.message : String(error);
             return queryGroups.map(() => ({ start: now, end: now, duration: 0, success: false, error: msg }));
@@ -471,13 +483,13 @@ export abstract class Database {
           try {
             const result = await this.runTransaction(queryGroups[i]);
             results[i] = result;
-          } catch (error: any) {
+          } catch (error) {
             results[i] = {
               start: new Date(),
               end: new Date(),
               duration: 0,
               success: false,
-              error: error?.message || "Unknown error"
+              error: (error instanceof Error ? error.message : String(error)) || "Unknown error"
             };
           }
       

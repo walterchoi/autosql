@@ -869,8 +869,8 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
                 } else {
                     return JSON.stringify({ value });
                 }
-            } catch (err: any) {
-                databaseConfig?.logger?.warn?.(`[sqlize] Failed to handle JSON value for column: ${JSON.stringify({ value, error: err.message || String(err) })}`);
+            } catch (err) {
+                databaseConfig?.logger?.warn?.(`[sqlize] Failed to handle JSON value for column: ${JSON.stringify({ value, error: err instanceof Error ? err.message : String(err) })}`);
                 return null;
             }
         }

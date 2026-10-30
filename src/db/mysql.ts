@@ -188,7 +188,7 @@ export class MySQLDatabase extends Database {
             await client.query(`DEALLOCATE PREPARE stmt`);
     
             return { success: true };
-        } catch (error: any) {
+        } catch (error) {
             if(client) await client.query("ROLLBACK;");
             this.error(`MySQL testQuery failed: ${error instanceof Error ? error.message : String(error)}`);
             throw error;
