@@ -3,7 +3,7 @@ import { Readable } from "stream";
 import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
 import { Database } from "./database";
 import { MYSQL_PERMANENT_ERRORS } from './permanentErrors/mysql';
-import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult, DataRow } from "../config/types";
 import { normalizeResultKeys, isMetadataHeader } from "../helpers/utilities";
 import { serializeRowsToCopyText } from "../helpers/bulkLoad";
 import { MYSQL_CONFIG } from "./config/mysqlConfig";
@@ -410,15 +410,15 @@ export class MySQLDatabase extends Database {
         return MySQLTableQueryBuilder.getSplitTablesQuery(table, this.getConfig().schema);
     }
 
-    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
+    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: DataRow[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
         return MySQLInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig(), insertInput)
     }
 
-    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT", pkFilter?: Record<string, any>): QueryInput {
+    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT", pkFilter?: DataRow): QueryInput {
         return MySQLInsertQueryBuilder.getInsertFromStagingQuery(tableOrInput, metaData, this.getConfig(), insertInput, pkFilter)
     }
 
-    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: Record<string, any>): QueryInput {
+    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: DataRow): QueryInput {
         return MySQLInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig(), pkFilter)
     }
 

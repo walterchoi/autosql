@@ -1,6 +1,6 @@
 import type { AutoSQLHandler } from "./autosql";
 import type { Database } from "./database";
-import type { InsertInput, QueryResult, MetadataHeader, QueryInput } from "../config/types";
+import type { InsertInput, QueryResult, MetadataHeader, QueryInput, DataRow } from "../config/types";
 import { getInsertValues, tableChangesExist, throwIfFailedResults, sqlize } from "../helpers/utilities";
 import { getMetaData, compareMetaData, restrictInferredUniques } from "../helpers/metadata";
 import { buildBootstrapRejectedRowsQuery, buildInsertRejectedRowsQuery } from "../helpers/streamHelpers";
@@ -58,13 +58,13 @@ export class DegradationPolicy {
      */
     async perRowInsertWithRetry(
         table: string,
-        rows: Record<string, any>[],
+        rows: DataRow[],
         metaData: MetadataHeader,
         insertType: 'UPDATE' | 'INSERT',
         maxRetries: number,
         primaryKey?: string[],
         label: string = 'autoSQL'
-    ): Promise<{ inserted: number; rejected: Record<string, any>[] }> {
+    ): Promise<{ inserted: number; rejected: DataRow[] }> {
         const config = this.db.getConfig();
         let pendingRows = rows;
         let workingMeta = metaData;
@@ -73,7 +73,7 @@ export class DegradationPolicy {
 
         while (pendingRows.length > 0 && round < maxRetries) {
             round++;
-            const failures: { row: Record<string, any>; error: string }[] = [];
+            const failures: { row: DataRow; error: string }[] = [];
 
             for (const row of pendingRows) {
                 // Pre-sqlize like the bulk path (separators, decimal rounding, timezone, booleans)
@@ -186,9 +186,9 @@ export class DegradationPolicy {
         this.db.warn(`autoSQL: staged merge for '${input.table}' failed; retrying per-row atomically (before-image + merge in one transaction), diverting unrecoverable rows to '${config.rejectedRowsTable ?? "(rejectedRowsTable not set)"}'.`);
 
         let inserted = 0;
-        const rejected: Record<string, any>[] = [];
+        const rejected: DataRow[] = [];
         for (const row of input.data) {
-            const pkFilter: Record<string, any> = {};
+            const pkFilter: DataRow = {};
             for (const pk of pkCols) pkFilter[pk] = sqlize(row[pk], header[pk].type, dialectConfig, config);
             const group: QueryInput[] = [];
             if (historyInput) group.push(this.db.getInsertChangedRowsToHistoryQuery(historyInput, undefined, pkFilter));

@@ -1,4 +1,4 @@
-import type { DatabaseConfig } from '../config/types';
+import type { DatabaseConfig, DataRow } from '../config/types';
 import { normalizeNumber, validateConfig, shuffleArray, sqlize } from './utilities';
 import { GROUPINGS, isNumeric } from '../config/groupings';
 import { collateTypes } from './columnTypes';
@@ -11,7 +11,7 @@ import { MYSQL_CONFIG } from "../db/config/mysqlConfig";
 import { PGSQL_CONFIG } from "../db/config/pgsqlConfig";
 import { SQL_SERVER_CONFIG } from "../db/config/sqlServerConfig";
 
-export function initializeMetaData(headers: string[]): Record<string, any>[] {
+export function initializeMetaData(headers: string[]): DataRow[] {
     try {
         return headers.map(header => ({
             [header]: {
@@ -38,7 +38,7 @@ export function initializeMetaData(headers: string[]): Record<string, any>[] {
  */
 
 /** Every distinct column key present across the data rows. Cheap — key iteration, no per-value regex. */
-export function collectDataColumns(data: Record<string, any>[]): Set<string> {
+export function collectDataColumns(data: DataRow[]): Set<string> {
     const cols = new Set<string>();
     for (const row of data) {
         for (const key in row) cols.add(key);
@@ -94,7 +94,7 @@ export function fillColumnDefaults(schema: MetadataHeader): MetadataHeader {
 // Entirely synchronous (type inference over an in-memory array), but callers rely on the
 // exported getDataHeaders() rejecting rather than throwing — so it's wrapped below instead of
 // exported directly.
-function getDataHeadersSync(data: Record<string, any>[], databaseConfig: DatabaseConfig): MetadataHeader {
+function getDataHeadersSync(data: DataRow[], databaseConfig: DatabaseConfig): MetadataHeader {
     const sampling = databaseConfig.sampling;
     const samplingMinimum = databaseConfig.samplingMinimum;
     const metaData : MetadataHeader = {};
@@ -113,7 +113,7 @@ function getDataHeadersSync(data: Record<string, any>[], databaseConfig: Databas
     const decimalScaleCap = databaseConfig.decimalMaxLength ?? dialectConfig.maxDecimalScale;
 
     let sampleData = data;
-    let remainingData: Record<string, any>[] = [];
+    let remainingData: DataRow[] = [];
 
     if (sampling !== undefined && sampling > 0 && samplingMinimum !== undefined && data.length > samplingMinimum) {
         let sampleSize = Math.round(data.length * sampling);
@@ -466,7 +466,7 @@ function getDataHeadersSync(data: Record<string, any>[], databaseConfig: Databas
     return metaData
 }
 
-export function getDataHeaders(data: Record<string, any>[], databaseConfig: DatabaseConfig): Promise<MetadataHeader> {
+export function getDataHeaders(data: DataRow[], databaseConfig: DatabaseConfig): Promise<MetadataHeader> {
     try {
         return Promise.resolve(getDataHeadersSync(data, databaseConfig));
     } catch (error) {
@@ -474,7 +474,7 @@ export function getDataHeaders(data: Record<string, any>[], databaseConfig: Data
     }
 }
 
-export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, data: Record<string, any>[], primaryKey?: string[]) : Promise<MetadataHeader> {
+export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, data: DataRow[], primaryKey?: string[]) : Promise<MetadataHeader> {
     try {
         let validatedConfig: DatabaseConfig;
         let dbInstance: Database | undefined;

@@ -1,4 +1,4 @@
-import type { MetadataHeader, QueryInput, DatabaseConfig, InsertInput } from "../../../config/types";
+import type { MetadataHeader, QueryInput, DatabaseConfig, InsertInput, DataRow } from "../../../config/types";
 import { getTempTableName } from "../../../helpers/utilities";
 import { escapeIdentifier } from "../../utils/escape";
 import type { HistoryHooks} from "../shared/insertBuilderShared";
@@ -20,7 +20,7 @@ const HISTORY_HOOKS: HistoryHooks = {
 // A namespace of related query builders, not a data constant — see no-extraneous-class.
 // eslint-disable-next-line @typescript-eslint/naming-convention
 export const PostgresInsertQueryBuilder = {
-    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
+    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: DataRow[], metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): QueryInput {
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         const { table, rows, header, insertType } = resolveStatementInput(tableOrInput, data, metaData, databaseConfig, inputInsertType);
         // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- isInput only checks "table" in v; a malformed InsertInput-shaped object without data still reaches here with rows undefined.
@@ -48,7 +48,7 @@ export const PostgresInsertQueryBuilder = {
         return { query, params };
     },
 
-    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT", pkFilter?: Record<string, any>): QueryInput {
+    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT", pkFilter?: DataRow): QueryInput {
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         const { table, header, insertType, stagingPrefix } = resolveStagingInput(tableOrInput, metaData, databaseConfig, inputInsertType);
         const tempTable = getTempTableName(table, stagingPrefix);
@@ -76,7 +76,7 @@ export const PostgresInsertQueryBuilder = {
         return { query, params };
     },
 
-    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, pkFilter?: Record<string, any>): QueryInput {
+    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, databaseConfig?: DatabaseConfig, pkFilter?: DataRow): QueryInput {
         const schemaPrefix = databaseConfig?.schema ? `${q(databaseConfig.schema)}.` : "";
         return buildHistoryQuery(resolveHistoryInput(tableOrInput, metaData), schemaPrefix, HISTORY_HOOKS, pkFilter);
     }

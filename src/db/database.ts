@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from 'async_hooks';
 import { isValidSingleQuery } from './utils/validateQuery';
-import type { QueryInput, DatabaseConfig, DialectConfig, AlterTableChanges, MetadataHeader, QueryResult, InsertInput } from '../config/types';
+import type { QueryInput, DatabaseConfig, DialectConfig, AlterTableChanges, MetadataHeader, QueryResult, InsertInput, DataRow } from '../config/types';
 import { validateConfig, parseDatabaseMetaData } from '../helpers/utilities';
 import { MAX_QUERY_ATTEMPTS } from "../config/defaults";
 import type { AutoSQLHandler } from "./autosql";
@@ -544,12 +544,12 @@ export abstract class Database {
     public abstract getTableExistsQuery(schema: string, table: string): QueryInput;
     public abstract getTableMetaDataQuery(schema: string, table: string): QueryInput;
     public abstract getSplitTablesQuery(table: string): QueryInput;
-    public abstract getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT"): QueryInput; 
+    public abstract getInsertStatementQuery(tableOrInput: string | InsertInput, data?: DataRow[], metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT"): QueryInput; 
     // `pkFilter` (optional) scopes the merge to a single primary key — used by the atomic staging
     // degradation path, which runs a per-PK merge in the same transaction as that PK's before-image.
-    public abstract getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT", pkFilter?: Record<string, any>): QueryInput;
+    public abstract getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertType?: "UPDATE" | "INSERT", pkFilter?: DataRow): QueryInput;
     // `pkFilter` (optional) scopes the before-image capture to a single primary key (same atomic path).
-    public abstract getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: Record<string, any>): QueryInput;
+    public abstract getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: DataRow): QueryInput;
     public abstract getCreateTempTableQuery(table: string, stagingPrefix?: string): QueryInput;
     public abstract getConstraintConflictQuery(table: string, structure: { uniques: Record<string, string[]>; primary: string[] }, stagingPrefix?: string): QueryInput;
 

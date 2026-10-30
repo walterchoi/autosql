@@ -1,6 +1,6 @@
 import type { Database } from "./database";
 import type { AutoSQLHandler } from "./autosql";
-import type { MetadataHeader, QueryResult, QueryStats } from "../config/types";
+import type { MetadataHeader, QueryResult, QueryStats, DataRow } from "../config/types";
 import { getMetaData, compareMetaData, restrictInferredUniques } from "../helpers/metadata";
 import { writeRunAudit } from "../helpers/runAudit";
 import { tableChangesExist } from "../helpers/utilities";
@@ -22,8 +22,8 @@ import {
  * Collapse rows sharing a primary key to the one staged last, ordered by `_autosql_seq`.
  * JSON-encodes the key tuple so a composite key can't be made ambiguous by a separator (A24).
  */
-function dedupByKeyKeepingLast(rows: Record<string, any>[], primaryKey: string[]): Record<string, any>[] {
-    const bySeq = new Map<string, Record<string, any>>();
+function dedupByKeyKeepingLast(rows: DataRow[], primaryKey: string[]): DataRow[] {
+    const bySeq = new Map<string, DataRow>();
     for (const row of rows) {
         const key = JSON.stringify(primaryKey.map(k => row[k] ?? null));
         const held = bySeq.get(key);
@@ -115,7 +115,7 @@ export class AutoSQLStreamHandle {
      * the same chunk (append-only, so safe) or {@link abort}; don't call {@link end} expecting a
      * failed write to be skipped — it merges whatever staged, so a lost chunk means missing rows.
      */
-    async write(chunk: Record<string, any>[], opts?: { cursor?: string }): Promise<void> {
+    async write(chunk: DataRow[], opts?: { cursor?: string }): Promise<void> {
         if (this.ended) throw new Error(`autoSQLStream: write() called after end()/abort()`);
         if (chunk.length === 0) return;
         const cursor = opts?.cursor;
@@ -235,12 +235,12 @@ export class AutoSQLStreamHandle {
             // appear twice in staging, and inference reading that infers a composite key instead
             // of unique (e.g. `id` becomes `(id, name)`). Keep the last-staged row per key,
             // matching merge's own dedup.
-            const rawRows: Record<string, any>[] = this.resumable && this.primaryKey?.length
+            const rawRows: DataRow[] = this.resumable && this.primaryKey?.length
                 ? dedupByKeyKeepingLast(selectResult.results, this.primaryKey)
                 : selectResult.results;
             // Strip after: `_autosql_*` describes the load, not the data.
-            const stagingRows: Record<string, any>[] = rawRows.map((r: Record<string, any>) => {
-                const out: Record<string, any> = {};
+            const stagingRows: DataRow[] = rawRows.map((r: DataRow) => {
+                const out: DataRow = {};
                 for (const k of Object.keys(r)) if (!isStagingMetaColumn(k)) out[k] = r[k];
                 return out;
             });
@@ -361,7 +361,7 @@ export class AutoSQLStreamHandle {
     }
 
     private async _perRowMerge(
-        rows: Record<string, any>[],
+        rows: DataRow[],
         metaData: MetadataHeader,
         insertType: 'UPDATE' | 'INSERT',
         maxRetries: number

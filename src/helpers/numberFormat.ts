@@ -1,4 +1,5 @@
 import { REGEX_PATTERNS } from "../config/regex";
+import type { DataRow } from "../config/types";
 
 // Dataset-level number-format consensus (self-contained: reads ONLY the in-memory batch). A dataset is
 // assumed to use one locale, so structural evidence in ANY column resolves ambiguity in every column.
@@ -52,7 +53,7 @@ export function classifySeparatorFormat(value: any): "us" | "eu" | null {
 //     tolerates stray/mis-parsed values before a format is trusted AND before an opposing minority
 //     is treated as a genuine conflict.
 // Returns the pair, `{conflict:true}` (both layouts present → caller warns + defaults), or null.
-export function resolveDatasetSeparators(data: Record<string, any>[], minEvidence = 1): SeparatorDecision {
+export function resolveDatasetSeparators(data: DataRow[], minEvidence = 1): SeparatorDecision {
     let us = 0;
     let eu = 0;
     for (const row of data) {

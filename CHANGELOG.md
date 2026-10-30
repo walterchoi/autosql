@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+- Starting the `no-explicit-any` lint initiative (owner go-ahead, breaking changes accepted — next
+  release will be a major version bump): a new exported type, `DataRow` (`= Record<string, any>`),
+  replaces ~90 call sites that previously wrote out `Record<string, any>` by hand for a caller's
+  raw data row or a column-name→value filter map — including the public `InsertInput.data`,
+  `autoSQL`/`autoSQLChunked`'s `data` parameter, and `getInsertStatementQuery`/
+  `getInsertFromStagingQuery`/`getInsertChangedRowsToHistoryQuery`'s `data`/`pkFilter` parameters.
+  **No behavior change** — `DataRow` is structurally identical to `Record<string, any>`, and a
+  consumer's existing code keeps compiling as-is. This is a deliberate, one-time exception (see the
+  comment above `DataRow` in `src/config/types.ts`): a data row's values are genuinely arbitrary,
+  and every consumer already narrows them per-value with its own `typeof`/`instanceof` checks, so
+  forcing a stricter declared type here would mean threading explicit type guards through the
+  entire ingest pipeline — a redesign, not a lint fix. The remaining ~124 `no-explicit-any`
+  findings (driver internals, `catch` blocks, worker IPC, bound-parameter arrays) are real,
+  independent fixes and are being worked through module by module.
 - **Fixed: `AutoSQLStreamHandle.end()`'s docblock contradicted its actual behavior** — it claimed
   "Rejects on failure and must be awaited," but every failure path there is caught and resolves to
   `{success: false, error, errorCode}` instead (same never-rejects contract as

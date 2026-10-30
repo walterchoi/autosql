@@ -1,5 +1,14 @@
 import type { Client as SSHClient, ClientChannel } from "ssh2";
 
+// A caller's raw data row (or a column-name→value filter/options map of the same shape): the
+// values are genuinely arbitrary — whatever JSON-like shape the caller's data happens to have —
+// and every consumer (inference, sqlize, insert building) narrows per-value with its own
+// typeof/instanceof checks rather than trusting a declared type. Owner decision (2026-10-30): keep
+// `any` here rather than force explicit type guards through the whole ingest pipeline — one
+// documented exception instead of ~90 call sites each repeating the same reasoning.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type DataRow = Record<string, any>;
+
 export interface ColumnDefinition {
   type: string | null;
   length?: number;
@@ -435,7 +444,7 @@ export interface InsertResult {
 
 export interface InsertInput {
   table: string,
-  data: Record<string, any>[],
+  data: DataRow[],
   metaData: MetadataHeader,
   previousMetaData: AlterTableChanges | MetadataHeader | null,
   comparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader },

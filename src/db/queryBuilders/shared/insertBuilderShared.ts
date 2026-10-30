@@ -1,11 +1,11 @@
-import type { MetadataHeader, DatabaseConfig, InsertInput, QueryInput } from "../../../config/types";
+import type { MetadataHeader, DatabaseConfig, InsertInput, QueryInput, DataRow } from "../../../config/types";
 import { getInsertValues, getTempTableName, getHistoryTableName, getTrueTableName } from "../../../helpers/utilities";
 
 // Shared, dialect-agnostic logic for the three insert builders. SQL assembly diverges too much
 // to unify (ON CONFLICT / ON DUPLICATE KEY / MERGE), but input resolution, column derivation, the
 // updatable-column rule, and the row-level history query are identical.
 
-export interface ResolvedStatement { table: string; rows: Record<string, any>[]; header: MetadataHeader; insertType: "UPDATE" | "INSERT"; }
+export interface ResolvedStatement { table: string; rows: DataRow[]; header: MetadataHeader; insertType: "UPDATE" | "INSERT"; }
 export interface ResolvedStaging { table: string; header: MetadataHeader; insertType: "UPDATE" | "INSERT"; stagingPrefix?: string; }
 export interface ResolvedHistory { table: string; header: MetadataHeader; stagingPrefix?: string; historyTableSuffix?: string; }
 
@@ -13,7 +13,7 @@ const isInput = (v: any): v is InsertInput => typeof v === "object" && v !== nul
 const headerOf = (input: InsertInput): MetadataHeader => input.comparedMetaData?.updatedMetaData || input.metaData;
 const insertTypeOf = (input: InsertInput, cfg?: DatabaseConfig): "UPDATE" | "INSERT" => input.insertType || cfg?.insertType || "UPDATE";
 
-export function resolveStatementInput(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, cfg?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): ResolvedStatement {
+export function resolveStatementInput(tableOrInput: string | InsertInput, data?: DataRow[], metaData?: MetadataHeader, cfg?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): ResolvedStatement {
     if (isInput(tableOrInput)) {
         return { table: tableOrInput.table, rows: tableOrInput.data, header: headerOf(tableOrInput), insertType: insertTypeOf(tableOrInput, cfg) };
     }
@@ -58,7 +58,7 @@ export function updatableColumns(columns: string[], header: MetadataHeader, prim
 }
 
 // Flatten a chunk of row objects into the bound-parameter array (or pass through pre-flattened arrays).
-export function flattenInsertParams(rows: Record<string, any>[], header: MetadataHeader, cfg?: DatabaseConfig): any[] {
+export function flattenInsertParams(rows: DataRow[], header: MetadataHeader, cfg?: DatabaseConfig): any[] {
     if (typeof rows[0] === "object" && !Array.isArray(rows[0])) {
         return rows.map(row => getInsertValues(header, row, undefined, cfg, false)).flat();
     }
@@ -77,7 +77,7 @@ export interface HistoryHooks {
 // change. INNER JOIN (not LEFT) so only rows present in BOTH tables are captured — a LEFT JOIN
 // historised every absent row on each incremental load. pkFilter scopes it to one primary key
 // (the atomic degradation path, same transaction as that PK's merge).
-export function buildHistoryQuery(resolved: ResolvedHistory, schemaPrefix: string, hooks: HistoryHooks, pkFilter?: Record<string, any>): QueryInput {
+export function buildHistoryQuery(resolved: ResolvedHistory, schemaPrefix: string, hooks: HistoryHooks, pkFilter?: DataRow): QueryInput {
     const q = hooks.quote;
     const table = getTrueTableName(resolved.table, resolved.stagingPrefix, resolved.historyTableSuffix);
     const header = resolved.header;

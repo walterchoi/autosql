@@ -1,7 +1,7 @@
 import crypto from "crypto";
 import { Database } from "./database";
 import { SQL_SERVER_PERMANENT_ERRORS } from "./permanentErrors/sqlserver";
-import type { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import type { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult, DataRow } from "../config/types";
 import { SQL_SERVER_CONFIG } from "./config/sqlServerConfig";
 import { isValidSingleQuery } from "./utils/validateQuery";
 import { escapeIdentifier, escapeLiteral } from "./utils/escape";
@@ -119,11 +119,13 @@ export class SqlServerDatabase extends Database {
      *                      `cryptoCredentialsDetails` (custom CA / mutual TLS / SNI).
      * @internal Exposed for unit testing the mapping; not part of the stable public API.
      */
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- the mssql driver's own connection-options shape (encrypt/trustServerCertificate/cryptoCredentialsDetails); not worth a hard dependency on its types at this boundary.
     public sqlServerTlsOptions(): Record<string, any> {
         const ssl = this.config.ssl;
         if (!ssl) {
             return { encrypt: false, trustServerCertificate: true };
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same mssql driver options shape as above.
         const options: Record<string, any> = { encrypt: true };
         if (ssl === true) {
             options.trustServerCertificate = false; // verify against system CAs
@@ -131,6 +133,7 @@ export class SqlServerDatabase extends Database {
         }
         options.trustServerCertificate = ssl.rejectUnauthorized === false;
         this.warnInsecureTlsAndTunnelConflict(ssl);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same mssql driver options shape as above.
         const cc: Record<string, any> = {};
         if (ssl.ca) cc.ca = ssl.ca;
         if (ssl.cert) cc.cert = ssl.cert;
@@ -463,15 +466,15 @@ export class SqlServerDatabase extends Database {
         return SqlServerTableQueryBuilder.getSplitTablesQuery(table, this.getConfig().schema);
     }
 
-    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertInput?: "UPDATE" | "INSERT"): QueryInput {
+    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: DataRow[], metaData?: MetadataHeader, insertInput?: "UPDATE" | "INSERT"): QueryInput {
         return SqlServerInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig(), insertInput);
     }
 
-    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE" | "INSERT", pkFilter?: Record<string, any>): QueryInput {
+    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE" | "INSERT", pkFilter?: DataRow): QueryInput {
         return SqlServerInsertQueryBuilder.getInsertFromStagingQuery(tableOrInput, metaData, this.getConfig(), insertInput, pkFilter);
     }
 
-    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: Record<string, any>): QueryInput {
+    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: DataRow): QueryInput {
         return SqlServerInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig(), pkFilter);
     }
 

@@ -3,7 +3,7 @@ import type { Pool, PoolClient } from "pg";
 import type * as pg from "pg";
 import { Database } from "./database";
 import { PGSQL_PERMANENT_ERRORS } from './permanentErrors/pgsql';
-import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult } from "../config/types";
+import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult, DataRow } from "../config/types";
 import { PGSQL_CONFIG } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { escapeIdentifier, escapeLiteral } from './utils/escape';
@@ -393,15 +393,15 @@ export class PostgresDatabase extends Database {
         return PostgresTableQueryBuilder.getSplitTablesQuery(table, this.getConfig().schema);
     }
 
-    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
+    getInsertStatementQuery(tableOrInput: string | InsertInput, data?: DataRow[], metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT"): QueryInput {
         return PostgresInsertQueryBuilder.getInsertStatementQuery(tableOrInput, data, metaData, this.getConfig(), insertInput)
     }
 
-    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT", pkFilter?: Record<string, any>): QueryInput {
+    getInsertFromStagingQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, insertInput?: "UPDATE"|"INSERT", pkFilter?: DataRow): QueryInput {
         return PostgresInsertQueryBuilder.getInsertFromStagingQuery(tableOrInput, metaData, this.getConfig(), insertInput, pkFilter)
     }
 
-    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: Record<string, any>): QueryInput {
+    getInsertChangedRowsToHistoryQuery(tableOrInput: string | InsertInput, metaData?: MetadataHeader, pkFilter?: DataRow): QueryInput {
         return PostgresInsertQueryBuilder.getInsertChangedRowsToHistoryQuery(tableOrInput, metaData, this.getConfig(), pkFilter)
     }
 

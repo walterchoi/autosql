@@ -1,5 +1,5 @@
 import { DEFAULTS, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE, MAX_COLUMN_COUNT } from "../config/defaults";
-import type { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult } from "../config/types";
+import type { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult, DataRow } from "../config/types";
 import { GROUPINGS } from "../config/groupings";
 import crypto from 'crypto';
 export function isObject(val: any): boolean {
@@ -350,7 +350,7 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
     const metadata: Record<string, MetadataHeader> = {};
 
     rows.forEach((row) => {
-        const normalizedRow = Object.keys(row).reduce<Record<string, any>>((acc, key) => {
+        const normalizedRow = Object.keys(row).reduce<DataRow>((acc, key) => {
             acc[key.toLowerCase()] = row[key];
             return acc;
         }, {});
@@ -427,7 +427,7 @@ export function generateCombinations<T>(array: T[], length: number): T[][] {
     return combinations;
 }
 
-export function isCombinationUnique(data: Record<string, any>[], columns: string[]): boolean {
+export function isCombinationUnique(data: DataRow[], columns: string[]): boolean {
     const seenValues = new Set<string>();
 
     for (const row of data) {
@@ -554,16 +554,16 @@ export function isValidDataFormat(data: unknown): boolean {
     return Array.isArray(data) && data.length > 0 && typeof data[0] === "object" && data[0] !== null && !Array.isArray(data[0]);
 }
 
-export const normalizeKeysArray = (data: Record<string, any>[]): Record<string, any>[] => {
+export const normalizeKeysArray = (data: DataRow[]): DataRow[] => {
     return data.map(obj =>
-        Object.keys(obj).reduce<Record<string, any>>((acc, key) => {
+        Object.keys(obj).reduce<DataRow>((acc, key) => {
             acc[key.toLowerCase()] = obj[key];
             return acc;
         }, {})
     );
 };
 
-export function organizeSplitTable(table: string, newMetaData: MetadataHeader, currentMetaData: Record<string, any>[] | MetadataHeader | Record<string, MetadataHeader>, dialectConfig: DialectConfig) : Record<string, MetadataHeader> {
+export function organizeSplitTable(table: string, newMetaData: MetadataHeader, currentMetaData: DataRow[] | MetadataHeader | Record<string, MetadataHeader>, dialectConfig: DialectConfig) : Record<string, MetadataHeader> {
     let normalizedMetaData: Record<string, MetadataHeader>;
 
     if (typeof currentMetaData === "object" && !Array.isArray(currentMetaData)) {
@@ -649,10 +649,10 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
     return newGroupedByTable
 }
 
-export function organizeSplitData(data: Record<string, any>[], splitMetaData: Record<string, MetadataHeader>): Record<string, Record<string, any>[]> {
-    const groupedData: Record<string, Record<string, any>[]> = {};
+export function organizeSplitData(data: DataRow[], splitMetaData: Record<string, MetadataHeader>): Record<string, DataRow[]> {
+    const groupedData: Record<string, DataRow[]> = {};
     data.forEach((row) => {
-        const rowDataByTable: Record<string, Record<string, any>> = {};
+        const rowDataByTable: Record<string, DataRow> = {};
 
         Object.entries(splitMetaData).forEach(([tableName, columns]) => {
             rowDataByTable[tableName] = {};
@@ -676,12 +676,12 @@ export function organizeSplitData(data: Record<string, any>[], splitMetaData: Re
     return groupedData;
 }
 
-export function splitInsertData(data: Record<string, any>[], config: DatabaseConfig): Record<string, any>[][] {
+export function splitInsertData(data: DataRow[], config: DatabaseConfig): DataRow[][] {
     const {
       insertStack = 100
     } = config;
 
-    const chunks: Record<string, any>[][] = [];
+    const chunks: DataRow[][] = [];
     for (let i = 0; i < data.length; i += insertStack) {
       chunks.push(data.slice(i, i + insertStack));
     }
@@ -700,7 +700,7 @@ export function sanitizeString(value: string): string {
         .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
 }
 
-export function getInsertValues(metaData: MetadataHeader, row: Record<string, any>, dialectConfig?: DialectConfig, databaseConfig?: DatabaseConfig, sqlizeValues: boolean = false): any[] {
+export function getInsertValues(metaData: MetadataHeader, row: DataRow, dialectConfig?: DialectConfig, databaseConfig?: DatabaseConfig, sqlizeValues: boolean = false): any[] {
     const sanitize = databaseConfig?.sanitizeInvalidChars === true;
     // Surrogate key is DB-generated, so omit it (Postgres rejects NULL into a BIGSERIAL NOT NULL).
     // Gated on `surrogateKey`, not just autoIncrement — a genuine AUTO_INCREMENT PK is also
@@ -1029,7 +1029,7 @@ export function generateSafeConstraintName(table: string, column: string, type: 
     return `${truncated}_${hash}`;
 }
 
-export function normalizeResultKeys(row: Record<string, any>): Record<string, any> {
+export function normalizeResultKeys(row: DataRow): DataRow {
     return Object.fromEntries(
         Object.entries(row).map(([key, value]) => [key.toLowerCase(), value])
     );

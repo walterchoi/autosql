@@ -2,7 +2,7 @@ import type { MySQLDatabase } from "./mysql";
 import type { PostgresDatabase } from "./pgsql";
 import type { SqlServerDatabase } from "./sqlserver";
 import type { Database } from "./database";
-import type { InsertInput, MetadataHeader, AlterTableChanges, QueryResult, QueryInput, AutoSQLOptions, OpenStreamOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig } from "../config/types";
+import type { InsertInput, MetadataHeader, AlterTableChanges, QueryResult, QueryInput, AutoSQLOptions, OpenStreamOptions, QueryStats, AutoSQLPreview, TablePreview, DatabaseConfig, DataRow } from "../config/types";
 import { getMetaData, compareMetaData, collectDataColumns, schemaCoversColumns, overlaySchema, fillColumnDefaults, restrictInferredUniques } from "../helpers/metadata";
 import { applySurrogateKey } from "../helpers/keys";
 import { resolveDatasetSeparators } from "../helpers/numberFormat";
@@ -50,13 +50,13 @@ export class AutoSQLHandler {
     /** Delegator so AutoSQLStreamHandle reaches the shared per-row degradation engine. */
     async perRowInsertWithRetry(
         table: string,
-        rows: Record<string, any>[],
+        rows: DataRow[],
         metaData: MetadataHeader,
         insertType: 'UPDATE' | 'INSERT',
         maxRetries: number,
         primaryKey?: string[],
         label: string = 'autoSQL'
-    ): Promise<{ inserted: number; rejected: Record<string, any>[] }> {
+    ): Promise<{ inserted: number; rejected: DataRow[] }> {
         return this.degradation.perRowInsertWithRetry(table, rows, metaData, insertType, maxRetries, primaryKey, label);
     }
 
@@ -70,7 +70,7 @@ export class AutoSQLHandler {
      * `db.runWithSeparators(...)`. Returns undefined (keeps the assume-decimal default) when
      * separators are already configured, or evidence is absent/contradictory.
      */
-    private resolveSeparatorConsensus(data: Record<string, any>[]): { thousands: string; decimal: string } | undefined {
+    private resolveSeparatorConsensus(data: DataRow[]): { thousands: string; decimal: string } | undefined {
         const config = this.db.getConfig();
         // Explicit separators / numberFormat (both resolve to thousandsSeparator in validateConfig) win.
         if (config.thousandsSeparator !== undefined || config.decimalSeparator !== undefined) return undefined;
@@ -90,7 +90,7 @@ export class AutoSQLHandler {
      * Dry run: what an `autoSQL` load WOULD do, without writing anything. Only the current schema is
      * read, to diff against. Contrast with `safeMode`, which runs the load but skips DDL.
      */
-    async preview(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<AutoSQLPreview> {
+    async preview(table: string, data: DataRow[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<AutoSQLPreview> {
         const separators = this.resolveSeparatorConsensus(data);
         return this.db.runWithSeparators(separators, () => this.db.runWithSchema(schema, async () => {
             const insertInput = await this.prepareInsertData(table, data, schema, primaryKey, options);
@@ -203,11 +203,11 @@ export class AutoSQLHandler {
         }
     }    
 
-    async autoConfigureTable(inputOrTable: string | InsertInput, inputData?: Record<string, any>[] | null, inputCurrentMetaData?: MetadataHeader | AlterTableChanges | null, inputNewMetaData?: MetadataHeader | null, inputRunQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
+    async autoConfigureTable(inputOrTable: string | InsertInput, inputData?: DataRow[] | null, inputCurrentMetaData?: MetadataHeader | AlterTableChanges | null, inputNewMetaData?: MetadataHeader | null, inputRunQuery: boolean = true): Promise<QueryResult | QueryInput[]> {
         const start = new Date();
         try {
             let table: string;
-            let data: Record<string, any>[] | null = null;
+            let data: DataRow[] | null = null;
             let currentMetaDataOrTableChanges: MetadataHeader | AlterTableChanges | null = null;
             let newMetaData: MetadataHeader | null = null;
             let runQuery: boolean = true
@@ -367,13 +367,13 @@ export class AutoSQLHandler {
         return { currentMetaData, tableExists };
     }
 
-    async splitTableData(table: string, data: Record<string, any>[], metaData: MetadataHeader): Promise<{table: string, data: Record<string, any>[], metaData: MetadataHeader, previousMetaData: MetadataHeader, mergedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }}[]> {
+    async splitTableData(table: string, data: DataRow[], metaData: MetadataHeader): Promise<{table: string, data: DataRow[], metaData: MetadataHeader, previousMetaData: MetadataHeader, mergedMetaData: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }}[]> {
         try {
             const splitQuery = this.db.getSplitTablesQuery(table);
             const currentSplitResults = await this.db.runQuery(splitQuery);
             if(!currentSplitResults.success || !currentSplitResults.results) { throw new Error(currentSplitResults.error || `Error while retrieving existing split table information for: ${table}`)}
             const currentSplit = currentSplitResults.results
-            const rawSplitMetadata = parseDatabaseMetaData(currentSplit as Record<string, any>[], this.db.getDialectConfig());
+            const rawSplitMetadata = parseDatabaseMetaData(currentSplit as DataRow[], this.db.getDialectConfig());
             let parsedSplitMetadata: Record<string, MetadataHeader>;
             if (!rawSplitMetadata) {
                 parsedSplitMetadata = { [table]: {} };
@@ -406,9 +406,9 @@ export class AutoSQLHandler {
         }
     }
 
-    async autoInsertData(inputOrTable: InsertInput | string, inputData?: Record<string, any>[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery: boolean = true, inputInsertType?: "UPDATE" | "INSERT"): Promise<QueryInput[] | QueryResult> {
+    async autoInsertData(inputOrTable: InsertInput | string, inputData?: DataRow[], inputMetaData?: MetadataHeader, inputPreviousMetaData?: AlterTableChanges | MetadataHeader | null, inputComparedMetaData?: { changes: AlterTableChanges, updatedMetaData: MetadataHeader }, inputRunQuery: boolean = true, inputInsertType?: "UPDATE" | "INSERT"): Promise<QueryInput[] | QueryResult> {
         let table: string;
-        let data: Record<string, any>[] = [];
+        let data: DataRow[] = [];
         let metaData: MetadataHeader;
         // Accepted via inputPreviousMetaData for API compatibility but not otherwise read in this
         // method; comparedMetaData/effectiveMetaData carry what the insert path actually needs.
@@ -444,7 +444,7 @@ export class AutoSQLHandler {
             throw new Error(`insertData: no data rows provided for table "${table}"`);
         }          
 
-        const splitData: Record<string, any>[][] = splitInsertData(data, this.db.getConfig())
+        const splitData: DataRow[][] = splitInsertData(data, this.db.getConfig())
         const effectiveMetaData = comparedMetaData?.updatedMetaData || metaData;
         
         // getInsertStatementQuery is synchronous on every dialect — no await-worthy work happens
@@ -462,7 +462,7 @@ export class AutoSQLHandler {
         return insertStatements;
     }
 
-    async handleMetadata(table: string, data: Record<string, any>[], primaryKey?: string[], options?: AutoSQLOptions) {
+    async handleMetadata(table: string, data: DataRow[], primaryKey?: string[], options?: AutoSQLOptions) {
         // N1 fast path: `existingSchema` skips live introspection. Must be a prior run's RESOLVED
         // schema (already carrying managed dwh_*/surrogate columns), or the timestamp step below re-adds them.
         const currentMetaData = options?.existingSchema
@@ -518,7 +518,7 @@ export class AutoSQLHandler {
         return { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData };
     }
 
-    private async attemptTableSplit(table: string, data: Record<string, any>[], mergedMetaData: MetadataHeader) {
+    private async attemptTableSplit(table: string, data: DataRow[], mergedMetaData: MetadataHeader) {
         if (this.db.getConfig().autoSplit) {
             const { exceedsLimit } = estimateRowSize(mergedMetaData, this.db.getDialect());
             const columnCount = Object.keys(mergedMetaData).length;
@@ -531,7 +531,7 @@ export class AutoSQLHandler {
         return [];
     }
 
-    private async prepareInsertData(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<InsertInput[]> {
+    private async prepareInsertData(table: string, data: DataRow[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<InsertInput[]> {
         const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(table, data, primaryKey, options);
         let insertInput: InsertInput[] = await this.attemptTableSplit(table, data, mergedMetaData);
 
@@ -717,7 +717,7 @@ export class AutoSQLHandler {
             return []
         }
         const nestedInputs: InsertInput[] = [];
-        const nestedMap: Record<string, Record<string, any>[]> = {};
+        const nestedMap: Record<string, DataRow[]> = {};
         const primaryMap: Record<string, string[]> = {};
 
         for (const input of inputs) {
@@ -730,7 +730,7 @@ export class AutoSQLHandler {
                 if(!this.db.getConfig().nestedTables?.includes(nestedTable)) { continue; }
               if (value && typeof value === "object") {
 
-                const nestedObjects: Record<string, any>[] = Array.isArray(value)
+                const nestedObjects: DataRow[] = Array.isArray(value)
                     ? value.filter(v => typeof v === "object" && !Array.isArray(v))
                     : [value];
                 
@@ -775,7 +775,7 @@ export class AutoSQLHandler {
         return nestedInputs;
     } 
     
-    async autoSQL(table: string, data: Record<string, any>[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<QueryResult> {
+    async autoSQL(table: string, data: DataRow[], schema?: string, primaryKey?: string[], options?: AutoSQLOptions): Promise<QueryResult> {
       // Resolve dataset-level number format ONCE, before inference, and run the whole load under it
       // so inference, staging, direct insert, and workers all sqlize with the same separators.
       const separators = this.resolveSeparatorConsensus(data);
@@ -900,7 +900,7 @@ export class AutoSQLHandler {
      */
     async autoSQLChunked(
         table: string,
-        chunks: AsyncIterable<Record<string, any>[]>,
+        chunks: AsyncIterable<DataRow[]>,
         schema?: string,
         primaryKey?: string[]
     ): Promise<QueryResult> {
@@ -913,9 +913,9 @@ export class AutoSQLHandler {
         const iterator = chunks[Symbol.asyncIterator]();
         let pending = await iterator.next();
         while (!pending.done && pending.value.length === 0) pending = await iterator.next();
-        const firstValue: Record<string, any>[] | null = pending.done ? null : pending.value;
+        const firstValue: DataRow[] | null = pending.done ? null : pending.value;
         const separators = firstValue ? this.resolveSeparatorConsensus(firstValue) : undefined;
-        const remaining: AsyncIterable<Record<string, any>[]> = {
+        const remaining: AsyncIterable<DataRow[]> = {
             async *[Symbol.asyncIterator]() {
                 try {
                     if (firstValue !== null) yield firstValue;

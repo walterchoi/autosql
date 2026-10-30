@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import type { MetadataHeader, DatabaseConfig, QueryInput, supportedDialects } from '../config/types';
+import type { MetadataHeader, DatabaseConfig, QueryInput, supportedDialects, DataRow } from '../config/types';
 import { escapeIdentifier, escapeLiteral, assertSafeLength } from '../db/utils/escape';
 
 export function generateRunId(): string {
@@ -167,7 +167,7 @@ function streamCell(v: any): string | null {
 export function buildInsertIntoStreamStagingQuery(
     stagingTable: string,
     columns: string[],
-    rows: Record<string, any>[],
+    rows: DataRow[],
     config: DatabaseConfig,
     cursor?: string
 ): QueryInput {
@@ -175,7 +175,7 @@ export function buildInsertIntoStreamStagingQuery(
     const tableRef = `${schemaPrefixFor(config)}${qi(stagingTable, dialect)}`;
     // seq and staged_at are DB-defaulted, so the cursor is the only one ever bound.
     const insertColumns = cursor !== undefined ? [...columns, STAGING_CURSOR_COLUMN] : columns;
-    const cellFor = (row: Record<string, any>, col: string) => {
+    const cellFor = (row: DataRow, col: string) => {
         if (col !== STAGING_CURSOR_COLUMN) return streamCell(row[col]);
         // Invariant: STAGING_CURSOR_COLUMN is only in insertColumns (and thus only ever passed to
         // cellFor) when cursor is defined — see insertColumns above.
@@ -476,7 +476,7 @@ CREATE TABLE ${tableRef} (
 export function buildInsertRejectedRowsQuery(
     config: DatabaseConfig,
     targetTable: string,
-    failures: { row: Record<string, any>; error: string }[]
+    failures: { row: DataRow; error: string }[]
 ): QueryInput {
     const dialect   = config.sqlDialect;
     const schema    = config.rejectedRowsSchema || config.schema;

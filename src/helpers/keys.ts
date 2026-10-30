@@ -1,5 +1,5 @@
 import { DEFAULTS } from "../config/defaults";
-import type { MetadataHeader, ColumnDefinition, DatabaseConfig } from "../config/types";
+import type { MetadataHeader, ColumnDefinition, DatabaseConfig, DataRow } from "../config/types";
 import { GROUPINGS } from "../config/groupings";
 import { generateCombinations, isCombinationUnique } from "../helpers/utilities";
 
@@ -67,7 +67,7 @@ export function applySurrogateKey(
     return { [name]: surrogateColumnDefinition(), ...metaData };
 }
 
-export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: number, primaryKey?: string[], data?: Record<string, any>[], maxCompositeKeyColumns?: number): MetadataHeader {
+export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: number, primaryKey?: string[], data?: DataRow[], maxCompositeKeyColumns?: number): MetadataHeader {
     // P4: bound the composite-key search. Without a cap it tries every subset of pseudo-unique
     // columns (O(2^N)), each scanned over all rows — a real hang on a wide, key-less table.
     const maxComposite = Math.max(1, maxCompositeKeyColumns ?? 4);
