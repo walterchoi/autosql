@@ -31,6 +31,7 @@ export class DegradationPolicy {
         for (let i = 0; i < allInsertResults.length; i++) {
             if (allInsertResults[i]?.success) continue;
             const input = insertInput[i];
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- insertInput[i] is a bracket-indexed lookup (noUncheckedIndexedAccess isn't set); insertInput/allInsertResults aren't statically provable to stay the same length.
             if (!input?.data?.length || !input.metaData) {
                 // Nothing to retry per-row (no rows/metadata) — surface the original failure.
                 throwIfFailedResults([allInsertResults[i]], "data insert queries");
@@ -39,7 +40,7 @@ export class DegradationPolicy {
             const insertType = input.insertType ?? config.insertType ?? 'UPDATE';
             // Preserve already-resolved key columns during widening re-inference so it can't re-infer
             // different keys for the failed rows.
-            const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col]?.primary);
+            const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col].primary);
             this.db.warn(`autoSQL: batch insert for '${input.table}' failed (${allInsertResults[i]?.error ?? 'unknown error'}); retrying per-row with schema widening, diverting unrecoverable rows to '${config.rejectedRowsTable!}'.`);
             const { inserted } = await this.perRowInsertWithRetry(
                 input.table, input.data, input.metaData, insertType, maxRetries,
@@ -152,12 +153,13 @@ export class DegradationPolicy {
         for (let i = 0; i < allInsertResults.length; i++) {
             if (allInsertResults[i]?.success) continue;
             const input = insertInput[i];
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- insertInput[i] is a bracket-indexed lookup (noUncheckedIndexedAccess isn't set); insertInput/allInsertResults aren't statically provable to stay the same length.
             if (!input?.data?.length || !input.metaData) {
                 // Nothing to retry per-row — surface the original failure.
                 throwIfFailedResults([allInsertResults[i]], 'insert from staging table queries');
                 continue;
             }
-            const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col]?.primary);
+            const primaryKey = Object.keys(input.metaData).filter(col => input.metaData[col].primary);
             this.db.warn(`autoSQL: staged merge for '${input.table}' failed (${allInsertResults[i]?.error ?? 'unknown error'}); retrying per-row, diverting unrecoverable rows to '${config.rejectedRowsTable!}'.`);
             const { inserted } = await this.perRowInsertWithRetry(
                 input.table, input.data, input.metaData, 'UPDATE', maxRetries,
@@ -177,7 +179,7 @@ export class DegradationPolicy {
         const config = this.db.getConfig();
         const dialectConfig = this.db.getDialectConfig();
         const header = input.comparedMetaData?.updatedMetaData || input.metaData;
-        const pkCols = Object.keys(header).filter(col => header[col]?.primary);
+        const pkCols = Object.keys(header).filter(col => header[col].primary);
         if (!pkCols.length) {
             throw new Error(`autoSQL: staged merge for '${input.table}' failed and cannot degrade per-row (no primary key to divert on).`);
         }

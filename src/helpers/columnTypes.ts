@@ -148,6 +148,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
 
 export function collateTypes(typeSetOrArray: Set<string | null> | (string | null)[]): string {
     try {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exported via internals.ts; a plain-JS caller can pass null/undefined despite the TS type.
         if (!typeSetOrArray || (typeSetOrArray instanceof Set ? typeSetOrArray.size === 0 : typeSetOrArray.length === 0)) {
             return 'varchar'
         }

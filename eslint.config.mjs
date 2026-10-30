@@ -22,6 +22,14 @@ const PROMOTED_RULES = {
         ignoreRestSiblings: true
     }],
     "@typescript-eslint/consistent-type-imports": "error",
+    // A genuine bug-finder (flags a condition the type system says is always true/false). Every
+    // site was triaged by hand: a real dead check was simplified; a false positive caused by
+    // `noUncheckedIndexedAccess` not being set (a Record/array lookup the type calls "always
+    // defined" even though the key/index isn't statically guaranteed) or a public-API boundary
+    // (a plain-JS caller can violate what the TS type promises) got a scoped inline exception
+    // instead, same pattern as no-misused-spread. Those exceptions mark exactly the sites a
+    // future `noUncheckedIndexedAccess` initiative would turn into real, provable fixes.
+    "@typescript-eslint/no-unnecessary-condition": "error",
     // Deferred deliberately: 240 existing call sites need real type design, not a mechanical
     // fix. Tracked as its own follow-up initiative, not promoted alongside everything else here.
     "@typescript-eslint/no-explicit-any": "warn",

@@ -219,8 +219,10 @@ IF LEN(@cre) > 0 EXEC (@cre);`,
         changes.nullableColumns.forEach(columnName => {
             if (handledNullable.has(columnName)) return;
             const meta = changes.modifyColumns[columnName];
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- columnName comes from nullableColumns, a different list than modifyColumns' keys; meta genuinely may not be present.
             const typeSource = meta?.type || meta?.previousType;
             if (!typeSource) return; // No known type → can't emit a valid ALTER COLUMN
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- same reasoning as above: meta can genuinely be undefined here.
             const serverType = renderColumnType({ ...(meta || { type: typeSource }), type: typeSource }, DIALECT_CONFIG);
             queries.push({
                 query: `ALTER TABLE ${qualified} ALTER COLUMN ${q(columnName)} ${serverType} NULL;`,

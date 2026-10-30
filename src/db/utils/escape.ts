@@ -121,6 +121,7 @@ export function assertSafeDefaultExpression(expr: string): void {
  * a string-literal default must be self-quoted by the caller (e.g. `"'active'"`).
  */
 export function renderColumnDefault(value: unknown, dialectConfig: DialectConfig): string {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- defaultTranslation is keyed by a dynamic runtime string; most values genuinely have no translation entry (noUncheckedIndexedAccess isn't set).
     if (typeof value === "string" && dialectConfig.defaultTranslation[value] !== undefined) {
         return dialectConfig.defaultTranslation[value];
     }

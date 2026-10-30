@@ -134,10 +134,11 @@ export const PostgresTableQueryBuilder = {
     
         for (const [columnName, column] of Object.entries(changes.modifyColumns)) {
     
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lazy-init on first sight of this key; noUncheckedIndexedAccess isn't set so the type hides the missing-key case.
             if (!alterColumnMap[columnName]) {
                 alterColumnMap[columnName] = [];
             }
-    
+
             if (column.type) {
                 let columnType = column.type.toLowerCase()
                 if (DIALECT_CONFIG.translate.localToServer[columnType]) {
@@ -177,6 +178,7 @@ export const PostgresTableQueryBuilder = {
 
         // Skip columns already covered by modifyColumns above.
         changes.nullableColumns.forEach(columnName => {
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- columnName comes from nullableColumns, a different list than alterColumnMap's keys (built from modifyColumns); it genuinely may not be present.
             if (!alterColumnMap[columnName]) {
                 alterStatements.push(`ALTER COLUMN ${q(columnName)} DROP NOT NULL`);
             }

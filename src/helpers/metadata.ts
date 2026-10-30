@@ -67,6 +67,7 @@ export function overlaySchema(inferred: MetadataHeader, provided: MetadataHeader
 export function fillColumnDefaults(schema: MetadataHeader): MetadataHeader {
     const result: MetadataHeader = {};
     for (const [col, def] of Object.entries(schema)) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- assumeSchema is user-provided and "possibly sparse" per this function's own contract; a caller can set a column to an explicit `undefined`.
         if (!def || !def.type) {
             throw new Error(`assumeSchema: column "${col}" is missing a required "type".`);
         }
@@ -157,6 +158,7 @@ function getDataHeadersSync(data: Record<string, any>[], databaseConfig: Databas
         for (const column of allColumns) {
             const value = row[column]
 
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lazy-init on first sight of this key (column may be new to metaData/metaDataInterim); noUncheckedIndexedAccess isn't set so the type hides the missing-key case.
             if(metaData[column] == undefined) {
                 metaData[column] = {
                     type: null,
@@ -171,6 +173,7 @@ function getDataHeadersSync(data: Record<string, any>[], databaseConfig: Databas
                     decimal: 0
                 }
             }
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- same lazy-init case as metaData above.
             if(metaDataInterim[column] == undefined) {
                 metaDataInterim[column] = {
                     uniqueSet: new Set(),
@@ -276,8 +279,8 @@ function getDataHeadersSync(data: Record<string, any>[], databaseConfig: Databas
         // A decimal whose true scale exceeds the cap (`decimalMaxLength`, else the dialect's numeric
         // limit) can't be stored at full precision as a number. Either store as exact text (opt-in
         // `decimalToVarchar`) or round + warn so it's visible. See decisions.md D-G.
-        if (type === "decimal" && (metaDataInterim[column].trueMaxDecimal ?? 0) > decimalScaleCap) {
-            const trueScale = metaDataInterim[column].trueMaxDecimal ?? 0;
+        if (type === "decimal" && metaDataInterim[column].trueMaxDecimal > decimalScaleCap) {
+            const trueScale = metaDataInterim[column].trueMaxDecimal;
             const intLen = metaDataInterim[column].intLen ?? 0;
             if (databaseConfig.decimalToVarchar) {
                 metaData[column].type = "varchar";
@@ -452,6 +455,7 @@ function getDataHeadersSync(data: Record<string, any>[], databaseConfig: Databas
         && databaseConfig.thousandsSeparator === undefined
         && databaseConfig.decimalSeparator === undefined) {
         const numericAmbiguous = [...ambiguousSeparatorColumns]
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- col comes from the ambiguousSeparatorColumns Set, not metaData's own keys; not provably always present (noUncheckedIndexedAccess isn't set).
             .filter(col => metaData[col] && isNumeric(metaData[col].type ?? ""));
         if (numericAmbiguous.length > 0) {
             const warn = databaseConfig.logger?.warn ?? databaseConfig.logger?.log;
@@ -487,6 +491,7 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
                 _dialectConfig = MYSQL_CONFIG;
             } else if(validatedConfig.sqlDialect == 'pgsql') {
                 _dialectConfig = PGSQL_CONFIG;
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- validateConfig's return type only has 3 literal dialects, but a plain-JS caller can still reach here with an unsupported one; this check (and the throw below) is the real validation for that.
             } else if(validatedConfig.sqlDialect == 'sqlserver') {
                 _dialectConfig = SQL_SERVER_CONFIG;
             } else {
@@ -530,7 +535,8 @@ export function restrictInferredUniques(inferred: MetadataHeader, current: Metad
     if (!current || Object.keys(current).length === 0) return inferred;
     let result: MetadataHeader | null = null;
     for (const [column, def] of Object.entries(inferred)) {
-        if (!def?.unique || current[column]?.unique) continue;
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- current[column] is a cross-object lookup (column comes from `inferred`'s keys, not `current`'s); not provably present (noUncheckedIndexedAccess isn't set).
+        if (!def.unique || current[column]?.unique) continue;
         result ??= { ...inferred };
         result[column] = { ...def, unique: false };
     }

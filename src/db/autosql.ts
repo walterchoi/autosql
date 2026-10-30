@@ -135,13 +135,13 @@ export class AutoSQLHandler {
     private deriveBlockedChanges(changes: AlterTableChanges | null, config: DatabaseConfig): string[] {
         if (!changes) return [];
         const blocked: string[] = [];
-        if (changes.dropColumns?.length && !config.deleteColumns) {
+        if (changes.dropColumns.length && !config.deleteColumns) {
             blocked.push(`Would DROP column(s) ${changes.dropColumns.join(", ")} — blocked; set deleteColumns: true to allow.`);
         }
-        if (changes.primaryKeyChanges?.length && !config.updatePrimaryKey) {
+        if (changes.primaryKeyChanges.length && !config.updatePrimaryKey) {
             blocked.push(`Would change the primary key (${changes.primaryKeyChanges.join(", ")}) — blocked; set updatePrimaryKey: true to allow.`);
         }
-        if (changes.noLongerUnique?.length && !config.dropUniqueConstraints) {
+        if (changes.noLongerUnique.length && !config.dropUniqueConstraints) {
             blocked.push(`Would DROP the unique constraint on ${changes.noLongerUnique.join(", ")} — blocked; set dropUniqueConstraints: true to allow.`);
         }
         return blocked;
@@ -155,9 +155,9 @@ export class AutoSQLHandler {
                 if (!checkTableExists.success || !checkTableExists.results) {
                     throw new Error(`Failed to check schema existence: ${checkTableExists.error ?? "unknown error"}`);
                 }
-                tableExists = Boolean(Number(checkTableExists?.results[0]?.count));
+                tableExists = Boolean(Number(checkTableExists.results[0]?.count));
             }
-    
+
             if (tableExists) {
                 throw new Error("Table already exists");
             }
@@ -183,9 +183,9 @@ export class AutoSQLHandler {
                 if (!checkTableExists.success || !checkTableExists.results) {
                     throw new Error(`Failed to check schema existence: ${checkTableExists.error ?? "unknown error"}`);
                 }
-                tableExists = Boolean(Number(checkTableExists?.results[0]?.count));
+                tableExists = Boolean(Number(checkTableExists.results[0]?.count));
             }
-    
+
             if (!tableExists) {
                 throw new Error("Table doesn't exist");
             }
@@ -217,6 +217,7 @@ export class AutoSQLHandler {
                 data = inputOrTable.data;
                 currentMetaDataOrTableChanges = inputOrTable.previousMetaData;
                 newMetaData = inputOrTable.metaData;
+                // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- public method; a plain-JS caller can pass an explicit null for inputRunQuery, which the default parameter doesn't catch.
                 runQuery = inputOrTable.runQuery ?? inputRunQuery ?? true
             } else {
                 table = inputOrTable;
@@ -339,8 +340,8 @@ export class AutoSQLHandler {
         const currentMetaDataQuery = this.db.getTableMetaDataQuery(schema, table);
         const currentMetaDataResults = await this.db.runQuery(currentMetaDataQuery);
 
-        if (!currentMetaDataResults || !currentMetaDataResults.success) {
-            throw new Error(`Failed to retrieve existing meta data for table ${table}: ${currentMetaDataResults?.error ?? "unknown error"}`);
+        if (!currentMetaDataResults.success) {
+            throw new Error(`Failed to retrieve existing meta data for table ${table}: ${currentMetaDataResults.error ?? "unknown error"}`);
         }
 
         const rows = currentMetaDataResults.results ?? [];
@@ -370,7 +371,7 @@ export class AutoSQLHandler {
         try {
             const splitQuery = this.db.getSplitTablesQuery(table);
             const currentSplitResults = await this.db.runQuery(splitQuery);
-            if(!currentSplitResults || !currentSplitResults.success || !currentSplitResults.results) { throw new Error(currentSplitResults.error || `Error while retrieving existing split table information for: ${table}`)}
+            if(!currentSplitResults.success || !currentSplitResults.results) { throw new Error(currentSplitResults.error || `Error while retrieving existing split table information for: ${table}`)}
             const currentSplit = currentSplitResults.results
             const rawSplitMetadata = parseDatabaseMetaData(currentSplit as Record<string, any>[], this.db.getDialectConfig());
             let parsedSplitMetadata: Record<string, MetadataHeader>;
@@ -385,11 +386,13 @@ export class AutoSQLHandler {
             const newGroupedData = organizeSplitData(data, newGroupedByTable)
             const transformedData = await Promise.all(
                 Object.keys(newGroupedByTable).map(async (tableName) => {
+                    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- organizeSplitData only sets a table's key when at least one row matched its columns; a table with zero matching rows genuinely has no entry (noUncheckedIndexedAccess isn't set, so the type hides this).
                     const newMetaData = restrictInferredUniques(await getMetaData(this.db.getConfig(), newGroupedData[tableName] || []), parsedSplitMetadata[tableName], this.db.getConfig());
                     const mergedMetaData = compareMetaData(parsedSplitMetadata[tableName], newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
-            
+
                     return {
                         table: tableName,
+                        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- same missing-key case as above.
                         data: newGroupedData[tableName] || [],
                         metaData: newMetaData,
                         previousMetaData: parsedSplitMetadata[tableName],
@@ -425,7 +428,7 @@ export class AutoSQLHandler {
           _previousMetaData = inputOrTable.previousMetaData;
           comparedMetaData = inputOrTable.comparedMetaData;
           runQuery = inputOrTable.runQuery ?? true;
-          insertType = inputOrTable?.insertType ?? configInsertType ?? "UPDATE"
+          insertType = inputOrTable.insertType ?? configInsertType ?? "UPDATE"
         } else {
           table = inputOrTable;
           data = inputData ?? [];
@@ -433,6 +436,7 @@ export class AutoSQLHandler {
           metaData = inputMetaData;
           _previousMetaData = inputPreviousMetaData ?? null;
           comparedMetaData = inputComparedMetaData;
+          // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- public method; a plain-JS caller can pass an explicit null for inputRunQuery, which the default parameter doesn't catch.
           runQuery = inputRunQuery ?? true
           insertType = inputInsertType ?? configInsertType ?? "UPDATE"
         }
@@ -531,7 +535,7 @@ export class AutoSQLHandler {
         const { currentMetaData, mergedMetaData, initialComparedMetaData, changes, newMetaData } = await this.handleMetadata(table, data, primaryKey, options);
         let insertInput: InsertInput[] = await this.attemptTableSplit(table, data, mergedMetaData);
 
-        if (!insertInput || insertInput.length === 0) {
+        if (insertInput.length === 0) {
             let comparedMetaData = initialComparedMetaData;
             if (comparedMetaData === undefined) {
                 comparedMetaData = compareMetaData(currentMetaData || null, newMetaData, this.db.getDialectConfig(), this.db.getConfig().logger);
@@ -567,7 +571,7 @@ export class AutoSQLHandler {
                 if (failed.length > 0) {
                     const err = new Error(
                         `Worker execution failed for ${failed.length} task(s):\n` +
-                        failed.map((f, i) => `- Task #${i + 1}: ${typeof f?.error === "string" ? f.error : (f?.error?.message || "Unknown Error")}`).join("\n")
+                        failed.map((f, i) => `- Task #${i + 1}: ${typeof f.error === "string" ? f.error : (f.error?.message || "Unknown Error")}`).join("\n")
                     ) as Error & { code?: string };
                     const withCode = failed.find(f => f.errorCode);
                     if (withCode?.errorCode) err.code = withCode.errorCode;
@@ -615,6 +619,7 @@ export class AutoSQLHandler {
             if (failedDDL.length > 0) {
                 for (const { inputIndex } of failedDDL) {
                     const input = insertInput[inputIndex];
+                    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- inputIndex is a bracket-indexed lookup (noUncheckedIndexedAccess isn't set); it isn't statically provable in-range.
                     if (input?.comparedMetaData) {
                         const { queries: compQueries, warnings } = buildCompensatingDDL(
                             input.table,
@@ -666,7 +671,7 @@ export class AutoSQLHandler {
                     if (failed.length > 0) {
                         const err = new Error(
                             `Worker execution failed for ${failed.length} task(s):\n` +
-                            failed.map((f, i) => `- Task #${i + 1}: ${typeof f?.error === "string" ? f.error : (f?.error?.message || "Unknown Error")}`).join("\n")
+                            failed.map((f, i) => `- Task #${i + 1}: ${typeof f.error === "string" ? f.error : (f.error?.message || "Unknown Error")}`).join("\n")
                         ) as Error & { code?: string };
                         const withCode = failed.find(f => f.errorCode);
                         if (withCode?.errorCode) err.code = withCode.errorCode;
@@ -698,7 +703,7 @@ export class AutoSQLHandler {
         // passes perRowFallback and the user configured rejectedRowsTable. Without it a failed
         // batch throws, which is right when the caller hasn't said where bad rows should go.
         const config = this.db.getConfig();
-        if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r?.success)) {
+        if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r.success)) {
             return this.degradation.applyPerRowFallback(insertInput, allInsertResults);
         }
 
@@ -735,9 +740,11 @@ export class AutoSQLHandler {
                       ...Object.fromEntries(primaryKeys.map(pk => [pk, row[pk]]))
                     };
                 
+                    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lazy-init on first sight of this key; noUncheckedIndexedAccess isn't set so the type hides the missing-key case.
                     if (!nestedMap[nestedTable]) {
                         nestedMap[nestedTable] = [];
                     }
+                    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- same lazy-init case as above.
                     if(!primaryMap[nestedTable]) {
                         primaryMap[nestedTable] = primaryKeys
                     }
@@ -802,6 +809,7 @@ export class AutoSQLHandler {
                     }
                     await this.history.bootstrap();
                     const primary = insertInput[0];
+                    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- insertInput[0] is a bracket-indexed lookup (noUncheckedIndexedAccess isn't set); insertInput could in principle be empty.
                     if (primary?.comparedMetaData && tableChangesExist(primary.comparedMetaData.changes)) {
                         historyId = await this.history.recordStart(
                             table,
@@ -858,9 +866,9 @@ export class AutoSQLHandler {
                 durationMs,
                 rowsPerSecond: durationMs > 0 ? Math.round((data.length / durationMs) * 1000) : 0,
                 phases: {
-                    prepare: phases.prepare !== undefined ? Math.round(phases.prepare) : undefined,
-                    configure: phases.configure !== undefined ? Math.round(phases.configure) : undefined,
-                    load: phases.load !== undefined ? Math.round(phases.load) : undefined,
+                    prepare: Math.round(phases.prepare),
+                    configure: Math.round(phases.configure),
+                    load: Math.round(phases.load),
                 },
                 staged: !!config.useStagingInsert,
                 bulkLoad: !!config.bulkLoad,
@@ -969,6 +977,7 @@ export class AutoSQLHandler {
                     phases.prepare = (phases.prepare ?? 0) + (perf() - tPrepare);
 
                     const lockedDataOnly: MetadataHeader = {};
+                    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- col comes from THIS chunk's inferred columns, not lockedMeta's; a later chunk can introduce a column the locked (first-chunk) schema never had.
                     for (const col of Object.keys(inferred)) if (lockedMeta[col]) lockedDataOnly[col] = lockedMeta[col];
                     const { changes } = compareMetaData(lockedDataOnly, inferred, this.db.getDialectConfig(), config.logger);
 

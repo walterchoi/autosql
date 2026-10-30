@@ -82,13 +82,13 @@ export abstract class Database {
      * `dropColumns` is rename-folded.
      */
     protected warnBlockedSchemaChanges(table: string, changes: AlterTableChanges): void {
-        if (changes.dropColumns?.length && !this.config.deleteColumns) {
+        if (changes.dropColumns.length && !this.config.deleteColumns) {
             this.warn(`Schema change not applied to '${table}': ${changes.dropColumns.length} column(s) would be dropped (${changes.dropColumns.join(", ")}) but 'deleteColumns' is off. Set deleteColumns: true to apply the drop, or leave it off to keep the columns.`);
         }
-        if (changes.primaryKeyChanges?.length && !this.config.updatePrimaryKey) {
+        if (changes.primaryKeyChanges.length && !this.config.updatePrimaryKey) {
             this.warn(`Schema change not applied to '${table}': a primary-key change is pending (${changes.primaryKeyChanges.join(", ")}) but 'updatePrimaryKey' is off. Set updatePrimaryKey: true to apply it.`);
         }
-        if (changes.noLongerUnique?.length && !this.config.dropUniqueConstraints) {
+        if (changes.noLongerUnique.length && !this.config.dropUniqueConstraints) {
             this.warn(`Schema change not applied to '${table}': ${changes.noLongerUnique.length} column(s) (${changes.noLongerUnique.join(", ")}) now contain duplicate values that would require DROPPING their UNIQUE constraint, but 'dropUniqueConstraints' is off. The constraint is KEPT (the load may then fail on the duplicate rows); set dropUniqueConstraints: true to relax it.`);
         }
     }
@@ -109,7 +109,9 @@ export abstract class Database {
             sqlserver: SqlServerDatabase
         };
 
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `Database.create` is a public entry point; a plain-JS caller can pass a config missing sqlDialect despite the TS type.
         const dialect = config.sqlDialect?.toLowerCase();
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this IS the validation for an unsupported/missing dialect; dialects is a bracket-indexed lookup (noUncheckedIndexedAccess isn't set).
         if (!dialects[dialect]) {
             throw new Error(`Unsupported SQL dialect: ${dialect}`);
         }
@@ -139,7 +141,7 @@ export abstract class Database {
 
     public async establishConnection(): Promise<void> {
         let attempts = 0;
-        const maxAttempts = MAX_QUERY_ATTEMPTS || 3;
+        const maxAttempts = MAX_QUERY_ATTEMPTS;
 
         while (attempts < maxAttempts) {
             try {
@@ -233,14 +235,16 @@ export abstract class Database {
     }
 
     public createTableQuery(table: string, headers: MetadataHeader): QueryInput[] {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- public method; a plain-JS caller can pass null/undefined for headers despite the TS type, and this gives a clear error instead of a raw Object.keys(null) crash.
         if (!table || !headers || Object.keys(headers).length === 0) {
             throw new Error("Invalid table configuration: table name and headers are required.");
         }
-    
+
         return this.getCreateTableQuery(table, headers);
     }
 
     public async alterTableQuery(table: string, oldHeaders: MetadataHeader, newHeaders: MetadataHeader): Promise<QueryInput[]> {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- public method; same JS-caller boundary reasoning as createTableQuery above.
         if (!table || !oldHeaders || !newHeaders) {
             throw new Error("Invalid table configuration: table name and headers are required.");
         }
@@ -299,7 +303,7 @@ export abstract class Database {
         // non-idempotent statement (single-row INSERT), where retrying after an ambiguous failure
         // (conn dropped after the server applied the row) would duplicate it. `perRowInsertWithRetry`
         // passes 1 for exactly this (A15).
-        const maxAttempts = maxAttemptsOverride ?? MAX_QUERY_ATTEMPTS ?? 3;
+        const maxAttempts = maxAttemptsOverride ?? MAX_QUERY_ATTEMPTS;
         let attempts = 0;
         let _error: any;
         const start = new Date();
@@ -370,7 +374,7 @@ export abstract class Database {
         // succeed. A DDL-containing transaction runs exactly once, because MySQL implicitly commits
         // before each DDL and re-running would re-apply the already-committed DML.
         const containsDDL = queries.some(q => /^\s*(create|alter|drop|truncate|rename)\b/i.test(q.query || ""));
-        const maxAttempts = containsDDL ? 1 : (MAX_QUERY_ATTEMPTS || 3);
+        const maxAttempts = containsDDL ? 1 : MAX_QUERY_ATTEMPTS;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             let client: any;
@@ -385,7 +389,7 @@ export abstract class Database {
                 await this.startTransaction(client);
 
                 for (const query of queries) {
-                    if (!query?.query?.trim()) continue;
+                    if (!query.query.trim()) continue;
                     const { rows, affectedRows } = await this.executeQuery(query, client);
                     results = results.concat(rows);
                     totalAffectedRows += affectedRows || 0;

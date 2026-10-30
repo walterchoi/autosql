@@ -303,9 +303,9 @@ export class AutoSQLStreamHandle {
                 durationMs,
                 rowsPerSecond: durationMs > 0 ? Math.round((stagingRows.length / durationMs) * 1000) : 0,
                 phases: {
-                    prepare: phases.prepare !== undefined ? Math.round(phases.prepare) : undefined,
-                    configure: phases.configure !== undefined ? Math.round(phases.configure) : undefined,
-                    load: phases.load !== undefined ? Math.round(phases.load) : undefined,
+                    prepare: Math.round(phases.prepare),
+                    configure: Math.round(phases.configure),
+                    load: Math.round(phases.load),
                 },
                 staged: true,
                 bulkLoad: !!config.bulkLoad,

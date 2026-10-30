@@ -56,6 +56,7 @@ export function resolveDatasetSeparators(data: Record<string, any>[], minEvidenc
     let us = 0;
     let eu = 0;
     for (const row of data) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `data` is the caller's raw dataset (often JSON-parsed); a row genuinely can be null/non-object despite the declared element type.
         if (!row || typeof row !== "object") continue;
         for (const key in row) {
             const vote = classifySeparatorFormat(row[key]);

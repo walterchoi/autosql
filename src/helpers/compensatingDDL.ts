@@ -64,6 +64,7 @@ export function buildCompensatingDDL(
     // 1. Reverse renames (newName → oldName) before other operations
     for (const { oldName, newName } of changes.renameColumns) {
         const col = updatedMetaData[newName] ?? updatedMetaData[oldName];
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- newName/oldName come from changes.renameColumns, not updatedMetaData's own keys; neither is guaranteed present (noUncheckedIndexedAccess isn't set).
         if (!col?.type) continue;
         let colType = col.type.toLowerCase();
         if (dialectConfig.translate.localToServer[colType]) {

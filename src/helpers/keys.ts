@@ -56,6 +56,7 @@ export function applySurrogateKey(
     if (hasPrimary) return metaData;
 
     const name = config.surrogateKeyColumn || DEFAULTS.surrogateKeyColumn;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- name comes from config, not metaData's own keys; it genuinely may not be a column yet (noUncheckedIndexedAccess isn't set).
     if (metaData[name]) {
         throw new Error(
             `surrogateKey: cannot add surrogate column "${name}" because a column with that name ` +
@@ -135,13 +136,13 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         
         if (!primaryKeyFound) {
             let selectedPrimaryKey: string[] | null = null;
-            if (potentialPrimaryKeys && potentialPrimaryKeys.length > 0) {
+            if (potentialPrimaryKeys.length > 0) {
                 let idLikeKey: string | null = null;
                 let numericKey: string | null = null;
                 let shortestKey: string = potentialPrimaryKeys[0];
               
                 for (const key of potentialPrimaryKeys) {
-                  const type = headers[key]?.type ?? "";
+                  const type = headers[key].type ?? "";
               
                   // Prefer a key exactly "id" or ending in "_id". Anchored so words ending in "id"
                   // (paid, void, valid, grid, rapid) aren't mistaken for identifier columns.

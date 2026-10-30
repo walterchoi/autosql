@@ -65,6 +65,7 @@ export class PostgresDatabase extends Database {
     }
 
     public getMaxConnections(): number {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `as Pool` asserts a type the base class's `connection: any = null` doesn't guarantee; this.connection can genuinely be null before establishConnection() runs.
         return (this.connection as Pool)?.options?.max ?? 5;
     }
 
@@ -222,13 +223,13 @@ export class PostgresDatabase extends Database {
     }
 
     protected releaseConnection(client: PoolClient): void {
-        if (client) client.release();
+        client.release();
     }
 
     protected destroyConnection(client: PoolClient): void {
         // release(true) removes the client from the pool (A24) — a client whose rollback failed is in an
         // aborted-transaction state and must not be handed to the next borrower.
-        if (client) { try { client.release(true); } catch { /* already broken */ } }
+        try { client.release(true); } catch { /* already broken */ }
     }
 
     protected async executeQuery(queryOrParams: QueryInput, client?: PoolClient): Promise<{ rows: any[]; affectedRows: number }> {
@@ -245,8 +246,9 @@ export class PostgresDatabase extends Database {
             if (!conn) conn = await (this.connection as Pool).connect();
             const result = await conn.query(query, params);
 
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- node-postgres only returns `.rows` for the extended protocol (params.length > 0); with no params it uses the simple protocol, and a multi-statement string can come back without `.rows`.
             const rows = result.rows || [];
-            const affectedRows = result.rowCount ?? rows.length ?? 0;
+            const affectedRows = result.rowCount ?? rows.length;
 
             return { rows, affectedRows };
         } catch (error) {
@@ -320,7 +322,7 @@ export class PostgresDatabase extends Database {
                 throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error ?? "unknown error"}`);
             }
         
-            const uniqueIndexes = (uniqueIndexesResult.results || [])
+            const uniqueIndexes = uniqueIndexesResult.results
                 .map(row => normalizeResultKeys(row))
                 .filter(row => row.columns);
         

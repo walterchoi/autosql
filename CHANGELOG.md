@@ -16,6 +16,19 @@
   - `Database`'s abstract `executeQuery` now declares its real return type
     (`Promise<{ rows: any[]; affectedRows: number }>`) instead of `Promise<any>`, matching what the
     3 dialect overrides already implement — no behavior change.
+- Continuing the lint rollout: `no-unnecessary-condition` promoted to `error` for `src/` (owner
+  asked to continue past this brief's original "its own future initiative" note). All 126 findings
+  triaged by hand, not pattern-fixed: most were a genuinely dead check (removed), but a real chunk
+  were **false positives** caused by `noUncheckedIndexedAccess` not being set in `tsconfig.json` —
+  a `Record<string, X>`/array lookup the type system calls "always defined" even though the
+  key/index isn't statically guaranteed (a lazily-initialized grouped-by-table map, a cross-object
+  metadata lookup, a regex capture group, `insertInput[i]` indexed by a loop variable over a
+  different array's length). Those, plus a handful of genuine public-API-boundary guards (a plain-
+  JS caller can violate what the TS type promises — e.g. `Database.create`'s dialect check,
+  `validateConfig`, two functions re-exported via `internals.ts`), got a scoped inline exception
+  with a one-line reason instead of being deleted, same pattern as `no-misused-spread`. No behavior
+  change — ~40 exceptions mark exactly the sites a future `noUncheckedIndexedAccess` initiative
+  would turn into real, provable fixes.
 
 ## [2.8.0] - 2026-10-25
 

@@ -140,7 +140,9 @@ export class StagingPipeline {
                 const table = tablesToIntrospect[i];
                 const uniqueIndexes = allUniqueKeys[i];
                 const primaryColumns = allPrimaryKeys[i]
+                // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- allUniqueKeys/allPrimaryKeys are indexed by the tablesToIntrospect loop bound, not their own (noUncheckedIndexedAccess isn't set); their length isn't statically tied to it.
                 if (!uniqueIndexes?.results) continue;
+                // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- same reasoning as above.
                 if (!primaryColumns?.results) continue;
 
                 const normalizedUniques = uniqueIndexes.results
@@ -169,7 +171,7 @@ export class StagingPipeline {
         // tables are filtered out here.
         const conflictTables = Object.keys(tableStructure).filter(table => {
             const structure = tableStructure[table];
-            return (structure && Object.keys(structure.uniques || {}).length > 0 && // at least one unique constraint
+            return (Object.keys(structure.uniques).length > 0 && // at least one unique constraint
             Array.isArray(structure.primary) && structure.primary.length > 0 // at least one primary key
             );
         });
@@ -185,7 +187,7 @@ export class StagingPipeline {
           const table = conflictTables[i];
           const tableConstraintsQueries : QueryInput[] = []
 
-          const row = result?.results?.[0] || {};
+          const row = result.results?.[0] || {};
           const violatingIndexes: string[] = [];
           const dropUniques = this.db.getConfig().dropUniqueConstraints === true;
 
@@ -252,15 +254,14 @@ export class StagingPipeline {
         if (!input) return null;
         const changes = input.comparedMetaData?.changes;
         const meta = input.comparedMetaData?.updatedMetaData || input.metaData;
-        if (!changes || !meta) return null;
-        if (changes.noLongerUnique?.length) return null;
-        if (changes.primaryKeyChanges?.length) return null;
-        if (changes.addColumns && Object.values(changes.addColumns).some(col => col?.unique)) return null;
+        if (!changes) return null;
+        if (changes.noLongerUnique.length) return null;
+        if (changes.primaryKeyChanges.length) return null;
+        if (Object.values(changes.addColumns).some(col => col.unique)) return null;
 
         const uniques: Record<string, string[]> = {};
         const primary: string[] = [];
         for (const [columnName, def] of Object.entries(meta)) {
-            if (!def) continue;
             if (def.primary) primary.push(columnName);
             // Unique but no real DB index name → DROP target unknown (just-created/inferred unique);
             // bail to live introspection.
@@ -289,7 +290,7 @@ export class StagingPipeline {
         // a failed table's rows per-row and diverts unrecoverable ones (default: all-or-nothing).
         // addHistory uses insertFromStagingTablesAtomic instead, to keep history/data consistent.
         const config = this.db.getConfig();
-        if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r?.success)) {
+        if (options?.perRowFallback && config.rejectedRowsTable && allInsertResults.some(r => !r.success)) {
             return this.handler['degradation'].applyStagingPerRowFallback(insertInput, allInsertResults);
         }
 

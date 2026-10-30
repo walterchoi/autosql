@@ -16,6 +16,7 @@ export function shuffleArray<T>(array: T[]): T[] {
 
 export function validateConfig(config: DatabaseConfig): DatabaseConfig {
     try {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- validateConfig is the public entry point validating external config; a plain-JS caller can omit sqlDialect despite the TS type.
         if (!config.sqlDialect) {
             throw new Error("Please provide a sqlDialect (such as pgsql, mysql) as part of the configuration object.");
         }
@@ -116,6 +117,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
                 EU: { thousands: ".", decimal: "," },
             };
             const preset = numberFormats[merged.numberFormat];
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- this IS the validation for an unsupported numberFormat value; numberFormats is a bracket-indexed lookup (noUncheckedIndexedAccess isn't set).
             if (!preset) {
                 throw new Error(`Invalid numberFormat "${merged.numberFormat}": expected one of ${Object.keys(numberFormats).join(", ")}.`);
             }
@@ -265,6 +267,7 @@ export function normalizeNumber(input: any, thousandsIndicatorOverride?: string,
         // ever middle. We assume decimal but signal the ambiguity so the caller can warn.
         if (onAmbiguousSeparator) {
             const [before, after] = inputStr.split(decimalIndicator);
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- array destructuring from .split() isn't covered by strict's element typing (noUncheckedIndexedAccess isn't set); `after` genuinely can be undefined if decimalIndicator doesn't appear in inputStr.
             if (after !== undefined && after.length === 3 && before.length >= 1 && before.length <= 3) {
                 onAmbiguousSeparator();
             }
@@ -334,6 +337,7 @@ export function parseDatabaseLength(lengthStr?: string): { length?: number; deci
 }
 
 export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig ): MetadataHeader | Record<string, MetadataHeader> | null {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exported via internals.ts; a plain-JS caller can pass null/undefined despite the TS type.
     if (!rows || rows.length === 0) return null;
 
     const hasTableName = rows.some(row => "table_name" in row || "TABLE_NAME" in row);
@@ -362,7 +366,7 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
         const isNonBooleanTinyint = serverType === "tinyint" && columnType !== "" && columnType !== "tinyint(1)";
         const dataType = isNonBooleanTinyint
             ? "tinyint"
-            : (dialectConfig?.translate?.serverToLocal[serverType] || serverType);
+            : (dialectConfig?.translate.serverToLocal[serverType] || serverType);
         const columnKey = (normalizedRow["column_key"] || "").toUpperCase();
 
         let normalizedLength: number | undefined = lengthInfo.length;
@@ -379,6 +383,7 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
 
         const tableName = normalizedRow.table_name || "noTableName"; // Default for single-table case
 
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lazy-init on first sight of this key; noUncheckedIndexedAccess isn't set so the type hides the missing-key case.
         if (!metadata[tableName]) {
             metadata[tableName] = {};
         }
@@ -404,6 +409,7 @@ export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig
         };
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- "noTableName" is only a real key when some row actually lacked table_name; a single-table-only result set never created it.
     return hasTableName ? metadata : metadata["noTableName"] || null;
 }
 
@@ -511,6 +517,7 @@ export function estimateRowSize(mergedMetaData: MetadataHeader, dbType: supporte
       } else if (["varchar"].includes(type)) {
         columnSize = (column.length ?? DEFAULT_LENGTHS.varchar) * varcharBytesPerChar;
       } else if (["text", "mediumtext", "longtext", "json"].includes(type)) {
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the `as` cast asserts a key that happens to always be valid for this branch's 4 types today; kept as a safety net against that drifting (e.g. a new type added to the list above without a matching DEFAULT_LENGTHS entry).
         columnSize = DEFAULT_LENGTHS[type as keyof typeof DEFAULT_LENGTHS] ?? 4; // Only store pointer size
       } else if (["date"].includes(type)) {
         columnSize = 3;
@@ -595,6 +602,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 
         if (matchingTables.length > 0) {
             matchingTables.forEach(tableName => {
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lazy-init on first sight of this key; noUncheckedIndexedAccess isn't set so the type hides the missing-key case.
             if (!acc[tableName]) acc[tableName] = {};
             acc[tableName][columnName] = columnDef;
             });
@@ -614,6 +622,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 
     while (Object.keys(unallocatedColumns).length > 0) {
         for (let i = 0; i < Object.keys(unallocatedColumns).length; i++) {
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- a brand-new table name from getNextTableName() genuinely isn't a newGroupedByTable key yet (noUncheckedIndexedAccess isn't set).
             const currentTableData = newGroupedByTable[tableName] || { ...primaryKeys };
             const columnName = Object.keys(unallocatedColumns)[i]
             const columnDef = unallocatedColumns[columnName]
@@ -623,6 +632,7 @@ export function organizeSplitTable(table: string, newMetaData: MetadataHeader, c
 
             const { nearlyExceedsLimit } = estimateRowSize(mergedMetaData, dialectConfig.dialect);
             if (!nearlyExceedsLimit && !exceedsColumnLimit) {
+                // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- same new-table-name case as currentTableData above.
                 if (!newGroupedByTable[tableName]) {
                     newGroupedByTable[tableName] = { ...primaryKeys }; // Ensure primary keys exist in new table
                 }
@@ -654,6 +664,7 @@ export function organizeSplitData(data: Record<string, any>[], splitMetaData: Re
             });
 
             if (Object.keys(rowDataByTable[tableName]).length > 0) {
+                // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- lazy-init on first sight of this key; noUncheckedIndexedAccess isn't set so the type hides the missing-key case.
                 if (!groupedData[tableName]) {
                     groupedData[tableName] = [];
                 }
@@ -810,6 +821,7 @@ function normalizeDateValue(strValue: string, columnType: string, sourceTimeZone
     const dt = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?)?/);
     if (dt) {
         const [, y, mo, d, h, mi, se, frac] = dt;
+        /* eslint-disable @typescript-eslint/no-unnecessary-condition -- h/mi/se/frac are optional regex capture groups; RegExpMatchArray types every element as `string`, not `string | undefined`, so they genuinely can be undefined at runtime when a group didn't match. */
         if (timeOnly) return h !== undefined ? `${h}:${mi}:${se ?? "00"}${frac ?? ""}` : s;
         if (dateOnly || h === undefined) return `${y}-${mo}-${d}`;
         // datetime/timestamp/datetimetz, zoneless. If the caller declared the source zone, interpret
@@ -821,11 +833,13 @@ function normalizeDateValue(strValue: string, columnType: string, sourceTimeZone
         // Canonical ISO (with Z) from the SAME digits; the dialect rules reduce it to
         // 'YYYY-MM-DD HH:MM:SS' with the wall-clock unchanged.
         return `${y}-${mo}-${d}T${h}:${mi}:${se ?? "00"}${frac ?? ""}Z`;
+        /* eslint-enable @typescript-eslint/no-unnecessary-condition */
     }
 
     // A bare time value "HH:MM[:SS]" for a time column.
     if (timeOnly) {
         const tm = s.match(/^(\d{2}):(\d{2})(?::(\d{2})(\.\d+)?)?/);
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- tm[3]/tm[4] are optional regex capture groups (bracket-indexed into the match array); genuinely can be undefined.
         if (tm) return `${tm[1]}:${tm[2]}:${tm[3] ?? "00"}${tm[4] ?? ""}`;
     }
 

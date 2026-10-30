@@ -11,7 +11,7 @@ export interface ResolvedHistory { table: string; header: MetadataHeader; stagin
 
 const isInput = (v: any): v is InsertInput => typeof v === "object" && v !== null && "table" in v;
 const headerOf = (input: InsertInput): MetadataHeader => input.comparedMetaData?.updatedMetaData || input.metaData;
-const insertTypeOf = (input: InsertInput, cfg?: DatabaseConfig): "UPDATE" | "INSERT" => input?.insertType || cfg?.insertType || "UPDATE";
+const insertTypeOf = (input: InsertInput, cfg?: DatabaseConfig): "UPDATE" | "INSERT" => input.insertType || cfg?.insertType || "UPDATE";
 
 export function resolveStatementInput(tableOrInput: string | InsertInput, data?: Record<string, any>[], metaData?: MetadataHeader, cfg?: DatabaseConfig, inputInsertType?: "UPDATE" | "INSERT"): ResolvedStatement {
     if (isInput(tableOrInput)) {

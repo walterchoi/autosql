@@ -205,12 +205,12 @@ export class MySQLDatabase extends Database {
     }
 
     protected releaseConnection(client: PoolConnection): void {
-        if (client) client.release();
+        client.release();
     }
 
     protected destroyConnection(client: PoolConnection): void {
         // Discard rather than return to the pool (A24) — after a failed rollback the connection may be dirty.
-        if (client) { try { client.destroy(); } catch { /* already broken */ } }
+        try { client.destroy(); } catch { /* already broken */ }
     }
 
     protected async executeQuery(queryOrParams: QueryInput, client?: PoolConnection): Promise<{ rows: any[]; affectedRows: number }> {
@@ -234,6 +234,7 @@ export class MySQLDatabase extends Database {
             // For SELECT, rowsOrResult is the rows array and maybeHeader is FieldPacket[].
             if (!Array.isArray(rowsOrResult) && rowsOrResult != null && 'affectedRows' in rowsOrResult) {
                 affectedRows = (rowsOrResult as ResultSetHeader).affectedRows;
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the `as [any, ...]` cast lies: mysql2 returns `fields === undefined` for a non-SELECT statement, which would throw on `'affectedRows' in maybeHeader` without this guard.
             } else if (maybeHeader && !Array.isArray(maybeHeader) && 'affectedRows' in maybeHeader) {
                 affectedRows = maybeHeader.affectedRows;
             } else if (rows.length > 0) {
@@ -308,7 +309,7 @@ export class MySQLDatabase extends Database {
                 throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error ?? "unknown error"}`);
             }
         
-            const uniqueIndexes = (uniqueIndexesResult.results || [])
+            const uniqueIndexes = uniqueIndexesResult.results
                 .map(row => normalizeResultKeys(row))
                 .filter(row => row.columns);
         

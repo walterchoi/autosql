@@ -174,10 +174,12 @@ export class SqlServerDatabase extends Database {
         const tvp = new sql.Table(qualified);
         tvp.create = false;
         for (const col of columns) {
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- col is from the caller's `columns` list, not Object.keys(header); an unmapped column genuinely isn't a header key (noUncheckedIndexedAccess isn't set).
             const meta = header[col] || { type: "varchar" };
             tvp.columns.add(col, sqlServerBulkType(sql, meta), { nullable: meta.allowNull !== false });
         }
         for (const row of rows) {
+            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- same unmapped-column case as above.
             tvp.rows.add(...row.map((v, i) => sqlServerBulkCoerce(v, header[columns[i]] || { type: "varchar" })));
         }
         await new sql.Request(this.connection).bulk(tvp);
@@ -396,7 +398,7 @@ export class SqlServerDatabase extends Database {
                 throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error ?? "unknown error"}`);
             }
             const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "sqlserver")}.` : "";
-            const indexesToDrop = (uniqueIndexesResult.results || [])
+            const indexesToDrop = uniqueIndexesResult.results
                 .map((row) => normalizeResultKeys(row))
                 .filter((row) => row.columns)
                 .filter(({ columns }) => columns.split(", ").some((col: string) => alterTableChanges.noLongerUnique.includes(col)))

@@ -32,6 +32,7 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
     );
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- public entry point; a plain-JS caller can pass an sshConfig missing username/entirely falsy despite the TS type.
   if (!sshKeys || !sshKeys.username) {
     throw new Error("No SSH username provided in sshKeys config.");
   }
