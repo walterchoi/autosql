@@ -238,7 +238,7 @@ export class SqlServerDatabase extends Database {
             await request.batch(`SET PARSEONLY ON; ${query}; SET PARSEONLY OFF;`);
             return { success: true };
         } catch (error) {
-            this.error(`SQL Server testQuery failed: ${error}`);
+            this.error(`SQL Server testQuery failed: ${error instanceof Error ? error.message : String(error)}`);
             throw this.normalizeError(error);
         }
     }
@@ -393,7 +393,7 @@ export class SqlServerDatabase extends Database {
         if (alterTableChanges.noLongerUnique.length > 0 && this.getConfig().dropUniqueConstraints) {
             const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
             if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {
-                throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error}`);
+                throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error ?? "unknown error"}`);
             }
             const schemaPrefix = this.getConfig().schema ? `${escapeIdentifier(this.getConfig().schema!, "sqlserver")}.` : "";
             const indexesToDrop = (uniqueIndexesResult.results || [])

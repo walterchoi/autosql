@@ -153,7 +153,7 @@ export class AutoSQLHandler {
                 const checkTableExistsQuery = this.db.getTableExistsQuery(this.db.getConfig().schema || this.db.getConfig().database || "", table);
                 const checkTableExists = await this.db.runQuery(checkTableExistsQuery);
                 if (!checkTableExists.success || !checkTableExists.results) {
-                    throw new Error(`Failed to check schema existence: ${checkTableExists.error}`);
+                    throw new Error(`Failed to check schema existence: ${checkTableExists.error ?? "unknown error"}`);
                 }
                 tableExists = Boolean(Number(checkTableExists?.results[0]?.count));
             }
@@ -181,7 +181,7 @@ export class AutoSQLHandler {
                 const checkTableExistsQuery = this.db.getTableExistsQuery(this.db.getConfig().schema || this.db.getConfig().database || "", table);
                 const checkTableExists = await this.db.runQuery(checkTableExistsQuery);
                 if (!checkTableExists.success || !checkTableExists.results) {
-                    throw new Error(`Failed to check schema existence: ${checkTableExists.error}`);
+                    throw new Error(`Failed to check schema existence: ${checkTableExists.error ?? "unknown error"}`);
                 }
                 tableExists = Boolean(Number(checkTableExists?.results[0]?.count));
             }
@@ -1068,7 +1068,7 @@ export class AutoSQLHandler {
         // Connectivity check — surfaces auth/connection errors before first write
         const ping = await this.db.runQuery({ query: 'SELECT 1', params: [] });
         if (!ping.success) {
-            throw new Error(`openStream: cannot connect to database — ${ping.error}`);
+            throw new Error(`openStream: cannot connect to database — ${ping.error ?? "unknown error"}`);
         }
 
         const config = this.db.getConfig();
@@ -1113,7 +1113,7 @@ export class AutoSQLHandler {
         const config = this.db.getConfig();
         const result = await this.db.runQuery(buildStagingColumnsQuery(stagingTable, config));
         if (!result.success) {
-            throw new Error(`openStream: failed to inspect existing staging table '${stagingTable}': ${result.error}`);
+            throw new Error(`openStream: failed to inspect existing staging table '${stagingTable}': ${result.error ?? "unknown error"}`);
         }
         if (!result.results?.length) return null;
         // The handle tracks the CALLER's shape; these would look like data downstream.

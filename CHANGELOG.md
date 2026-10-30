@@ -1,3 +1,22 @@
+## [Unreleased]
+
+- Continuing the lint rollout (2.8.0): `restrict-template-expressions`/`restrict-plus-operands`
+  dropped from 116 findings to 4 (the 4 remaining overlap the deferred `no-explicit-any` work and
+  stay `warn`). `src/` now allows `number` in template literals (numbers always stringify
+  predictably; `any`/`unknown`/nullish/boolean/RegExp stay disallowed) — a config change, not a
+  loosening of the rules that actually catch bugs.
+  - **Error-message wording changed** at ~25 call sites: a bare `${error}` interpolation (which
+    relied on an object's default `toString()`) is now `error instanceof Error ? error.message :
+    String(error)`, matching the convention already used elsewhere in this codebase. For a thrown
+    JS `Error`, this means the message text itself is unchanged but loses its `"Error: "`/driver
+    class-name prefix (e.g. `"Error: connection refused"` → `"connection refused"`). A handful of
+    `${result.error}` sites (where `error?: string` on a failed `QueryResult`) now read `${result.error
+    ?? "unknown error"}` instead of printing the literal string `"undefined"` when a driver failure
+    didn't set `.error`.
+  - `Database`'s abstract `executeQuery` now declares its real return type
+    (`Promise<{ rows: any[]; affectedRows: number }>`) instead of `Promise<any>`, matching what the
+    3 dialect overrides already implement — no behavior change.
+
 ## [2.8.0] - 2026-10-25
 
 - **`PostgresIndexQueryBuilder.getUniqueIndexesQuery`'s `schema` parameter is now actually applied.**

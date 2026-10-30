@@ -28,7 +28,7 @@ export function initializeMetaData(headers: string[]): Record<string, any>[] {
             }
         }));
     } catch (error) {
-        throw new Error(`Error in initializeMetaData: ${error}`);
+        throw new Error(`Error in initializeMetaData: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -490,7 +490,7 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
             } else if(validatedConfig.sqlDialect == 'sqlserver') {
                 _dialectConfig = SQL_SERVER_CONFIG;
             } else {
-                throw new Error(`Unsupported SQL dialect: ${validatedConfig.sqlDialect}`);
+                throw new Error(`Unsupported SQL dialect: ${String(validatedConfig.sqlDialect)}`);
             }
         }
         
@@ -515,7 +515,7 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
         return metaData;
         
     } catch (error) {
-        throw new Error(`Error in getMetaData: ${error}`);
+        throw new Error(`Error in getMetaData: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 

@@ -36,7 +36,7 @@ import type { AutoSQLHandler } from "../db/autosql";
             if (method === "test") {
                 const randomTimeInMs = Math.random() * 500;
                 const startTime = new Date();
-                const result = `${startTime}, ${params}`
+                const result = `${startTime.toISOString()}, ${params}`
                 await new Promise(resolve => setTimeout(resolve, randomTimeInMs));
                 parentPort?.postMessage({ success: true, result: result });
             } else if (typeof autoSQL[method as keyof AutoSQLHandler] === "function") {

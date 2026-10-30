@@ -207,7 +207,7 @@ export class PostgresDatabase extends Database {
             return { success: true };
         } catch (error) {
             if(client) await client.query("ROLLBACK;");
-            this.error(`PostgreSQL testQuery failed: ${error}`);
+            this.error(`PostgreSQL testQuery failed: ${error instanceof Error ? error.message : String(error)}`);
             throw error;
         } finally {
             if (client) client.release();
@@ -317,7 +317,7 @@ export class PostgresDatabase extends Database {
             const uniqueIndexesResult = await this.runQuery(this.getUniqueIndexesQuery(table));
         
             if (!uniqueIndexesResult.success || !uniqueIndexesResult.results) {
-                throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error}`);
+                throw new Error(`Failed to fetch unique indexes for table ${table}: ${uniqueIndexesResult.error ?? "unknown error"}`);
             }
         
             const uniqueIndexes = (uniqueIndexesResult.results || [])

@@ -126,7 +126,7 @@ export class AutoSQLStreamHandle {
                 const createQ = buildCreateStreamStagingTableQuery(this.stagingTable, this.columns, config);
                 const createResult = await this.db.runTransaction([createQ]);
                 if (!createResult.success) {
-                    throw new Error(`autoSQLStream: failed to create stream staging table '${this.stagingTable}': ${createResult.error}`);
+                    throw new Error(`autoSQLStream: failed to create stream staging table '${this.stagingTable}': ${createResult.error ?? "unknown error"}`);
                 }
                 this.stagingCreated = true;
             }
@@ -149,7 +149,7 @@ export class AutoSQLStreamHandle {
                     const alterQ = buildAddStreamStagingColumnsQuery(this.stagingTable, unknown, config);
                     const alterResult = await this.db.runTransaction([alterQ]);
                     if (!alterResult.success) {
-                        throw new Error(`autoSQLStream: failed to widen staging table '${this.stagingTable}' with new column(s) ${unknown.join(', ')}: ${alterResult.error}`);
+                        throw new Error(`autoSQLStream: failed to widen staging table '${this.stagingTable}' with new column(s) ${unknown.join(', ')}: ${alterResult.error ?? "unknown error"}`);
                     }
                     for (const k of unknown) { this.columns!.push(k); this.columnSet!.add(k); }
                     this.widenedColumns.push(...unknown);
@@ -174,7 +174,7 @@ export class AutoSQLStreamHandle {
                 const insertQ = buildInsertIntoStreamStagingQuery(this.stagingTable, this.columns!, sub, config, cursor);
                 const insertResult = await this.db.runTransaction([insertQ]);
                 if (!insertResult.success) {
-                    throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error}`);
+                    throw new Error(`autoSQLStream: failed to write chunk to staging table '${this.stagingTable}': ${insertResult.error ?? "unknown error"}`);
                 }
             }
         });
@@ -207,7 +207,7 @@ export class AutoSQLStreamHandle {
             const selectQ = buildSelectFromStreamStagingQuery(this.stagingTable, config);
             const selectResult = await this.db.runQuery(selectQ);
             if (!selectResult.success || !selectResult.results) {
-                throw new Error(`autoSQLStream: failed to read staging data: ${selectResult.error}`);
+                throw new Error(`autoSQLStream: failed to read staging data: ${selectResult.error ?? "unknown error"}`);
             }
             // Dedup BEFORE inference, not just at merge: a resumed run's re-sent page makes a key
             // appear twice in staging, and inference reading that infers a composite key instead

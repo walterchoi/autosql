@@ -142,7 +142,7 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
 
         return currentType;
     } catch (error) {
-        throw new Error(`Error in predictType: ${error}`);
+        throw new Error(`Error in predictType: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 

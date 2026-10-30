@@ -128,7 +128,7 @@ export abstract class Database {
     // When `client` is provided the query runs on that pinned connection and the connection is
     // NOT released here (the transaction owner manages its lifecycle). Without a client, a
     // throwaway pool connection is acquired and released per call (standalone queries).
-    protected abstract executeQuery(queryOrParams: QueryInput, client?: any): Promise<any>;
+    protected abstract executeQuery(queryOrParams: QueryInput, client?: any): Promise<{ rows: any[]; affectedRows: number }>;
     // Acquire/release a single pooled connection so a transaction can run all of its
     // statements (START/…/COMMIT/ROLLBACK) on the same connection.
     protected abstract acquireConnection(): Promise<any>;
@@ -151,7 +151,7 @@ export abstract class Database {
                 await this.establishDatabaseConnection();
                 return;
             } catch (error: any) {
-                this.error(`Database connection attempt ${attempts + 1} failed: ${error.message}`);
+                this.error(`Database connection attempt ${attempts + 1} failed: ${error instanceof Error ? error.message : String(error)}`);
 
                 // Close any SSH tunnel opened on this attempt so a retry/final-throw doesn't leak an
                 // SSH connection per failed attempt.
@@ -182,7 +182,7 @@ export abstract class Database {
             const result = await this.runQuery({ query: "SELECT 1 AS solution;"});
             return !!result;
         } catch (error) {
-            this.error(`Test connection failed: ${error}`);
+            this.error(`Test connection failed: ${error instanceof Error ? error.message : String(error)}`);
             return false;
         }
     }
@@ -195,7 +195,7 @@ export abstract class Database {
         // that the schema is absent. Masking as `false` would mislead a caller into re-creating an
         // existing schema or skipping one that exists — surface the failure instead of guessing.
         if (!result.success) {
-            throw new Error(`checkSchemaExists: could not determine schema existence — ${result.error}`);
+            throw new Error(`checkSchemaExists: could not determine schema existence — ${result.error ?? "unknown error"}`);
         }
 
         const resultsArray = result.results ?? [];
@@ -220,7 +220,7 @@ export abstract class Database {
         try {
             result = await this.runQuery(this.getCreateSchemaQuery(schemaName));
         } catch (error) {
-            throw new Error(`Failed to create schema "${schemaName}": ${error}`);
+            throw new Error(`Failed to create schema "${schemaName}": ${error instanceof Error ? error.message : String(error)}`);
         }
         // runQuery reports a SQL error as success:false rather than throwing.
         if (!result.success) {
@@ -402,13 +402,13 @@ export abstract class Database {
                     results
                 };
             } catch (error: any) {
-                this.error(`Transaction error (attempt ${attempt}/${maxAttempts}): ${error}`);
+                this.error(`Transaction error (attempt ${attempt}/${maxAttempts}): ${error instanceof Error ? error.message : String(error)}`);
                 if (client) {
                     try {
                         await this.rollback(client);
                     } catch (rollbackError) {
                         rollbackFailed = true;
-                        this.error(`Rollback failed: ${rollbackError}`);
+                        this.error(`Rollback failed: ${rollbackError instanceof Error ? rollbackError.message : String(rollbackError)}`);
                     }
                 }
 
@@ -508,7 +508,7 @@ export abstract class Database {
             const metaQuery = this.getTableMetaDataQuery(schema, table);
             const result = await this.runQuery(metaQuery);
             if (!result.success || !result.results) {
-                throw new Error(`Failed to fetch metadata: ${result.error}`);
+                throw new Error(`Failed to fetch metadata: ${result.error ?? "unknown error"}`);
             }
     
             const parsedMetadata = parseDatabaseMetaData(result.results, this.getDialectConfig());
@@ -520,7 +520,7 @@ export abstract class Database {
     
             throw new Error("Unexpected metadata format: Multiple tables returned for a single-table query.");
         } catch (error) {
-            this.error(`Error fetching table metadata: ${error}`);
+            this.error(`Error fetching table metadata: ${error instanceof Error ? error.message : String(error)}`);
             return null;
         }
     }

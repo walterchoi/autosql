@@ -94,7 +94,16 @@ const PROMOTED_RULES = {
     // truncation, which must match it) counts Unicode code points, not UTF-16 units — spreading a
     // string is exactly the mechanism for that, same reasoning no-require-imports's exceptions use.
     // Scoped inline exceptions at each site instead of disabling the rule outright.
-    "@typescript-eslint/no-misused-spread": "error"
+    "@typescript-eslint/no-misused-spread": "error",
+    // Numbers always stringify predictably (unlike `any`/`unknown`/nullish/boolean/RegExp, which the
+    // preset's defaults correctly keep disallowed) — most TS codebases allow them in template
+    // literals, and this repo's own log/error-message strings interpolate counts and lengths
+    // constantly. The remaining `string | undefined`/`unknown`/stray-`any` findings are real: fixed
+    // at each site instead of loosened here.
+    "@typescript-eslint/restrict-template-expressions": ["warn", {
+        allowAny: false, allowBoolean: false, allowNever: false,
+        allowNullish: false, allowNumber: true, allowRegExp: false
+    }]
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common
