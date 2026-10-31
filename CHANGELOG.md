@@ -173,8 +173,9 @@ hit: `testQuery`'s return type (public on every `Database.create()` instance); `
   string-matching the message. Found and reported by a peer session reading this code for an
   unrelated integration.
 - Continuing the lint rollout (2.8.0): `restrict-template-expressions`/`restrict-plus-operands`
-  dropped from 116 findings to 4 (the 4 remaining overlap the deferred `no-explicit-any` work and
-  stay `warn`). `src/` now allows `number` in template literals (numbers always stringify
+  dropped from 116 findings to 4 (the 4 remaining overlap the deferred `no-explicit-any` work, so
+  both rules stayed at `warn` until that initiative finished — see below, where they're promoted
+  to `error`). `src/` now allows `number` in template literals (numbers always stringify
   predictably; `any`/`unknown`/nullish/boolean/RegExp stay disallowed) — a config change, not a
   loosening of the rules that actually catch bugs.
   - **Error-message wording changed** at ~25 call sites: a bare `${error}` interpolation (which
@@ -212,6 +213,18 @@ hit: `testQuery`'s return type (public on every `Database.create()` instance); `
     Previously this reached a raw `TypeError` from `Object.keys(undefined)` further down the same
     call. Omitting `data` is unchanged — still the existing `No data provided for insert into table
     "…"` message, just thrown one function earlier.
+- **`no-explicit-any` initiative COMPLETE.** Every one of the original ~214 findings across `src/`
+  got real type-design work — concrete types where one already existed (mysql2/pg/ssh2's own
+  types, or this repo's own `ColumnDefinition`), `unknown` + narrowing wherever a value is
+  genuinely arbitrary, and exactly 6 documented `eslint-disable-next-line` exceptions for shapes
+  with no TypeScript types available at all (see `DataRow` in `src/config/types.ts`, `copyFrom` in
+  `pgsql.ts`, `MssqlDriver` and the 3 TLS-options locals in `sqlserver.ts`). Several real bugs were
+  found and fixed along the way (see the "misc helpers" and worker-IPC entries above for the
+  specifics), not just type-checking noise. `@typescript-eslint/no-explicit-any` promoted to
+  `error` for `src/`; `restrict-template-expressions` and `restrict-plus-operands` (left at `warn`
+  above pending this) promoted to `error` too, now that their last shared findings are gone.
+  All public/exported signature changes are listed in the Breaking (types) section at the top of
+  this file — **next release is 3.0.0.**
 
 ## [2.8.0] - 2026-10-25
 

@@ -38,9 +38,13 @@ const PROMOTED_RULES = {
     // have provided (insertBuilderShared's string-table branch, rejectedRowsTable wherever it feeds
     // SQL rather than just a log line).
     "@typescript-eslint/no-non-null-assertion": "error",
-    // Deferred deliberately: 240 existing call sites need real type design, not a mechanical
-    // fix. Tracked as its own follow-up initiative, not promoted alongside everything else here.
-    "@typescript-eslint/no-explicit-any": "warn",
+    // Every one of the original ~214 findings got real type-design work (not a mechanical
+    // suppression): concrete types where one exists (mysql2/pg/ssh2's own, or this repo's own
+    // ColumnDefinition/DataRow), `unknown` + narrowing everywhere a value is genuinely arbitrary,
+    // and exactly 6 documented `eslint-disable-next-line` exceptions for shapes with no TS types
+    // at all (DataRow's row data, pg-copy-streams, mssql's driver surface, mssql's TLS options).
+    // 3.0.0-breaking signature narrowings are tracked in CHANGELOG's "Breaking (types)" list.
+    "@typescript-eslint/no-explicit-any": "error",
     // Both fight a deliberate pattern rather than finding a real bug, so kept at error with
     // scoped inline exceptions at each site instead of disabled outright:
     // - no-extraneous-class: the 9 query-builder "class { static ... }" shapes and
@@ -117,10 +121,15 @@ const PROMOTED_RULES = {
     // literals, and this repo's own log/error-message strings interpolate counts and lengths
     // constantly. The remaining `string | undefined`/`unknown`/stray-`any` findings are real: fixed
     // at each site instead of loosened here.
-    "@typescript-eslint/restrict-template-expressions": ["warn", {
+    "@typescript-eslint/restrict-template-expressions": ["error", {
         allowAny: false, allowBoolean: false, allowNever: false,
         allowNullish: false, allowNumber: true, allowRegExp: false
-    }]
+    }],
+    // The 4 findings shared with no-explicit-any (utilities.ts, worker.ts) are gone now that
+    // initiative is done. Bare severity string (see STRICT_TYPE_CHECKED_AT_WARN below): keeps the
+    // preset's own strict-type-checked options (allowAny/allowBoolean/allowNullish/
+    // allowNumberAndString/allowRegExp all false) rather than restating them here.
+    "@typescript-eslint/restrict-plus-operands": "error"
 };
 
 // src/ adopts strict-type-checked wholesale rather than hand-picking rules (the more common
