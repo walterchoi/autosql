@@ -97,6 +97,30 @@ hit: `testQuery`'s return type (public on every `Database.create()` instance); `
   unexpected object, same as before) is being deliberately preserved — not a fix**. Where an
   unexpected object actually corrupting data mattered (`escapeCopyValue`/`sqlServerBulkCoerce`,
   Group B), the real fix was narrowing the type and throwing instead.
+- `no-explicit-any` Group D (worker IPC — `worker.ts`/`workerPool.ts`/`workerHelper.ts`, none of
+  which are public): one shared pair of types (new file `workers/workerTypes.ts`) used at both ends
+  of the `worker_threads` message channel instead of narrowing each end separately —
+  `WorkerTaskMessage` (parent → worker) and `WorkerTaskResult` (worker → parent, the outcome of an
+  actual task) plus `WorkerResultMessage` (`WorkerTaskResult` or the `__closeConnection__` shutdown
+  ack — only the raw `worker.on("message", ...)` handler, which filters the ack out immediately,
+  needs the wider type). `WorkerPool`'s `dbConfig` is now `Partial<DatabaseConfig>` (it only reads
+  `workerTaskTimeout`/`maxWorkers` itself; full validation happens downstream in the worker
+  thread's own `Database.create()`). **Minor additive normalization**: `worker.ts`'s `errorCode`
+  now comes from the same `driverErrorCode()` helper as everywhere else instead of a local
+  `String(error.code)` — an empty-string code now normalizes to `undefined` (was `""`), and a
+  non-string/non-number code is dropped instead of blindly stringified. The `"test"` debug method's
+  echoed value changed from template-literal interpolation to `String(params)` — identical output
+  for the primitives this test-only method is ever called with. **3 test files needed real
+  narrowing, not casts back to `any`** — `tests/worker-pool.test.ts`/`worker-config-clone.test.ts`
+  were reading `.result`/`.error` off the IPC result without checking `.success` first, previously
+  masked by `any`; fixed with an explicit `if (!result.success) ...`/`if (result.success) ...`
+  guard before each access, same discriminated-union check a real consumer would now need to write.
+  One fixture (`sshClient: {}`) needed an explicit cast — `stripNonCloneable`'s own `any` parameter
+  type had been masking a pre-existing gap (the field was already properly typed `Client`/
+  `ClientChannel`, nothing new there). **Found and fixed along the way**: `worker.on("error", ...)`'s
+  `err` was implicitly `any` — confirmed in `@types/node` itself (`worker_threads.d.ts` types this
+  listener as `(err: any) => void`, not `Error`, even though Node always passes a real `Error`
+  here) — annotated explicitly rather than inheriting it.
 - **Fixed: `AutoSQLStreamHandle.end()`'s docblock contradicted its actual behavior** — it claimed
   "Rejects on failure and must be awaited," but every failure path there is caught and resolves to
   `{success: false, error, errorCode}` instead (same never-rejects contract as

@@ -1,10 +1,15 @@
 import { Worker } from "worker_threads";
 import { resolve } from "path";
 import { existsSync } from "fs";
+import type { DatabaseConfig } from "../config/types";
+import type { WorkerResultMessage, WorkerTaskMessage, WorkerTaskResult } from "./workerTypes";
 
 // workerData is a structured clone, which can't carry functions/live handles — strip logger/
 // sshClient/sshStream (A8) or spawning throws DataCloneError. The worker re-derives from `sshConfig`.
-export function stripNonCloneable(config: any): any {
+// `Partial`: WorkerPool itself only reads workerTaskTimeout/maxWorkers — the full config is only
+// validated downstream, by the worker thread's own Database.create()/validateConfig.
+export function stripNonCloneable(config: Partial<DatabaseConfig>): Partial<DatabaseConfig> {
+  // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exported; a plain-JS caller can pass null/undefined despite the TS type, and this returns it unchanged instead of throwing on the destructure below.
   if (!config || typeof config !== "object") return config;
   const { logger, sshClient, sshStream, ...cloneable } = config;
   return cloneable;
@@ -12,12 +17,12 @@ export function stripNonCloneable(config: any): any {
 
 interface QueuedTask {
   method: string;
-  params: any;
-  resolve: (value: any) => void;
+  params: unknown;
+  resolve: (value: WorkerTaskResult) => void;
 }
 
 interface PendingEntry {
-  resolve: (value: any) => void;
+  resolve: (value: WorkerTaskResult) => void;
   timer?: NodeJS.Timeout;
 }
 
@@ -29,18 +34,18 @@ class WorkerPool {
   private workerFile: string;
   private taskTimeoutMs: number;
   private closed = false;
-  private dbConfig: any;
+  private dbConfig: Partial<DatabaseConfig>;
 
   // `workerFile` override is test-only (points at a crash fixture); production resolves the
   // compiled worker next to this module.
-  constructor(size: number, dbConfig: any, workerFile?: string) {
+  constructor(size: number, dbConfig: Partial<DatabaseConfig>, workerFile?: string) {
     // Sanitise ONCE up front so every spawned worker gets a cloneable config (A8).
     this.dbConfig = stripNonCloneable(dbConfig);
     this.workerFile = workerFile ?? resolve(__dirname, "worker.js");
 
     // Per-task timeout (SECONDS -> ms), 0/undefined disables. Only guards an alive-but-wedged
     // worker — 'error'/'exit' already catch worker death — so off by default.
-    const timeoutSec = Number(this.dbConfig?.workerTaskTimeout) || 0;
+    const timeoutSec = Number(this.dbConfig.workerTaskTimeout) || 0;
     this.taskTimeoutMs = timeoutSec > 0 ? timeoutSec * 1000 : 0;
 
     if (!existsSync(this.workerFile)) {
@@ -60,16 +65,18 @@ class WorkerPool {
       workerData: { dbConfig: this.dbConfig }
     });
 
-    worker.on("message", (msg) => {
+    worker.on("message", (msg: WorkerResultMessage) => {
       // Ignore the graceful-shutdown ack — it's handled by gracefulTerminate, not a task result (A14).
-      if (msg && msg.__closed__) return;
+      if ("__closed__" in msg) return;
       this.settleWorker(worker, msg);
       this.assignNextTask(worker);
     });
 
-    worker.on("error", (err) => {
+    // @types/node types this listener's `err` as `any` (not `Error`) even though Node always
+    // passes a real Error here; annotated explicitly rather than inheriting that `any`.
+    worker.on("error", (err: Error) => {
       // Node emits 'exit' right after; failWorker is idempotent so that follow-up is a no-op.
-      this.failWorker(worker, err?.message || String(err));
+      this.failWorker(worker, err.message || String(err));
     });
 
     worker.on("exit", (code) => {
@@ -86,7 +93,7 @@ class WorkerPool {
   /**
    * Resolve a worker's in-flight task exactly once. Returns true if there was one to settle.
    */
-  private settleWorker(worker: Worker, value: any): boolean {
+  private settleWorker(worker: Worker, value: WorkerTaskResult): boolean {
     const entry = this.workerPending.get(worker);
     if (!entry) return false;
     this.workerPending.delete(worker);
@@ -144,7 +151,7 @@ class WorkerPool {
     }
   }
 
-  runTask(method: string, params: any): Promise<any> {
+  runTask(method: string, params: unknown): Promise<WorkerTaskResult> {
     return new Promise((resolve) => {
       // Every worker died: fail fast rather than queue a task nothing will pick up (the path
       // WorkerHelper hits dispatching the next task right after a crash settled the previous one).
@@ -188,11 +195,12 @@ class WorkerPool {
       };
       const timer = setTimeout(finish, graceMs);
       if (typeof timer.unref === "function") timer.unref();
-      worker.once("message", (msg: any) => {
-        if (msg && msg.__closed__) { clearTimeout(timer); finish(); }
+      worker.once("message", (msg: WorkerResultMessage) => {
+        if ("__closed__" in msg) { clearTimeout(timer); finish(); }
       });
       try {
-        worker.postMessage({ method: "__closeConnection__", params: [] });
+        const closeTask: WorkerTaskMessage = { method: "__closeConnection__", params: [] };
+        worker.postMessage(closeTask);
       } catch {
         finish();
       }

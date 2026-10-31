@@ -1,5 +1,6 @@
 import { resolve } from "path";
 import WorkerPool, { stripNonCloneable } from "../src/workers/workerPool";
+import type { DatabaseConfig } from "../src/config/types";
 
 const CRASH_WORKER = resolve(process.cwd(), "tests", "fixtures", "crashWorker.js");
 
@@ -8,9 +9,9 @@ const CRASH_WORKER = resolve(process.cwd(), "tests", "fixtures", "crashWorker.js
 // and crashed the default-on worker path. The pool now strips those fields before spawning.
 describe("worker config is cloneable (A8)", () => {
     test("stripNonCloneable removes functions/live handles, keeps everything else", () => {
-        const cfg = {
+        const cfg: Partial<DatabaseConfig> = {
             sqlDialect: "pgsql", host: "h", port: 5432, maxWorkers: 4,
-            logger: { warn: () => {} }, sshClient: {}, sshStream: {},
+            logger: { warn: () => {} }, sshClient: {} as DatabaseConfig["sshClient"], sshStream: {} as DatabaseConfig["sshStream"],
         };
         const s = stripNonCloneable(cfg);
         expect(s).toEqual({ sqlDialect: "pgsql", host: "h", port: 5432, maxWorkers: 4 });
@@ -25,6 +26,7 @@ describe("worker config is cloneable (A8)", () => {
         try {
             const r = await pool.runTask("ok", "hello");
             expect(r.success).toBe(true);
+            if (!r.success) throw new Error("unreachable: just asserted r.success");
             expect(r.result).toBe("hello");
         } finally {
             await pool.close();

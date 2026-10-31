@@ -30,8 +30,8 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
         5000,
         "healthy"
       );
-      expect(results.map((r: any) => r.success)).toEqual([true, true, true]);
-      expect(results.map((r: any) => r.result)).toEqual(["a", "b", "c"]);
+      expect(results.map((r) => r.success)).toEqual([true, true, true]);
+      expect(results.map((r) => (r.success ? r.result : undefined))).toEqual(["a", "b", "c"]);
     } finally {
       await pool.close();
     }
@@ -42,6 +42,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
     try {
       const result = await withDeadline(pool.runTask("crash", { id: 1 }), 5000, "single crash");
       expect(result.success).toBe(false);
+      if (result.success) throw new Error("unreachable: just asserted !result.success");
       expect(typeof result.error).toBe("string");
     } finally {
       await pool.close();
@@ -53,6 +54,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
     try {
       const result = await withDeadline(pool.runTask("throw", {}), 5000, "throw");
       expect(result.success).toBe(false);
+      if (result.success) throw new Error("unreachable: just asserted !result.success");
       expect(String(result.error)).toContain("boom");
     } finally {
       await pool.close();
@@ -74,7 +76,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
         "queued crash"
       );
       expect(results).toHaveLength(3);
-      expect(results.every((r: any) => r.success === false)).toBe(true);
+      expect(results.every((r) => r.success === false)).toBe(true);
     } finally {
       await pool.close();
     }
@@ -102,6 +104,7 @@ describe("WorkerPool — F4: a dead/wedged worker must never hang the pool", () 
     try {
       const result = await withDeadline(pool.runTask("hang", {}), 5000, "timeout");
       expect(result.success).toBe(false);
+      if (result.success) throw new Error("unreachable: just asserted !result.success");
       expect(String(result.error)).toMatch(/timed out/i);
     } finally {
       await pool.close();
