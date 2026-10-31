@@ -26,17 +26,20 @@ export interface ColumnDefinition {
   singleValue?: boolean;
   primary?: boolean;
   autoIncrement?: boolean;
-  default?: any;
+  // Matches renderColumnDefault's already-enforced contract (escape.ts): any other type throws
+  // there today, so this isn't a new restriction, just naming the existing one.
+  default?: string | number | bigint | boolean | null;
   /**
    * DDL default EXPRESSION from the catalog. Kept separate from `default`, which doubles as the
    * literal `getInsertValues` substitutes for a missing cell: binding a DDL expression as a row
    * value would store the expression text verbatim (A3).
    */
-  ddlDefault?: any;
+  ddlDefault?: string | null;
   decimal?: number;
   calculated?: boolean;
   updatedCalculated?: boolean;
-  calculatedDefault?: any;
+  // Same contract as `default` above (renderColumnDefault doesn't distinguish the two).
+  calculatedDefault?: string | number | bigint | boolean | null;
   previousType?: string;
   tableName?: string[];
 }
@@ -508,7 +511,7 @@ export interface QueryStats {
 
 export interface metaDataInterim {
   [key: string]: {
-    uniqueSet: Set<any>;
+    uniqueSet: Set<unknown>;
     uniqueSaturated: boolean;
     valueCount: number;
     nullCount: number;

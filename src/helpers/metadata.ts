@@ -11,8 +11,9 @@ import { MYSQL_CONFIG } from "../db/config/mysqlConfig";
 import { PGSQL_CONFIG } from "../db/config/pgsqlConfig";
 import { SQL_SERVER_CONFIG } from "../db/config/sqlServerConfig";
 
-// Kept as its own function, taking a bare `unknown` with no other narrowing in scope — see the
-// no-base-to-string note on its one call site below.
+// Verified (by a minimal repro before relying on this): excluding a case from `unknown` and then
+// calling String() in that SAME function scope trips no-base-to-string; calling String() inside a
+// SEPARATE function that takes a fresh `unknown` parameter, as here, does not.
 function stringifyUnknown(v: unknown): string {
     return String(v);
 }
@@ -141,7 +142,7 @@ function getDataHeadersSync(data: DataRow[], databaseConfig: DatabaseConfig): Me
     // lossy). Nullish is allowed and handled by the normal null path.
     const isBooleanDomainValue = (v: unknown): boolean => {
         if (v === '' || v === null || v === undefined || v === '\\N' || v === 'null') return true;
-        // stringifyUnknown (defined below) — a non-string/number/boolean `v` reaching here (e.g. an
+        // stringifyUnknown (defined above) — a non-string/number/boolean `v` reaching here (e.g. an
         // object) stringifies to something that never matches the list below anyway, correctly
         // falling through to "not a boolean domain value"; preserved as-is, not a new behavior.
         return ["0", "1", "true", "false"].includes(stringifyUnknown(v).trim().toLowerCase());
@@ -344,7 +345,7 @@ function getDataHeadersSync(data: DataRow[], databaseConfig: DatabaseConfig): Me
             for (const row of remainingData) {
                 const value = row[column];
                 if (isNullish(value)) continue;
-                let normalized: any;
+                let normalized: unknown;
                 if (forceStringSet.has(column)) {
                     normalized = String(value);
                 } else {

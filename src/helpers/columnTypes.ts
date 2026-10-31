@@ -1,9 +1,11 @@
 import { REGEX_PATTERNS } from "../config/regex";
 import { GROUPINGS } from "../config/groupings";
 import { normalizeNumber, setToArray } from "./utilities";
+import type { ColumnDefinition } from "../config/types";
 
-// stringifyUnknown takes a bare `unknown` with no other narrowing in scope — see the
-// no-base-to-string note on its call site below.
+// Verified (by a minimal repro before relying on this): excluding a case from `unknown` and then
+// calling String() in that SAME function scope trips no-base-to-string; calling String() inside a
+// SEPARATE function that takes a fresh `unknown` parameter, as here, does not.
 function stringifyUnknown(v: unknown): string {
     return String(v);
 }
@@ -286,7 +288,7 @@ export function collateTypes(typeSetOrArray: Set<string | null> | (string | null
     }
 }
 
-export function updateColumnType(column: any, dataPoint: string) {
+export function updateColumnType(column: ColumnDefinition, dataPoint: string) {
     const detectedType = predictType(dataPoint);
     if (!detectedType) {
         column.allowNull = true;

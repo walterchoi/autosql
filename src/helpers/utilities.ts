@@ -1,5 +1,5 @@
 import { DEFAULTS, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE, MAX_COLUMN_COUNT } from "../config/defaults";
-import type { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult, DataRow } from "../config/types";
+import type { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult, DataRow, ColumnDefinition } from "../config/types";
 import { GROUPINGS } from "../config/groupings";
 import crypto from 'crypto';
 export function isObject(val: unknown): boolean {
@@ -156,8 +156,8 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
     }
 }
 
-export function calculateColumnLength(column: any, dataPoint: string, sqlLookupTable: any) {
-    if (sqlLookupTable.decimals.includes(column.type)) {
+export function calculateColumnLength(column: ColumnDefinition, dataPoint: string, sqlLookupTable: { decimals: string[]; decimals_max_length?: number }) {
+    if (column.type !== null && sqlLookupTable.decimals.includes(column.type)) {
         column.decimal = column.decimal ?? 0;
 
         const decimalLen = dataPoint.includes(".") ? dataPoint.split(".")[1].length + 1 : 0;
@@ -165,9 +165,12 @@ export function calculateColumnLength(column: any, dataPoint: string, sqlLookupT
         column.decimal = Math.min(column.decimal, sqlLookupTable.decimals_max_length || 10);
 
         const integerLen = dataPoint.split(".")[0].length;
-        column.length = Math.max(column.length, integerLen + column.decimal + 3);
+        // `?? 0`: column.length is optional — without this, Math.max(undefined, x) was silently
+        // producing NaN for a fresh column that had no length set yet (a pre-existing bug `any`
+        // hid; found while giving this function a real type).
+        column.length = Math.max(column.length ?? 0, integerLen + column.decimal + 3);
     } else {
-        column.length = Math.max(column.length, dataPoint.length);
+        column.length = Math.max(column.length ?? 0, dataPoint.length);
     }
 }
 

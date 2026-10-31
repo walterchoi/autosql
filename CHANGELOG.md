@@ -28,6 +28,19 @@ any that do) — they can only break a consumer's own TypeScript build against t
 - `parseDatabaseMetaData` (internal, `internals.ts`): `rows` parameter `any[]` → `DataRow[]` (a
   concrete narrowing, not a move to `unknown` — reading `rows[i]` already assumed row objects).
 
+- `calculateColumnLength` (internal, `internals.ts`): `column: any` → `column: ColumnDefinition`;
+  `sqlLookupTable: any` → a structural `{ decimals: string[]; decimals_max_length?: number }` (not
+  `DialectConfig` — the real field is `maxDecimalScale`, and switching to it would change the
+  decimal cap this function hard-codes at `10` for every dialect; kept exactly as it was).
+- `updateColumnType` (internal, not re-exported anywhere — `columnTypes.ts` only): `column: any` →
+  `column: ColumnDefinition`.
+- `ColumnDefinition.default`/`calculatedDefault` (public — every `ColumnDefinition` a consumer
+  reads or writes via `assumeSchema`/`existingSchema`): `any` → `string | number | bigint | boolean
+  | null`. Matches `renderColumnDefault`'s already-enforced contract (it throws today for any other
+  type), so this isn't a new restriction — just naming the one that already exists.
+- `ColumnDefinition.ddlDefault` (public): `any` → `string | null`. Written once, from a DB catalog
+  query's `column_default`, and never read by autosql itself — purely informational for a consumer.
+
 `client`/`rows` input-position narrowings (`executeQuery`, `releaseConnection`, `destroyConnection`,
 `startTransaction`/`commit`/`rollback`, `bulkLoadRows`, and passing a `params` array in) don't break
 any caller — anything assignable to `any` is also assignable to `unknown`. `connection`/
@@ -135,6 +148,21 @@ hit: `testQuery`'s return type (public on every `Database.create()` instance); `
   `predictType` had a redundant `data !== null` check — `data === null` was already excluded by an
   earlier `return null` at the top of the function, so the second check could never be true
   (confirmed by `tsc`, not just the lint rule) — removed.
+- `no-explicit-any` misc helpers, batch 2 (concrete narrowings — see the Breaking (types) section
+  above for the exact signatures): `calculateColumnLength`/`updateColumnType` (internal helpers,
+  dead internally — no production call sites, reachable only via `internals.ts`/their own module
+  export) narrowed `column`/`sqlLookupTable` to real types. `ColumnDefinition.default`/
+  `calculatedDefault`/`ddlDefault` narrowed from `any`, and `metaDataInterim.uniqueSet` (internal,
+  not re-exported) from `Set<any>` to `Set<unknown>`. `metadata.ts`'s `let normalized: any` (local)
+  → `unknown`. `schemaHistory.ts`'s `(val as any)[k]` → `(val as Record<string, unknown>)[k]`.
+  `ssh.ts`'s `sshConfig: any` → the real `ssh2.ConnectConfig` type (`ssh2`'s types were already
+  imported in this file for `Client`/`ClientChannel`). **Found and fixed along the way**:
+  `calculateColumnLength` read `column.length` directly in two `Math.max(column.length, ...)`
+  calls with no fallback — since `ColumnDefinition.length` is optional, a fresh column with no
+  length set yet made this silently produce and store `NaN`, a pre-existing bug `any` was hiding
+  (the sibling `column.decimal` read 3 lines above already had the `?? 0` guard this was missing).
+  Added the matching guard; this is the only real behavior change in this batch — everything else
+  is a pure type narrowing.
 - **Fixed: `AutoSQLStreamHandle.end()`'s docblock contradicted its actual behavior** — it claimed
   "Rejects on failure and must be awaited," but every failure path there is caught and resolves to
   `{success: false, error, errorCode}` instead (same never-rejects contract as

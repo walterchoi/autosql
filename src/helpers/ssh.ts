@@ -45,7 +45,7 @@ export async function setSSH(sshKeys: SSHKeys, logger?: DatabaseConfig["logger"]
 
   const warn = logger?.warn ?? ((m: string) => { console.warn(m); });
 
-  const sshConfig: any = {
+  const sshConfig: ssh2.ConnectConfig = {
     host: sshKeys.host,
     port: sshKeys.port,
     username: sshKeys.username,
