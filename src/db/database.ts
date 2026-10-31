@@ -26,7 +26,7 @@ export function driverErrorCode(err: unknown): string | undefined {
 }
 
 export abstract class Database {
-    protected connection: any = null;
+    protected connection: unknown = null;
     protected config: DatabaseConfig;
     public autoSQLHandler!: AutoSQLHandler;
     protected abstract getPermanentErrors(): Promise<string[]>;
@@ -136,18 +136,18 @@ export abstract class Database {
     public abstract getDialectConfig(): DialectConfig;
 
     public abstract establishDatabaseConnection(): Promise<void>;
-    public abstract testQuery(queryOrParams: QueryInput): Promise<any>;
+    public abstract testQuery(queryOrParams: QueryInput): Promise<{ success: true }>;
     // When `client` is provided the query runs on that pinned connection and the connection is
     // NOT released here (the transaction owner manages its lifecycle). Without a client, a
     // throwaway pool connection is acquired and released per call (standalone queries).
-    protected abstract executeQuery(queryOrParams: QueryInput, client?: any): Promise<{ rows: any[]; affectedRows: number }>;
+    protected abstract executeQuery(queryOrParams: QueryInput, client?: unknown): Promise<{ rows: DataRow[]; affectedRows: number }>;
     // Acquire/release a single pooled connection so a transaction can run all of its
     // statements (START/…/COMMIT/ROLLBACK) on the same connection.
-    protected abstract acquireConnection(): Promise<any>;
-    protected abstract releaseConnection(client: any): void;
+    protected abstract acquireConnection(): Promise<unknown>;
+    protected abstract releaseConnection(client: unknown): void;
     // Discard a connection instead of returning it to the pool — used when a ROLLBACK failed, so the
     // next borrower isn't handed a connection stuck in an aborted-transaction state (A24).
-    protected abstract destroyConnection(client: any): void;
+    protected abstract destroyConnection(client: unknown): void;
 
     public async establishConnection(): Promise<void> {
         let attempts = 0;
@@ -273,17 +273,17 @@ export abstract class Database {
 
     // Require a pinned connection — a transaction spread across throwaway pool connections isn't
     // atomic. Call runTransaction for atomic multi-statement work rather than these directly.
-    public async startTransaction(client: any): Promise<void> {
+    public async startTransaction(client: unknown): Promise<void> {
         if (!client) throw new Error("startTransaction requires a pinned connection; use runTransaction() for atomic transactions.");
         await this.executeQuery("START TRANSACTION;", client);
     }
 
-    public async commit(client: any): Promise<void> {
+    public async commit(client: unknown): Promise<void> {
         if (!client) throw new Error("commit requires a pinned connection; use runTransaction().");
         await this.executeQuery("COMMIT;", client);
     }
 
-    public async rollback(client: any): Promise<void> {
+    public async rollback(client: unknown): Promise<void> {
         if (!client) throw new Error("rollback requires a pinned connection; use runTransaction().");
         await this.executeQuery("ROLLBACK;", client);
     }
@@ -292,8 +292,9 @@ export abstract class Database {
         if (!this.connection)  return { success: true };
 
         try {
-            if ("end" in this.connection) {
-                await this.connection.end(); // only MySQL/PostgreSQL expose this
+            const conn = this.connection as { end?: () => Promise<void> } | null;
+            if (typeof conn?.end === "function") {
+                await conn.end(); // only MySQL/PostgreSQL expose this
             }
             if (this.config.sshClient) {
                 this.config.sshClient.end();
@@ -388,9 +389,9 @@ export abstract class Database {
         const maxAttempts = containsDDL ? 1 : MAX_QUERY_ATTEMPTS;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-            let client: any;
+            let client: unknown;
             let rollbackFailed = false;
-            let results: any[] = [];
+            let results: DataRow[] = [];
             let totalAffectedRows = 0;
             try {
                 // Acquire INSIDE the try: pool exhaustion, an acquire timeout, or a connection
@@ -613,7 +614,7 @@ export abstract class Database {
      * ordered list each row's values align to. Throws on failure so the caller can fall back to
      * parameterised INSERT.
      */
-    public abstract bulkLoadRows(table: string, columns: string[], rows: any[][], header?: MetadataHeader): Promise<QueryResult>;
+    public abstract bulkLoadRows(table: string, columns: string[], rows: unknown[][], header?: MetadataHeader): Promise<QueryResult>;
 
     /**
      * Acquire a database-native advisory lock scoped to the given table (MySQL `GET_LOCK` on a

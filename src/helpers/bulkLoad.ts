@@ -6,9 +6,12 @@
  */
 
 /** Escape one already-sqlized value for the COPY / LOAD DATA text format. */
-export function escapeCopyValue(value: any): string {
+export function escapeCopyValue(value: unknown): string {
     if (value === null || value === undefined) return "\\N";
-    const s = typeof value === "string" ? value : String(value);
+    let s: string;
+    if (typeof value === "string") s = value;
+    else if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") s = String(value);
+    else throw new Error(`escapeCopyValue: unsupported value type "${typeof value}" for bulk load — values must already be sqlized to a string/number/boolean/bigint/null.`);
     return s
         .replace(/\\/g, "\\\\")
         .replace(/\t/g, "\\t")
@@ -17,7 +20,7 @@ export function escapeCopyValue(value: any): string {
 }
 
 /** Serialize rows (arrays of sqlized values, aligned to the column list) into the load body. */
-export function serializeRowsToCopyText(rows: any[][]): string {
+export function serializeRowsToCopyText(rows: unknown[][]): string {
     let out = "";
     for (const row of rows) {
         for (let i = 0; i < row.length; i++) {

@@ -15,9 +15,17 @@ import { SchemaLockTimeoutError } from "../errors";
 
 const DIALECT_CONFIG = SQL_SERVER_CONFIG;
 
+// mssql ships no TypeScript types at all (no "types"/"typings" field, no .d.ts, no @types/mssql
+// package) — same "optional peer dependency, lazily require()'d" reasoning as the
+// no-require-imports exceptions for this driver, just one level up: there's nothing to import even
+// as a type. Used for the module namespace, connection/transaction/request objects it hands back,
+// and anything else that's genuinely the mssql driver's own untypeable shape.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MssqlDriver = any;
+
 // Map an autosql local column type to the mssql bulk-copy type object (used to build the typed sql.Table
 // for request.bulk). `sql` is the mssql module. Anything unrecognised → NVARCHAR(MAX) (staging is text).
-function sqlServerBulkType(sql: any, meta: ColumnDefinition): any {
+function sqlServerBulkType(sql: MssqlDriver, meta: ColumnDefinition): MssqlDriver {
     const t = (meta.type || "").toLowerCase();
     const len = typeof meta.length === "number" ? meta.length : undefined;
     const dec = typeof meta.decimal === "number" ? meta.decimal : undefined;
@@ -36,10 +44,24 @@ function sqlServerBulkType(sql: any, meta: ColumnDefinition): any {
     }
 }
 
+// Already-sqlized values are expected to be a primitive; stringifying anything else (an object
+// reaching here would mean sqlize let something through it shouldn't have) is a real bug, not a
+// false positive — kept as its own function (not inlined) so the String() calls below are safe.
+function stringifyScalar(v: string | number | boolean | bigint): string {
+    return String(v);
+}
+
 // Coerce a (possibly sqlized-string) value to the JS type the mssql bulk API expects for `meta`. On any
 // mismatch it returns null / a value the driver rejects → the whole bulk throws → INSERT fallback.
-function sqlServerBulkCoerce(v: any, meta: ColumnDefinition): any {
+function sqlServerBulkCoerce(v: unknown, meta: ColumnDefinition): number | boolean | Date | string | null {
     if (v === null || v === undefined) return null;
+    if (v instanceof Date) {
+        const t = (meta.type || "").toLowerCase();
+        return ["date", "time", "datetime", "timestamp", "datetimetz", "datetimeoffset"].includes(t) ? v : v.toISOString();
+    }
+    if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") {
+        throw new Error(`sqlServerBulkCoerce: unsupported value type "${typeof v}" — values must already be sqlized to a string/number/boolean/Date.`);
+    }
     const t = (meta.type || "").toLowerCase();
     if (["int", "integer", "mediumint", "bigint", "smallint", "tinyint", "float", "double", "decimal"].includes(t)) {
         if (v === "") return null;
@@ -48,15 +70,14 @@ function sqlServerBulkCoerce(v: any, meta: ColumnDefinition): any {
     }
     if (t === "boolean") {
         if (v === "") return null;
-        return v === true || v === 1 || v === "1" || String(v).toLowerCase() === "true";
+        return v === true || v === 1 || v === "1" || stringifyScalar(v).toLowerCase() === "true";
     }
     if (["date", "time", "datetime", "timestamp", "datetimetz", "datetimeoffset"].includes(t)) {
-        if (v === "") return null;
-        if (v instanceof Date) return v;
+        if (v === "" || typeof v === "boolean") return null;
         const d = new Date(v);
         return isNaN(d.getTime()) ? null : d;
     }
-    return String(v);
+    return stringifyScalar(v);
 }
 
 /**
@@ -68,8 +89,13 @@ function sqlServerBulkCoerce(v: any, meta: ColumnDefinition): any {
  * Parameters are named `@p0, @p1, ...` (zero-indexed, params-array order), matching the builders.
  */
 export class SqlServerDatabase extends Database {
-    private sql: any;
-    private schemaLockTx: Map<string, any> = new Map();
+    // `declare` — no field is actually emitted here (the base class's constructor already sets
+    // `connection`); this only narrows the TYPE this subclass sees it as, back from the base's
+    // `unknown` to the (untypeable) mssql driver shape, so the many uncasted `this.connection.*`
+    // accesses below keep compiling.
+    protected declare connection: MssqlDriver;
+    private sql: MssqlDriver;
+    private schemaLockTx: Map<string, MssqlDriver> = new Map();
 
     constructor(config: DatabaseConfig) {
         super(config);
@@ -163,7 +189,7 @@ export class SqlServerDatabase extends Database {
         }
     }
 
-    public async bulkLoadRows(table: string, columns: string[], rows: any[][], header?: MetadataHeader): Promise<QueryResult> {
+    public async bulkLoadRows(table: string, columns: string[], rows: unknown[][], header?: MetadataHeader): Promise<QueryResult> {
         // TDS bulk-copy via mssql's `request.bulk` — same wire path as BULK INSERT, no server-side
         // file. Any failure here throws; bulkLoadStaging catches it and falls back to INSERT (spec-4 §3.5).
         const start = new Date();
@@ -192,32 +218,32 @@ export class SqlServerDatabase extends Database {
 
     // ---- Transaction hooks (mssql Transaction API) ----
 
-    protected async acquireConnection(): Promise<any> {
+    protected async acquireConnection(): Promise<MssqlDriver> {
         if (!this.connection) await this.establishConnection();
         // A not-yet-begun transaction. startTransaction() begins it; executeQuery binds requests to it.
         return new this.sql.Transaction(this.connection);
     }
 
-    protected releaseConnection(_client: any): void {
+    protected releaseConnection(_client: MssqlDriver): void {
         // mssql releases the underlying pooled connection on commit()/rollback(); nothing to do.
     }
 
-    protected destroyConnection(_client: any): void {
+    protected destroyConnection(_client: MssqlDriver): void {
         // mssql transactions release their pooled connection on settle; there is no per-client handle to
         // destroy (A24). No-op — the pool manages connection health.
     }
 
-    public async startTransaction(client: any): Promise<void> {
+    public async startTransaction(client: MssqlDriver): Promise<void> {
         if (!client) throw new Error("startTransaction requires a pinned connection; use runTransaction().");
         await client.begin();
     }
 
-    public async commit(client: any): Promise<void> {
+    public async commit(client: MssqlDriver): Promise<void> {
         if (!client) throw new Error("commit requires a pinned connection; use runTransaction().");
         await client.commit();
     }
 
-    public async rollback(client: any): Promise<void> {
+    public async rollback(client: MssqlDriver): Promise<void> {
         if (!client) throw new Error("rollback requires a pinned connection; use runTransaction().");
         await client.rollback();
     }
@@ -230,7 +256,7 @@ export class SqlServerDatabase extends Database {
         return Promise.resolve(SQL_SERVER_PERMANENT_ERRORS);
     }
 
-    async testQuery(queryOrParams: QueryInput): Promise<any> {
+    async testQuery(queryOrParams: QueryInput): Promise<{ success: true }> {
         const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
         if (!isValidSingleQuery(query)) {
             throw new Error("Each query in the transaction must be a single statement.");
@@ -250,16 +276,14 @@ export class SqlServerDatabase extends Database {
 
     /** mssql surfaces the real error number on err.number; map it to err.code so the retry logic
      *  (which matches on error.code against getPermanentErrors) works. */
-    private normalizeError(error: any): any {
-        if (error && error.number !== undefined && error.code === undefined) {
-            try { error.code = String(error.number); } catch { /* frozen error; ignore */ }
-        } else if (error && error.number !== undefined) {
-            try { error.code = String(error.number); } catch { /* ignore */ }
+    private normalizeError(error: unknown): unknown {
+        if (typeof error === "object" && error !== null && "number" in error && error.number !== undefined) {
+            try { (error as { code?: string }).code = stringifyScalar(error.number as number); } catch { /* frozen error; ignore */ }
         }
         return error;
     }
 
-    protected async executeQuery(queryOrParams: QueryInput, client?: any): Promise<{ rows: any[]; affectedRows: number }> {
+    protected async executeQuery(queryOrParams: QueryInput, client?: MssqlDriver): Promise<{ rows: DataRow[]; affectedRows: number }> {
         if (!this.connection) await this.establishConnection();
 
         const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
@@ -267,7 +291,7 @@ export class SqlServerDatabase extends Database {
 
         // Bind to the pinned transaction when running inside runTransaction; otherwise a pool request.
         const request = client ? new this.sql.Request(client) : this.connection.request();
-        params.forEach((value: any, i: number) => request.input(`p${i}`, value));
+        params.forEach((value: unknown, i: number) => request.input(`p${i}`, value));
 
         try {
             // .batch() supports multi-statement T-SQL (needed for the guarded CREATE/DDL blocks and

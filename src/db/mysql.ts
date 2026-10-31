@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { Readable } from "stream";
-import type { ResultSetHeader, FieldPacket, PoolConnection, Pool } from "mysql2/promise";
+import type { ResultSetHeader, FieldPacket, PoolConnection, Pool, RowDataPacket } from "mysql2/promise";
+import type * as mysql2 from "mysql2/promise";
 import { Database } from "./database";
 import { MYSQL_PERMANENT_ERRORS } from './permanentErrors/mysql';
 import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, InsertInput, QueryResult, DataRow } from "../config/types";
@@ -28,7 +29,7 @@ export class MySQLDatabase extends Database {
     establishDatabaseConnection(): Promise<void> {
         // Synchronous, but wrapped so a throw here rejects like every other dialect's implementation.
         try {
-            let mysql: any;
+            let mysql: typeof mysql2;
             try {
                 // Lazy require, not a static import: mysql2 is an OPTIONAL peer dependency — a static
                 // import would force every consumer to install all three drivers.
@@ -86,13 +87,13 @@ export class MySQLDatabase extends Database {
 
     public getMaxConnections(): number {
         // mysql2's promise wrapper keeps the pool config on the underlying `.pool` (not `.config`).
-        const conn = this.connection;
-        return conn?.pool?.config?.connectionLimit ?? conn?.config?.connectionLimit ?? 5;
+        const conn = this.connection as Pool | null;
+        return conn?.pool.config.connectionLimit ?? conn?.config.connectionLimit ?? 5;
     }
 
     protected getHeldSchemaLockCount(): number { return this.schemaLockConnections.size; }
 
-    public async bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult> {
+    public async bulkLoadRows(table: string, columns: string[], rows: unknown[][]): Promise<QueryResult> {
         const start = new Date();
         if (!this.connection) await this.establishConnection();
         if (rows.length === 0) {
@@ -110,7 +111,13 @@ export class MySQLDatabase extends Database {
                 `LOAD DATA LOCAL INFILE 'autosql-bulk' INTO TABLE ${schemaPrefix}${escapeIdentifier(table, "mysql")} ` +
                 `CHARACTER SET utf8mb4 FIELDS TERMINATED BY '\\t' ESCAPED BY '\\\\' LINES TERMINATED BY '\\n' (${colList})`;
             // mysql2 streams the infile as Buffers (it calls Buffer.copy), so yield a Buffer.
-            await client.query({ sql, infileStreamFactory: () => Readable.from([Buffer.from(body, "utf8")]) } as any);
+            // `infileStreamFactory` is only declared on ConnectionOptions in mysql2's types, but the
+            // driver also honors it as a per-query override (undocumented in QueryOptions' own type).
+            const queryWithInfileStream: mysql2.QueryOptions & { infileStreamFactory: (path: string) => Readable } = {
+                sql,
+                infileStreamFactory: () => Readable.from([Buffer.from(body, "utf8")])
+            };
+            await client.query(queryWithInfileStream);
             const end = new Date();
             return { start, end, duration: end.getTime() - start.getTime(), success: true, affectedRows: rows.length };
         } finally {
@@ -124,7 +131,7 @@ export class MySQLDatabase extends Database {
         let client: PoolConnection | undefined;
         try {
             client = await (this.connection as Pool).getConnection();
-            const [rows] = await client.query('SELECT GET_LOCK(?, ?) AS acquired', [lockKey, timeoutSeconds]) as [any[], any];
+            const [rows] = await client.query<RowDataPacket[]>('SELECT GET_LOCK(?, ?) AS acquired', [lockKey, timeoutSeconds]);
             const acquired = rows[0]?.acquired;
             if (!acquired) {
                 // Don't release here — the catch below releases exactly once (map not set for this
@@ -167,7 +174,7 @@ export class MySQLDatabase extends Database {
         return Promise.resolve(MYSQL_PERMANENT_ERRORS);
     }
 
-    async testQuery(queryOrParams: QueryInput): Promise<any> {
+    async testQuery(queryOrParams: QueryInput): Promise<{ success: true }> {
 
         const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
     
@@ -213,7 +220,7 @@ export class MySQLDatabase extends Database {
         try { client.destroy(); } catch { /* already broken */ }
     }
 
-    protected async executeQuery(queryOrParams: QueryInput, client?: PoolConnection): Promise<{ rows: any[]; affectedRows: number }> {
+    protected async executeQuery(queryOrParams: QueryInput, client?: PoolConnection): Promise<{ rows: DataRow[]; affectedRows: number }> {
         if (!this.connection) {
             await this.establishConnection();
         }
@@ -225,15 +232,15 @@ export class MySQLDatabase extends Database {
 
         try {
             if (!conn) conn = await (this.connection as Pool).getConnection();
-            const [rowsOrResult, maybeHeader] = await conn.query(query, params) as [any, ResultSetHeader | FieldPacket[]];
+            const [rowsOrResult, maybeHeader] = await conn.query(query, params) as [RowDataPacket[] | ResultSetHeader, ResultSetHeader | FieldPacket[]];
 
             const rows = Array.isArray(rowsOrResult) ? rowsOrResult : [];
             let affectedRows = 0;
 
             // For INSERT/UPDATE/DELETE, mysql2 returns a ResultSetHeader as rowsOrResult (not an array).
             // For SELECT, rowsOrResult is the rows array and maybeHeader is FieldPacket[].
-            if (!Array.isArray(rowsOrResult) && rowsOrResult != null && 'affectedRows' in rowsOrResult) {
-                affectedRows = (rowsOrResult as ResultSetHeader).affectedRows;
+            if (!Array.isArray(rowsOrResult) && 'affectedRows' in rowsOrResult) {
+                affectedRows = rowsOrResult.affectedRows;
             // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the `as [any, ...]` cast lies: mysql2 returns `fields === undefined` for a non-SELECT statement, which would throw on `'affectedRows' in maybeHeader` without this guard.
             } else if (maybeHeader && !Array.isArray(maybeHeader) && 'affectedRows' in maybeHeader) {
                 affectedRows = maybeHeader.affectedRows;

@@ -72,12 +72,13 @@ export class PostgresDatabase extends Database {
 
     protected getHeldSchemaLockCount(): number { return this.schemaLockConnections.size; }
 
-    public async bulkLoadRows(table: string, columns: string[], rows: any[][]): Promise<QueryResult> {
+    public async bulkLoadRows(table: string, columns: string[], rows: unknown[][]): Promise<QueryResult> {
         const start = new Date();
         if (!this.connection) await this.establishConnection();
         if (rows.length === 0) {
             return { start, end: new Date(), duration: 0, success: true, affectedRows: 0 };
         }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pg-copy-streams ships no TypeScript types; same optional-peer-dependency reasoning as the no-require-imports exception just below.
         let copyFrom: any;
         try {
             // Lazy require, not a static import: pg-copy-streams is an OPTIONAL peer dependency,
@@ -176,7 +177,7 @@ export class PostgresDatabase extends Database {
         return Promise.resolve(PGSQL_PERMANENT_ERRORS)
     }
 
-    async testQuery(queryOrParams: QueryInput): Promise<any> {
+    async testQuery(queryOrParams: QueryInput): Promise<{ success: true }> {
         const query = typeof queryOrParams === "string" ? queryOrParams : queryOrParams.query;
     
         if (!isValidSingleQuery(query)) {
@@ -233,7 +234,7 @@ export class PostgresDatabase extends Database {
         try { client.release(true); } catch { /* already broken */ }
     }
 
-    protected async executeQuery(queryOrParams: QueryInput, client?: PoolClient): Promise<{ rows: any[]; affectedRows: number }> {
+    protected async executeQuery(queryOrParams: QueryInput, client?: PoolClient): Promise<{ rows: DataRow[]; affectedRows: number }> {
         if (!this.connection) {
             await this.establishConnection();
         }

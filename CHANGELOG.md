@@ -1,5 +1,29 @@
 ## [Unreleased]
 
+### Breaking (types) — next release is 3.0.0
+
+Running list of every exported/public signature whose TYPE changed as part of the `no-explicit-any`
+initiative. None of these change runtime behavior by themselves (see the main entries below for
+any that do) — they can only break a consumer's own TypeScript build against the new `.d.ts`.
+
+- `Database.executeQuery` (`protected`): `Promise<any>` → `Promise<{ rows: any[]; affectedRows:
+  number }>`, matching what all 3 dialect overrides already returned (765f247).
+- `Database.connection` (`protected`): `any` → `unknown`.
+- `Database.testQuery` (`public abstract`): `Promise<any>` → `Promise<{ success: true }>`, matching
+  what all 3 dialect overrides already returned.
+- `Database.executeQuery` (`protected abstract`): `client?: any` → `client?: unknown`;
+  `Promise<{ rows: any[]; affectedRows: number }>` → `Promise<{ rows: DataRow[]; affectedRows:
+  number }>`.
+- `Database.acquireConnection` (`protected abstract`): `Promise<any>` → `Promise<unknown>`.
+- `Database.releaseConnection`/`destroyConnection` (`protected abstract`): `client: any` →
+  `client: unknown`.
+- `Database.startTransaction`/`commit`/`rollback` (`public`): `client: any` → `client: unknown`.
+- `Database.bulkLoadRows` (`public abstract`): `rows: any[][]` → `rows: unknown[][]`.
+
+These only matter to a consumer who extends `Database` directly with their own dialect (uncommon —
+the 3 built-in dialects aren't exported) or calls these `protected`/internal members through a
+type-unsafe cast. None change runtime behavior.
+
 - Starting the `no-explicit-any` lint initiative (owner go-ahead, breaking changes accepted — next
   release will be a major version bump): a new exported type, `DataRow` (`= Record<string, any>`),
   replaces ~90 call sites that previously wrote out `Record<string, any>` by hand for a caller's
@@ -14,6 +38,30 @@
   entire ingest pipeline — a redesign, not a lint fix. The remaining ~124 `no-explicit-any`
   findings (driver internals, `catch` blocks, worker IPC, bound-parameter arrays) are real,
   independent fixes and are being worked through module by module.
+- `no-explicit-any` Group A: every `catch (error: any)` across `database.ts`/`autosql.ts`/
+  `mysql.ts`/`utilities.ts`/`autoSQLStreamHandle.ts` dropped the annotation, narrowing with the
+  `error instanceof Error ? error.message : String(error)` convention already used elsewhere.
+  `driverErrorCode` is now exported from `database.ts` (was module-private) so other files reuse
+  it instead of duplicating `(error as any)?.code`. **Minor additive behavior change**: the
+  `autoSQL`/`autoSQLChunked` catch path that previously omitted `errorCode` on failure now
+  includes it, matching every other failure path in this codebase.
+- `no-explicit-any` Group B (driver internals — see the Breaking (types) section above for the
+  exact signatures): `Database`'s connection/client-handling members narrowed from `any` to
+  `unknown`, honest about the fact the base class never dereferences these itself — it only passes
+  them through to the abstract methods each dialect implements. `mysql.ts`/`pgsql.ts` already cast
+  at every access point (`this.connection as Pool`), so needed no changes beyond the signatures.
+  `sqlserver.ts` didn't, because `mssql` ships no TypeScript types at all (confirmed: no `types`
+  field, no `.d.ts`, no `@types/mssql`) — added a documented `MssqlDriver = any` alias (same
+  one-exception-not-many pattern as `DataRow`) and a `declare connection: MssqlDriver` override so
+  its existing uncasted `this.connection.*` accesses keep compiling. `mysql.ts` gained real mysql2
+  types (`RowDataPacket`, and an intersection type for the `infileStreamFactory` per-query override
+  mysql2's own `QueryOptions` type doesn't declare, even though the driver accepts it at runtime).
+  `escapeCopyValue`/`sqlServerBulkCoerce` (bulk-load value coercion) now narrow explicitly to
+  string/number/boolean/bigint before stringifying instead of risking `[object Object]` — **real
+  fixes, not false positives**: an unexpected value reaching these now throws a clear error instead
+  of silently writing a corrupt row. **Found and fixed along the way**: `sqlserver.ts`'s
+  `normalizeError` had two if/else-if branches that did the exact same thing regardless of which
+  one matched (dead branching, not a behavior difference) — collapsed to one.
 - **Fixed: `AutoSQLStreamHandle.end()`'s docblock contradicted its actual behavior** — it claimed
   "Rejects on failure and must be awaited," but every failure path there is caught and resolves to
   `{success: false, error, errorCode}` instead (same never-rejects contract as

@@ -82,9 +82,10 @@ const PROMOTED_RULES = {
     "@typescript-eslint/no-dynamic-delete": "error",
     // Mechanical: `.reduce((acc, x) => ..., {} as T)` → `.reduce<T>((acc, x) => ..., {})`.
     "@typescript-eslint/prefer-reduce-type-parameter": "error",
-    // Both were `X | any` (any absorbs the union). database.ts's `connection` stays plain `any` —
-    // the dialect subclasses' already-un-cast `.request()`/`.close()`/`?.config` access depends on
-    // it. utilities.ts's isValidDataFormat param narrows to `unknown`: the body only does
+    // Both were `X | any` (any absorbs the union). database.ts's `connection` was plain `any` here;
+    // since narrowed to `unknown` as part of the no-explicit-any initiative (sqlserver.ts's
+    // `declare connection: MssqlDriver` overrides it back, since mssql ships no types at all —
+    // see that file). utilities.ts's isValidDataFormat param narrows to `unknown`: the body only does
     // Array.isArray/typeof checks, so the stricter type costs nothing and is the real intent for a
     // function whose whole job is validating an untrusted shape.
     "@typescript-eslint/no-redundant-type-constituents": "error",
