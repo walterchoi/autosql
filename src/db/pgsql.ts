@@ -66,7 +66,7 @@ export class PostgresDatabase extends Database {
     }
 
     public getMaxConnections(): number {
-        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `as Pool` asserts a type the base class's `connection: any = null` doesn't guarantee; this.connection can genuinely be null before establishConnection() runs.
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- `as Pool` asserts a type the base class's `connection: unknown = null` doesn't guarantee; this.connection can genuinely be null before establishConnection() runs.
         return (this.connection as Pool)?.options?.max ?? 5;
     }
 

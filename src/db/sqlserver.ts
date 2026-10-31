@@ -44,22 +44,21 @@ function sqlServerBulkType(sql: MssqlDriver, meta: ColumnDefinition): MssqlDrive
     }
 }
 
-// Already-sqlized values are expected to be a primitive; stringifying anything else (an object
-// reaching here would mean sqlize let something through it shouldn't have) is a real bug, not a
-// false positive — kept as its own function (not inlined) so the String() calls below are safe.
-function stringifyScalar(v: string | number | boolean | bigint): string {
+// Already-sqlized values are expected to be a string/number/boolean/Date; stringifying anything
+// else (an object reaching here would mean sqlize let something through it shouldn't have) is a
+// real bug, not a false positive — kept as its own function (not inlined) so the String() calls
+// below are safe.
+function stringifyScalar(v: string | number | boolean | bigint | Date): string {
     return String(v);
 }
 
 // Coerce a (possibly sqlized-string) value to the JS type the mssql bulk API expects for `meta`. On any
 // mismatch it returns null / a value the driver rejects → the whole bulk throws → INSERT fallback.
+// Behavior (incl. for a Date reaching a column whose declared type isn't a date type) matches the
+// pre-fix version exactly — only the type annotations and the final-else guard are new.
 function sqlServerBulkCoerce(v: unknown, meta: ColumnDefinition): number | boolean | Date | string | null {
     if (v === null || v === undefined) return null;
-    if (v instanceof Date) {
-        const t = (meta.type || "").toLowerCase();
-        return ["date", "time", "datetime", "timestamp", "datetimetz", "datetimeoffset"].includes(t) ? v : v.toISOString();
-    }
-    if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") {
+    if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean" && !(v instanceof Date)) {
         throw new Error(`sqlServerBulkCoerce: unsupported value type "${typeof v}" — values must already be sqlized to a string/number/boolean/Date.`);
     }
     const t = (meta.type || "").toLowerCase();
@@ -73,8 +72,12 @@ function sqlServerBulkCoerce(v: unknown, meta: ColumnDefinition): number | boole
         return v === true || v === 1 || v === "1" || stringifyScalar(v).toLowerCase() === "true";
     }
     if (["date", "time", "datetime", "timestamp", "datetimetz", "datetimeoffset"].includes(t)) {
-        if (v === "" || typeof v === "boolean") return null;
-        const d = new Date(v);
+        if (v === "") return null;
+        if (v instanceof Date) return v;
+        // A boolean here is a genuine type/column mismatch (same as the function's documented "on
+        // any mismatch" contract) — preserved exactly: Date's constructor coerces it (true → 1ms
+        // past epoch) same as the original untyped `new Date(v)` did.
+        const d = new Date(v as string | number);
         return isNaN(d.getTime()) ? null : d;
     }
     return stringifyScalar(v);

@@ -20,9 +20,13 @@ any that do) — they can only break a consumer's own TypeScript build against t
 - `Database.startTransaction`/`commit`/`rollback` (`public`): `client: any` → `client: unknown`.
 - `Database.bulkLoadRows` (`public abstract`): `rows: any[][]` → `rows: unknown[][]`.
 
-These only matter to a consumer who extends `Database` directly with their own dialect (uncommon —
-the 3 built-in dialects aren't exported) or calls these `protected`/internal members through a
-type-unsafe cast. None change runtime behavior.
+`client`/`rows` input-position narrowings (`executeQuery`, `releaseConnection`, `destroyConnection`,
+`startTransaction`/`commit`/`rollback`, `bulkLoadRows`) don't break any caller — anything assignable
+to `any` is also assignable to `unknown`. `connection`/`acquireConnection` only matter to a consumer
+who extends `Database` directly with their own dialect (uncommon — the 3 built-in dialects aren't
+exported). `testQuery`'s return-type narrowing is the one a normal caller can actually hit: it's
+public on every `Database.create()` instance, so code reading its resolved value (not just awaiting
+it) sees `{ success: true }` instead of `any`.
 
 - Starting the `no-explicit-any` lint initiative (owner go-ahead, breaking changes accepted — next
   release will be a major version bump): a new exported type, `DataRow` (`= Record<string, any>`),
@@ -58,10 +62,14 @@ type-unsafe cast. None change runtime behavior.
   mysql2's own `QueryOptions` type doesn't declare, even though the driver accepts it at runtime).
   `escapeCopyValue`/`sqlServerBulkCoerce` (bulk-load value coercion) now narrow explicitly to
   string/number/boolean/bigint before stringifying instead of risking `[object Object]` — **real
-  fixes, not false positives**: an unexpected value reaching these now throws a clear error instead
-  of silently writing a corrupt row. **Found and fixed along the way**: `sqlserver.ts`'s
-  `normalizeError` had two if/else-if branches that did the exact same thing regardless of which
-  one matched (dead branching, not a behavior difference) — collapsed to one.
+  fixes, not false positives**: an unexpected value reaching these now throws instead of silently
+  writing a corrupt row. The throw is caught by `bulkLoadStaging`, same as any other `bulkLoadRows`
+  failure, so the practical effect is a fallback to per-row `INSERT` (with a `bulkLoad failed for
+  '<table>', falling back to INSERT` warning) rather than a corrupt bulk load, not a new error
+  surfacing to the caller. `sqlServerBulkCoerce`'s behavior for every input it already handled is
+  unchanged, including a `Date` reaching a non-date-typed column. **Found and fixed along the
+  way**: `sqlserver.ts`'s `normalizeError` had two if/else-if branches that did the exact same thing
+  regardless of which one matched (dead branching, not a behavior difference) — collapsed to one.
 - **Fixed: `AutoSQLStreamHandle.end()`'s docblock contradicted its actual behavior** — it claimed
   "Rejects on failure and must be awaited," but every failure path there is caught and resolves to
   `{success: false, error, errorCode}` instead (same never-rejects contract as

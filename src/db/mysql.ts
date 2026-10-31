@@ -87,8 +87,10 @@ export class MySQLDatabase extends Database {
 
     public getMaxConnections(): number {
         // mysql2's promise wrapper keeps the pool config on the underlying `.pool` (not `.config`).
-        const conn = this.connection as Pool | null;
-        return conn?.pool.config.connectionLimit ?? conn?.config.connectionLimit ?? 5;
+        // A structural type, not `Pool` itself: Pool's own type declares these as always-present,
+        // but the original double fallback here shows the author wasn't sure `.pool` always is.
+        const conn = this.connection as { pool?: { config?: { connectionLimit?: number } }; config?: { connectionLimit?: number } } | null;
+        return conn?.pool?.config?.connectionLimit ?? conn?.config?.connectionLimit ?? 5;
     }
 
     protected getHeldSchemaLockCount(): number { return this.schemaLockConnections.size; }
@@ -232,7 +234,7 @@ export class MySQLDatabase extends Database {
 
         try {
             if (!conn) conn = await (this.connection as Pool).getConnection();
-            const [rowsOrResult, maybeHeader] = await conn.query(query, params) as [RowDataPacket[] | ResultSetHeader, ResultSetHeader | FieldPacket[]];
+            const [rowsOrResult, maybeHeader] = await conn.query(query, params) as [RowDataPacket[] | ResultSetHeader, ResultSetHeader | FieldPacket[] | undefined];
 
             const rows = Array.isArray(rowsOrResult) ? rowsOrResult : [];
             let affectedRows = 0;
@@ -241,7 +243,6 @@ export class MySQLDatabase extends Database {
             // For SELECT, rowsOrResult is the rows array and maybeHeader is FieldPacket[].
             if (!Array.isArray(rowsOrResult) && 'affectedRows' in rowsOrResult) {
                 affectedRows = rowsOrResult.affectedRows;
-            // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- the `as [any, ...]` cast lies: mysql2 returns `fields === undefined` for a non-SELECT statement, which would throw on `'affectedRows' in maybeHeader` without this guard.
             } else if (maybeHeader && !Array.isArray(maybeHeader) && 'affectedRows' in maybeHeader) {
                 affectedRows = maybeHeader.affectedRows;
             } else if (rows.length > 0) {
