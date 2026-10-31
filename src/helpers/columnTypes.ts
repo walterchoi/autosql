@@ -2,10 +2,16 @@ import { REGEX_PATTERNS } from "../config/regex";
 import { GROUPINGS } from "../config/groupings";
 import { normalizeNumber, setToArray } from "./utilities";
 
+// stringifyUnknown takes a bare `unknown` with no other narrowing in scope — see the
+// no-base-to-string note on its call site below.
+function stringifyUnknown(v: unknown): string {
+    return String(v);
+}
+
 // Using regex, when provided a data point, predict what data type this will be.
 // thousandsSeparator/decimalSeparator disambiguate locale-specific number formats (e.g.
 // whether "1.000" is 1 or 1000) — see normalizeNumber. Omit both to use the auto-heuristic.
-export function predictType(data: any, thousandsSeparator?: string, decimalSeparator?: string, onAmbiguousSeparator?: () => void): string | null {
+export function predictType(data: unknown, thousandsSeparator?: string, decimalSeparator?: string, onAmbiguousSeparator?: () => void): string | null {
     try {
         if(data === undefined || data === null) {
             return null
@@ -32,12 +38,12 @@ export function predictType(data: any, thousandsSeparator?: string, decimalSepar
                 currentType = "decimal";
             }
         } else {
-        if (typeof data === "object" && data !== null) {
+        if (typeof data === "object") {
             strData = JSON.stringify(data);
         } else if (typeof data === "string") {
             strData = data
         } else {
-            strData = String(data);
+            strData = stringifyUnknown(data);
         }
         // Gate the JSON.parse attempt on the first char (`[`/`{`/`"`) instead of always trying it:
         // behaviour-identical since only those shapes can parse, but skips the try/catch exception

@@ -11,6 +11,12 @@ import { MYSQL_CONFIG } from "../db/config/mysqlConfig";
 import { PGSQL_CONFIG } from "../db/config/pgsqlConfig";
 import { SQL_SERVER_CONFIG } from "../db/config/sqlServerConfig";
 
+// Kept as its own function, taking a bare `unknown` with no other narrowing in scope — see the
+// no-base-to-string note on its one call site below.
+function stringifyUnknown(v: unknown): string {
+    return String(v);
+}
+
 export function initializeMetaData(headers: string[]): DataRow[] {
     try {
         return headers.map(header => ({
@@ -133,11 +139,14 @@ function getDataHeadersSync(data: DataRow[], databaseConfig: DatabaseConfig): Me
     // A `booleanColumns`-hinted value must be a real boolean: true/false, 0/1 (case-insensitive),
     // or null/blank. Anything else is rejected rather than silently coerced (forcing to boolean is
     // lossy). Nullish is allowed and handled by the normal null path.
-    const isBooleanDomainValue = (v: any): boolean => {
+    const isBooleanDomainValue = (v: unknown): boolean => {
         if (v === '' || v === null || v === undefined || v === '\\N' || v === 'null') return true;
-        return ["0", "1", "true", "false"].includes(String(v).trim().toLowerCase());
+        // stringifyUnknown (defined below) — a non-string/number/boolean `v` reaching here (e.g. an
+        // object) stringifies to something that never matches the list below anyway, correctly
+        // falling through to "not a boolean domain value"; preserved as-is, not a new behavior.
+        return ["0", "1", "true", "false"].includes(stringifyUnknown(v).trim().toLowerCase());
     };
-    const assertBooleanColumn = (column: string, value: any) => {
+    const assertBooleanColumn = (column: string, value: unknown) => {
         if (booleanSet.has(column) && !isBooleanDomainValue(value)) {
             throw new Error(`Column "${column}" is declared in booleanColumns but received a non-boolean value: ${JSON.stringify(value)}. Allowed: true/false, 0/1, or null.`);
         }
@@ -326,7 +335,7 @@ function getDataHeadersSync(data: DataRow[], databaseConfig: DatabaseConfig): Me
     // demote. Only runs when sampling split the data. A truly-unique column is never saturated, so
     // its uniqueSet holds every sampled value and this continuation is exact.
     if (remainingData.length > 0) {
-        const isNullish = (v: any) => v === '' || v === null || v === undefined || v === '\\N' || v === 'null';
+        const isNullish = (v: unknown) => v === '' || v === null || v === undefined || v === '\\N' || v === 'null';
         for (const column in metaData) {
             if (!metaData[column].unique) continue;
             const seen = new Set(metaDataInterim[column].uniqueSet);

@@ -9,7 +9,7 @@ export interface ResolvedStatement { table: string; rows: DataRow[]; header: Met
 export interface ResolvedStaging { table: string; header: MetadataHeader; insertType: "UPDATE" | "INSERT"; stagingPrefix?: string; }
 export interface ResolvedHistory { table: string; header: MetadataHeader; stagingPrefix?: string; historyTableSuffix?: string; }
 
-const isInput = (v: any): v is InsertInput => typeof v === "object" && v !== null && "table" in v;
+const isInput = (v: unknown): v is InsertInput => typeof v === "object" && v !== null && "table" in v;
 const headerOf = (input: InsertInput): MetadataHeader => input.comparedMetaData?.updatedMetaData || input.metaData;
 const insertTypeOf = (input: InsertInput, cfg?: DatabaseConfig): "UPDATE" | "INSERT" => input.insertType || cfg?.insertType || "UPDATE";
 

@@ -121,6 +121,20 @@ hit: `testQuery`'s return type (public on every `Database.create()` instance); `
   `err` was implicitly `any` — confirmed in `@types/node` itself (`worker_threads.d.ts` types this
   listener as `(err: any) => void`, not `Error`, even though Node always passes a real `Error`
   here) — annotated explicitly rather than inheriting it.
+- `no-explicit-any` misc helpers, batch 1 (inspector params — free for callers, `any` is always
+  assignable to `unknown`): `isInput` (`insertBuilderShared.ts`), `predictType`
+  (`columnTypes.ts`), `isBooleanDomainValue`/`assertBooleanColumn`/`isNullish` (`metadata.ts`),
+  `classifySeparatorFormat` (`numberFormat.ts`), `streamCell` (`streamHelpers.ts`), `isObject`/
+  `normalizeNumber`/`isMetadataHeader` (`utilities.ts`) all narrowed their value-inspecting
+  parameter to `unknown`. `isMetadataHeader`'s own body needed one cast (`input as Record<string,
+  unknown>`) to index into the narrowed-to-`{}` type. Three call sites (`isBooleanDomainValue`,
+  `streamCell`, `predictType`) that stringify an `unknown` value after excluding some cases from it
+  needed the same `no-base-to-string` exemption technique as Group C (extract the `String()` call
+  into its own function taking a bare `unknown`) to preserve existing behavior exactly — none of
+  these are real fixes, see Group C's entry above for why. **Found and fixed along the way**:
+  `predictType` had a redundant `data !== null` check — `data === null` was already excluded by an
+  earlier `return null` at the top of the function, so the second check could never be true
+  (confirmed by `tsc`, not just the lint rule) — removed.
 - **Fixed: `AutoSQLStreamHandle.end()`'s docblock contradicted its actual behavior** — it claimed
   "Rejects on failure and must be awaited," but every failure path there is caught and resolves to
   `{success: false, error, errorCode}` instead (same never-rejects contract as

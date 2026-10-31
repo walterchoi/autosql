@@ -157,10 +157,19 @@ export function buildAddStreamStagingColumnsQuery(
 // Objects/arrays serialise to JSON, not String()'s "[object Object]" / "a,b,c" (A18) — matching
 // sqlize's JSON handling on the batch path, so a JSON-bearing source round-trips the same via
 // openStream as via autoSQL.
-function streamCell(v: any): string | null {
+// stringifyUnknown takes a bare `unknown` with no other narrowing in scope — see the
+// no-base-to-string note on its call site below.
+function stringifyUnknown(v: unknown): string {
+    return String(v);
+}
+
+function streamCell(v: unknown): string | null {
     if (v === null || v === undefined) return null;
     if (typeof v === "object") return JSON.stringify(v);
-    return String(v);
+    // v is excluded down to string/number/boolean/bigint/symbol/function here, none of which have
+    // a risky default toString(), but no-base-to-string still flags a direct String(v) on it the
+    // same way it would an object — call through stringifyUnknown instead.
+    return stringifyUnknown(v);
 }
 
 /** INSERT one chunk. Values are cast to strings (TEXT columns) and parameter-bound. */

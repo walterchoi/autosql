@@ -18,7 +18,7 @@ export type SeparatorDecision =
 //   "us" = comma-thousands / dot-decimal   (US/UK/IN — Indian grouping shares US separators)
 //   "eu" = dot-thousands / comma-decimal
 //   null = no evidence, or the genuinely-ambiguous "1,234" shape (lone sep + exactly 3 trailing digits)
-export function classifySeparatorFormat(value: any): "us" | "eu" | null {
+export function classifySeparatorFormat(value: unknown): "us" | "eu" | null {
     if (typeof value !== "string") return null; // native numbers carry no separators
     let s = value.trim();
     if (!s.includes(",") && !s.includes(".")) return null;                     // no separator → no evidence

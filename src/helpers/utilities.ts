@@ -2,7 +2,7 @@ import { DEFAULTS, DEFAULT_LENGTHS, MYSQL_MAX_ROW_SIZE, POSTGRES_MAX_ROW_SIZE, M
 import type { DatabaseConfig, MetadataHeader, DialectConfig, AlterTableChanges, supportedDialects, SqlizeRule, QueryResult, DataRow } from "../config/types";
 import { GROUPINGS } from "../config/groupings";
 import crypto from 'crypto';
-export function isObject(val: any): boolean {
+export function isObject(val: unknown): boolean {
     return val !== null && typeof val === "object";
 }
 
@@ -171,7 +171,7 @@ export function calculateColumnLength(column: any, dataPoint: string, sqlLookupT
     }
 }
 
-export function normalizeNumber(input: any, thousandsIndicatorOverride?: string, decimalIndicatorOverride?: string, onAmbiguousSeparator?: () => void): string | null {
+export function normalizeNumber(input: unknown, thousandsIndicatorOverride?: string, decimalIndicatorOverride?: string, onAmbiguousSeparator?: () => void): string | null {
     if ((thousandsIndicatorOverride && !decimalIndicatorOverride) || (!thousandsIndicatorOverride && decimalIndicatorOverride)) {
         throw new Error("Both 'thousandsIndicatorOverride' and 'decimalIndicatorOverride' must be provided together.");
     }
@@ -457,7 +457,7 @@ export function tableChangesExist(alterTableChanges: AlterTableChanges): boolean
     }
 }
 
-export function isMetadataHeader(input: any): input is MetadataHeader {
+export function isMetadataHeader(input: unknown): input is MetadataHeader {
     if (typeof input !== "object" || input === null || Array.isArray(input)) {
         return false;
     }
@@ -465,7 +465,7 @@ export function isMetadataHeader(input: any): input is MetadataHeader {
     for (const key in input) {
         if (typeof key !== "string") return false;
 
-        const column = input[key];
+        const column = (input as Record<string, unknown>)[key];
 
         if (
             typeof column !== "object" || column === null ||
