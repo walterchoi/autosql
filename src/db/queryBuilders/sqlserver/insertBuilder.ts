@@ -82,7 +82,7 @@ export const SqlServerInsertQueryBuilder = {
         if (pkFilter) {
             // Scope the MERGE to one primary key via a filtered source subquery (spec-4 §3.8), so
             // this PK's before-image + merge run in one transaction.
-            const params: any[] = [];
+            const params: unknown[] = [];
             const where = primaryKeys.map(pk => { params.push(pkFilter[pk]); return `${q(pk)} = @p${params.length - 1}`; }).join(" AND ");
             const scoped = `USING (SELECT ${selectCols} FROM ${source} WHERE ${where}) AS source (${escapedCols})`;
             return { query: buildMerge(target, scoped, columns, header, mergeKeys.length > 0 ? mergeKeys : primaryKeys), params };

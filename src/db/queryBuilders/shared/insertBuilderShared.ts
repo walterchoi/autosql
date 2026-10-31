@@ -58,11 +58,11 @@ export function updatableColumns(columns: string[], header: MetadataHeader, prim
 }
 
 // Flatten a chunk of row objects into the bound-parameter array (or pass through pre-flattened arrays).
-export function flattenInsertParams(rows: DataRow[], header: MetadataHeader, cfg?: DatabaseConfig): any[] {
+export function flattenInsertParams(rows: DataRow[], header: MetadataHeader, cfg?: DatabaseConfig): unknown[] {
     if (typeof rows[0] === "object" && !Array.isArray(rows[0])) {
         return rows.map(row => getInsertValues(header, row, undefined, cfg, false)).flat();
     }
-    return (rows as any[]).flat();
+    return (rows as unknown[]).flat();
 }
 
 export interface HistoryHooks {
@@ -94,7 +94,7 @@ export function buildHistoryQuery(resolved: ResolvedHistory, schemaPrefix: strin
     const joinCondition = primaryKeys.map(pk => `${t1}.${q(pk)} = ${t2}.${q(pk)}`).join(" AND ");
     const diffCondition = nonPrimaryCols.map(col => hooks.colDiff(`${t1}.${q(col)}`, `${t2}.${q(col)}`)).join(" OR ");
 
-    const params: any[] = [];
+    const params: unknown[] = [];
     let whereClause = diffCondition;
     if (pkFilter) {
         const pkFilterClause = primaryKeys.map(pk => { params.push(pkFilter[pk]); return `${t1}.${q(pk)} = ${hooks.placeholder(params.length)}`; }).join(" AND ");

@@ -184,7 +184,7 @@ export function buildInsertIntoStreamStagingQuery(
     };
     const escapedCols = insertColumns.map(c => qi(c, dialect)).join(', ');
 
-    const params: any[] = [];
+    const params: unknown[] = [];
     const rowPlaceholders: string[] = [];
 
     if (dialect === 'mysql') {
@@ -489,7 +489,7 @@ export function buildInsertRejectedRowsQuery(
 
     if (dialect === 'mysql') {
         const placeholders = failures.map(() => '(?, ?, ?, ?)').join(', ');
-        const params: any[] = [];
+        const params: unknown[] = [];
         for (const f of failures) {
             params.push(targetTable, now, f.error, JSON.stringify(f.row));
         }
@@ -503,7 +503,7 @@ export function buildInsertRejectedRowsQuery(
         let idx = 0;
         const placeholders = failures.map(() => `(@p${idx++}, @p${idx++}, @p${idx++}, @p${idx++})`).join(', ');
         const nowDate = new Date();
-        const params: any[] = [];
+        const params: unknown[] = [];
         for (const f of failures) {
             params.push(targetTable, nowDate, f.error, JSON.stringify(f.row));
         }
@@ -514,7 +514,7 @@ export function buildInsertRejectedRowsQuery(
     } else {
         let idx = 1;
         const placeholders = failures.map(() => `($${idx++}, $${idx++}, $${idx++}, $${idx++}::jsonb)`).join(', ');
-        const params: any[] = [];
+        const params: unknown[] = [];
         for (const f of failures) {
             params.push(targetTable, new Date().toISOString(), f.error, JSON.stringify(f.row));
         }

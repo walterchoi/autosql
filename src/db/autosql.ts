@@ -374,7 +374,7 @@ export class AutoSQLHandler {
             const currentSplitResults = await this.db.runQuery(splitQuery);
             if(!currentSplitResults.success || !currentSplitResults.results) { throw new Error(currentSplitResults.error || `Error while retrieving existing split table information for: ${table}`)}
             const currentSplit = currentSplitResults.results
-            const rawSplitMetadata = parseDatabaseMetaData(currentSplit as DataRow[], this.db.getDialectConfig());
+            const rawSplitMetadata = parseDatabaseMetaData(currentSplit, this.db.getDialectConfig());
             let parsedSplitMetadata: Record<string, MetadataHeader>;
             if (!rawSplitMetadata) {
                 parsedSplitMetadata = { [table]: {} };

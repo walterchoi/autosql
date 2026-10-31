@@ -6,9 +6,12 @@ import { MAX_QUERY_ATTEMPTS } from "../config/defaults";
 import type { AutoSQLHandler } from "./autosql";
 import { setSSH } from '../helpers/ssh';
 
-// Kept as its own function (not inlined into a ternary alongside an `undefined` check) — mixing
-// the two in one expression makes typescript-eslint lose track of the narrowed type and flag the
-// String() fallback as unsafe, even though it's just `unknown`.
+// Kept as its own function, taking a bare `unknown` with no other narrowing in scope.
+// no-base-to-string is correct, not a false positive, about the callers of this: excluding
+// `undefined` from `unknown` (e.g. `_error === undefined ? ... : ...`) narrows to a type that
+// could still be a plain object, so stringifying IT directly would risk `[object Object]`. Calling
+// this function instead hands the *original*, un-narrowed `unknown` to the instanceof/String()
+// check below, which is exactly what the rule allows.
 function caughtErrorMessage(e: unknown): string {
     return e instanceof Error ? e.message : String(e);
 }

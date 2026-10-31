@@ -62,7 +62,7 @@ export const MySQLInsertQueryBuilder = {
 
         let query = `INSERT INTO ${schemaPrefix}${q(table)} (${escapedCols}) SELECT ${selectCols} FROM ${schemaPrefix}${q(tempTable)}`;
 
-        const params: any[] = [];
+        const params: unknown[] = [];
         if (pkFilter) {
             const pkCols = primaryKeysOf(header);
             query += " WHERE " + pkCols.map(pk => { params.push(pkFilter[pk]); return `${q(pk)} = ?`; }).join(" AND ");

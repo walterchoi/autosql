@@ -20,13 +20,23 @@ any that do) — they can only break a consumer's own TypeScript build against t
 - `Database.startTransaction`/`commit`/`rollback` (`public`): `client: any` → `client: unknown`.
 - `Database.bulkLoadRows` (`public abstract`): `rows: any[][]` → `rows: unknown[][]`.
 
+- `QueryResult.results` (public — present on every `runQuery`/`runTransaction`/`autoSQL` result):
+  `any[]` → `DataRow[]`.
+- `QueryWithParams.params` (public): `any[]` → `unknown[]`.
+- `sqlize` (internal, `internals.ts`): return type `any` → `unknown`.
+- `getInsertValues` (internal, `internals.ts`): return type `any[]` → `unknown[]`.
+- `parseDatabaseMetaData` (internal, `internals.ts`): `rows` parameter `any[]` → `DataRow[]` (a
+  concrete narrowing, not a move to `unknown` — reading `rows[i]` already assumed row objects).
+
 `client`/`rows` input-position narrowings (`executeQuery`, `releaseConnection`, `destroyConnection`,
-`startTransaction`/`commit`/`rollback`, `bulkLoadRows`) don't break any caller — anything assignable
-to `any` is also assignable to `unknown`. `connection`/`acquireConnection` only matter to a consumer
-who extends `Database` directly with their own dialect (uncommon — the 3 built-in dialects aren't
-exported). `testQuery`'s return-type narrowing is the one a normal caller can actually hit: it's
-public on every `Database.create()` instance, so code reading its resolved value (not just awaiting
-it) sees `{ success: true }` instead of `any`.
+`startTransaction`/`commit`/`rollback`, `bulkLoadRows`, and passing a `params` array in) don't break
+any caller — anything assignable to `any` is also assignable to `unknown`. `connection`/
+`acquireConnection` only matter to a consumer who extends `Database` directly with their own
+dialect (uncommon — the 3 built-in dialects aren't exported). The ones a normal caller can actually
+hit: `testQuery`'s return type (public on every `Database.create()` instance); `QueryResult.results`
+(reading a field off it still gives `any` through `DataRow`, but assigning it, or building a
+`QueryResult` with non-object elements — e.g. a test mock — doesn't typecheck anymore); reading
+`.params` off a query-builder's output (`getInsertStatementQuery(...).params`, etc.).
 
 - Starting the `no-explicit-any` lint initiative (owner go-ahead, breaking changes accepted — next
   release will be a major version bump): a new exported type, `DataRow` (`= Record<string, any>`),
@@ -70,6 +80,23 @@ it) sees `{ success: true }` instead of `any`.
   unchanged, including a `Date` reaching a non-date-typed column. **Found and fixed along the
   way**: `sqlserver.ts`'s `normalizeError` had two if/else-if branches that did the exact same thing
   regardless of which one matched (dead branching, not a behavior difference) — collapsed to one.
+- `no-explicit-any` Group C (bound-parameter arrays and the types that feed them — see the Breaking
+  (types) section above for the exact signatures): `QueryWithParams.params` and every local
+  `params: any[]` across the 3 insert builders, `insertBuilderShared.ts`, `streamHelpers.ts`, and
+  `schemaHistory.ts` narrowed to `unknown[]` — composes cleanly with `sqlize`/`getInsertValues`/
+  `flattenInsertParams`'s return types, also narrowed (`any`/`any[]` → `unknown`/`unknown[]`), since
+  their output is exactly what ends up in those params arrays. `QueryResult.results` and
+  `parseDatabaseMetaData`'s `rows` parameter narrowed to `DataRow[]`, matching `executeQuery`'s rows
+  (Group B). **No behavior change** — confirmed via `tsc --noEmit -p tsconfig.eslint.json` (which
+  type-checks `tests/` too) in addition to the full suite, both clean. Two call sites in `sqlize`/
+  `getInsertValues` that stringify an `unknown` value after excluding one case from it (not a plain
+  instanceof/typeof check — see those functions' own comments) still need `no-base-to-string`'s real
+  exemption technique (extracting the `String()` call into its own function taking a bare
+  `unknown`), same as `database.ts`'s Group A helper; **this is an exemption for a narrowing the
+  rule gets right, used only because the existing behavior (stringify whatever's left, including an
+  unexpected object, same as before) is being deliberately preserved — not a fix**. Where an
+  unexpected object actually corrupting data mattered (`escapeCopyValue`/`sqlServerBulkCoerce`,
+  Group B), the real fix was narrowing the type and throwing instead.
 - **Fixed: `AutoSQLStreamHandle.end()`'s docblock contradicted its actual behavior** — it claimed
   "Rejects on failure and must be awaited," but every failure path there is caught and resolves to
   `{success: false, error, errorCode}` instead (same never-rejects contract as

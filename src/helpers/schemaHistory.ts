@@ -336,7 +336,7 @@ export async function getSchemaAt(
     const dialect = config.sqlDialect;
 
     let query: string;
-    let params: any[] = [table, at.toISOString()];
+    let params: unknown[] = [table, at.toISOString()];
     if (dialect === 'mysql') {
         const tableRef = ref; // already dialect-escaped (A13)
         query = `SELECT new_schema FROM ${tableRef} WHERE table_name = ? AND status = 'applied' AND applied_at <= ? ORDER BY applied_at DESC LIMIT 1`;

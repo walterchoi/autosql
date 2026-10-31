@@ -408,7 +408,7 @@ export interface SSHKeys {
 }
 
 export type QueryInput = string | QueryWithParams;
-export type QueryWithParams = { query: string; params?: any[] };
+export type QueryWithParams = { query: string; params?: unknown[] };
 
 export interface TranslateMap {
     serverToLocal: Record<string, string>;
@@ -460,7 +460,7 @@ export interface QueryResult {
     duration: number;
     affectedRows?: number 
     success: boolean;
-    results?: any[];
+    results?: DataRow[];
     error?: string;
     /**
      * The driver's structured error code (mysql2 `code`, Postgres SQLSTATE, SQL Server error

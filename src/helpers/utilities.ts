@@ -336,7 +336,7 @@ export function parseDatabaseLength(lengthStr?: string): { length?: number; deci
     return { length, decimal };
 }
 
-export function parseDatabaseMetaData(rows: any[], dialectConfig?: DialectConfig ): MetadataHeader | Record<string, MetadataHeader> | null {
+export function parseDatabaseMetaData(rows: DataRow[], dialectConfig?: DialectConfig ): MetadataHeader | Record<string, MetadataHeader> | null {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- exported via internals.ts; a plain-JS caller can pass null/undefined despite the TS type.
     if (!rows || rows.length === 0) return null;
 
@@ -700,7 +700,7 @@ export function sanitizeString(value: string): string {
         .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD");
 }
 
-export function getInsertValues(metaData: MetadataHeader, row: DataRow, dialectConfig?: DialectConfig, databaseConfig?: DatabaseConfig, sqlizeValues: boolean = false): any[] {
+export function getInsertValues(metaData: MetadataHeader, row: DataRow, dialectConfig?: DialectConfig, databaseConfig?: DatabaseConfig, sqlizeValues: boolean = false): unknown[] {
     const sanitize = databaseConfig?.sanitizeInvalidChars === true;
     // Surrogate key is DB-generated, so omit it (Postgres rejects NULL into a BIGSERIAL NOT NULL).
     // Gated on `surrogateKey`, not just autoIncrement — a genuine AUTO_INCREMENT PK is also
@@ -721,7 +721,7 @@ export function getInsertValues(metaData: MetadataHeader, row: DataRow, dialectC
             value = null;
         }
       }
-      let out: any;
+      let out: unknown;
       if(sqlizeValues && dialectConfig) {
         out = sqlize(value, meta.type, dialectConfig, databaseConfig);
       } else {
@@ -847,7 +847,18 @@ function normalizeDateValue(strValue: string, columnType: string, sourceTimeZone
     return s;
 }
 
-export function sqlize(value: any, columnType: string | null, dialectConfig: DialectConfig, databaseConfig?: DatabaseConfig ): any {
+// Kept as its own function, taking a bare `unknown` with no other narrowing in scope.
+// no-base-to-string is correct, not a false positive, about the call site below: excluding
+// "string" from `unknown` via a typeof check still leaves a type that could be a plain object, so
+// stringifying it directly would risk `[object Object]`. This preserves that exact pre-existing
+// behavior (an object reaching a non-JSON column still becomes `[object Object]`, same as before)
+// rather than fixing it — fixing it for real would mean rejecting non-primitive values here the
+// way escapeCopyValue/sqlServerBulkCoerce now do, which is a behavior change this pass didn't make.
+function stringifyValue(value: unknown): string {
+    return String(value);
+}
+
+export function sqlize(value: unknown, columnType: string | null, dialectConfig: DialectConfig, databaseConfig?: DatabaseConfig ): unknown {
     try {
         if (value === null) return null;
         if(!columnType) {return value};
@@ -875,7 +886,7 @@ export function sqlize(value: any, columnType: string | null, dialectConfig: Dia
             }
         }
         
-        let strValue = typeof value === "string" ? value : String(value);
+        let strValue = typeof value === "string" ? value : stringifyValue(value);
 
         // Boolean columns store a canonical 0/1. Without this, a string flag ("true"/"false" as CSV/text
         // sources deliver) reaches the driver unchanged: MySQL rejects it against TINYINT(1) (`Incorrect
