@@ -176,4 +176,22 @@ describe("AutoSQLStreamHandle", () => {
         await handle.abort();
         expect(db.runTransaction).not.toHaveBeenCalled();
     });
+
+    // A filed residual (cross-session design discussion, 2026-11-01): abort()'s own DROP can fail
+    // silently — autosql never rejects, it only .catch()es and logs — so a reopen-after-mismatch
+    // could re-adopt the very table abort() meant to discard. Pin the documented contract: abort()
+    // still resolves, logs via db.error, and still releases the active-set slot even when the drop
+    // itself fails.
+    test("abort() still resolves, logs, and releases the slot when the DROP itself fails", async () => {
+        const db = makeDb();
+        db.runTransaction = jest.fn().mockRejectedValue(new Error("permission denied"));
+        const handler = makeHandler(db);
+        const handle = new AutoSQLStreamHandle(handler as any, db as any, "users", "autosql_stream__users__abc12345", undefined, undefined);
+        (handle as any).stagingCreated = true;
+
+        await expect(handle.abort()).resolves.toBeUndefined(); // never rejects
+
+        expect(db.error).toHaveBeenCalledWith(expect.stringContaining("failed to drop staging table during abort"));
+        expect(handler.releaseStreamStaging).toHaveBeenCalledWith("autosql_stream__users__abc12345");
+    });
 });
