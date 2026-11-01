@@ -68,4 +68,33 @@ describe("SQL Server bulk-copy (live, spec-4 slice C)", () => {
             await bdb.runQuery(bdb.getDropTableQuery(TABLE)).catch(() => {});
         } finally { await bdb.closeConnection(); }
     });
+
+    // 3.0.0 (no-explicit-any Group B hardening): sqlServerBulkCoerce throws on a value it can't
+    // coerce (string/number/boolean/Date only) instead of risking a corrupt bulk-loaded row. The
+    // throw fires while building the in-memory TVP (tvp.rows.add), before any server round-trip,
+    // so no real table is needed to prove it — bulkLoadStaging's own INSERT-fallback behavior on
+    // this error is already covered by the "no fallback on success" test above proving the
+    // opposite case.
+    test("bulkLoadRows rejects an uncoercible value instead of silently corrupting the row", async () => {
+        const header: MetadataHeader = { id: { type: "int" }, blob: { type: "varchar" } } as any;
+        await expect((db as any).bulkLoadRows("ss_bulk_uncoercible", ["id", "blob"], [[1, { nested: true }]], header))
+            .rejects.toThrow(/sqlServerBulkCoerce: unsupported value type "object"/);
+    });
+
+    test("outlier: an array value is rejected the same way (also typeof \"object\")", async () => {
+        const header: MetadataHeader = { id: { type: "int" }, blob: { type: "varchar" } } as any;
+        await expect((db as any).bulkLoadRows("ss_bulk_uncoercible", ["id", "blob"], [[1, [1, 2, 3]]], header))
+            .rejects.toThrow(/sqlServerBulkCoerce: unsupported value type "object"/);
+    });
+
+    test("null and undefined are NOT rejected (regression guard on the early-return branch)", async () => {
+        const TABLE = "ss_bulk_nullable";
+        await drop(TABLE);
+        await db.runQuery({ query: `CREATE TABLE ${ref(TABLE)} (${qi("id")} INT NOT NULL PRIMARY KEY, ${qi("blob")} NVARCHAR(50) NULL)`, params: [] });
+        const header: MetadataHeader = { id: { type: "int", allowNull: false }, blob: { type: "varchar", length: 50 } } as any;
+        const res = await (db as any).bulkLoadRows(TABLE, ["id", "blob"], [["1", null], ["2", undefined]], header);
+        expect(res.success).toBe(true);
+        expect(await count(TABLE)).toBe(2);
+        await drop(TABLE);
+    });
 });

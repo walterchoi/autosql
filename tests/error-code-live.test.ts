@@ -60,5 +60,29 @@ Object.values(DB_CONFIG).forEach((config) => {
                 }
             });
         }
+
+        // autoSQLChunked has its own top-level catch (autosql.ts, separate from autoSQL's) that
+        // was given the same driverErrorCode treatment — never covered by the test above, which
+        // only exercises autoSQL itself.
+        test("autoSQLChunked() failure surfaces errorCode on its own top-level catch", async () => {
+            const TABLE = "errorcode_chunked";
+            const ref2 = `${qi("test_schema")}.${qi(TABLE)}`;
+            await db.runQuery({ query: `DROP TABLE IF EXISTS ${ref2}`, params: [] }).catch(() => {});
+            await db.runQuery({ query: `CREATE TABLE ${ref2} (${qi("id")} INT PRIMARY KEY, ${qi("val")} INT, CONSTRAINT ${qi("val_nn")} CHECK (${qi("val")} >= 0))`, params: [] });
+            try {
+                const loader = Database.create({ ...config, schema: "test_schema", useWorkers: false, useStagingInsert: false, primaryKey: ["id"], addTimestamps: false });
+                await loader.establishConnection();
+                async function* chunks() { yield [{ id: 1, val: -5 }]; }
+                const r = await loader.autoSQLChunked(TABLE, chunks());
+                await loader.closeConnection();
+
+                expect(r.success).toBe(false);
+                expect(typeof r.errorCode).toBe("string");
+                expect(r.errorCode!.length).toBeGreaterThan(0);
+                if (config.sqlDialect === "pgsql") expect(r.errorCode).toBe("23514");
+            } finally {
+                await db.runQuery({ query: `DROP TABLE IF EXISTS ${ref2}`, params: [] }).catch(() => {});
+            }
+        });
     });
 });
