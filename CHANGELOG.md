@@ -1,3 +1,19 @@
+## [3.0.1] - 2026-11-01
+
+### 🐛 Bug Fixes
+- **MySQL: a BIGINT value near int64's range no longer silently rounds, which could corrupt
+  large ids and break uniqueness.** mysql2 returns BIGINT/large-DECIMAL columns as a lossy JS
+  `Number` by default — any value outside `Number.MAX_SAFE_INTEGER` (2^53-1, ~9.007×10^15) rounds
+  to the nearest representable double. Confirmed concretely: `9223372036854775807` and
+  `9223372036854775806` (two genuinely distinct real int64 values) both round to
+  `9223372036854776000`, so two different primary keys could collapse onto the same read-back
+  value. Postgres and SQL Server's drivers already return these as exact strings by default; added
+  `supportBigNumbers: true` to the mysql2 pool config to match — a value already inside the safe
+  range is unaffected (still a `Number`), only a genuinely-too-big value switches from a wrong
+  `Number` to an exact `String`, which autosql's own write path (`sqlize`) and type inference
+  (`predictType`) already handle as input. Found while investigating an owner-raised concern about
+  bigint id precision, after 3.0.0 had already been published.
+
 ## [3.0.0] - 2026-11-01
 
 ### 🐛 Bug Fixes
@@ -17,18 +33,6 @@
   early `return []` for the empty case. Unreachable from autosql's own two call sites today (both
   already guard `insertInput.length > 1` before calling), so this didn't affect any shipped
   behavior — closed as a latent trap for a future caller, found via the same test audit.
-- **MySQL: a BIGINT value near int64's range no longer silently rounds, which could corrupt
-  large ids and break uniqueness.** mysql2 returns BIGINT/large-DECIMAL columns as a lossy JS
-  `Number` by default — any value outside `Number.MAX_SAFE_INTEGER` (2^53-1, ~9.007×10^15) rounds
-  to the nearest representable double. Confirmed concretely: `9223372036854775807` and
-  `9223372036854775806` (two genuinely distinct real int64 values) both round to
-  `9223372036854776000`, so two different primary keys could collapse onto the same read-back
-  value. Postgres and SQL Server's drivers already return these as exact strings by default; added
-  `supportBigNumbers: true` to the mysql2 pool config to match — a value already inside the safe
-  range is unaffected (still a `Number`), only a genuinely-too-big value switches from a wrong
-  `Number` to an exact `String`, which autosql's own write path (`sqlize`) and type inference
-  (`predictType`) already handle as input. Found while investigating an owner-raised concern about
-  bigint id precision, not the test-audit above.
 
 ### 🧪 Test coverage
 - **A full owner-directed test-coverage audit across the whole codebase**, run after the
