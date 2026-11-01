@@ -20,6 +20,16 @@ describe("worker config is cloneable (A8)", () => {
         expect(s.sshStream).toBeUndefined();
     });
 
+    // A plain-JS caller can pass null/undefined despite the TS type — the early-return guard this
+    // function opens with was never actually exercised.
+    test("outlier: null returns null unchanged, not a throw on the destructure", () => {
+        expect(stripNonCloneable(null as any)).toBeNull();
+    });
+
+    test("outlier: undefined returns undefined unchanged", () => {
+        expect(stripNonCloneable(undefined as any)).toBeUndefined();
+    });
+
     test("a pool spawns and runs a task even when the config carries a logger (no DataCloneError)", async () => {
         // Pre-fix, constructing the Worker with { workerData: { dbConfig: { logger } } } throws synchronously.
         const pool = new WorkerPool(2, { sqlDialect: "pgsql", host: "x", logger: console }, CRASH_WORKER);
