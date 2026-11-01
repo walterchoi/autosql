@@ -1,6 +1,7 @@
 import { escapeIdentifier, escapeLiteral, assertSafeTypeToken, assertSafeLength } from "../src/db/utils/escape";
 import { MySQLTableQueryBuilder } from "../src/db/queryBuilders/mysql/tableBuilder";
 import { PostgresTableQueryBuilder } from "../src/db/queryBuilders/pgsql/tableBuilder";
+import { SqlServerTableQueryBuilder } from "../src/db/queryBuilders/sqlserver/tableBuilder";
 import type { MetadataHeader, QueryInput } from "../src/config/types";
 import { getInsertValues } from "../src/helpers/utilities";
 import { MYSQL_CONFIG } from "../src/db/config/mysqlConfig";
@@ -21,6 +22,14 @@ describe("escapeIdentifier", () => {
     test("doubles an embedded quote character so it cannot break out", () => {
         expect(escapeIdentifier("a`b", "mysql")).toBe("`a``b`");
         expect(escapeIdentifier('a"b', "pgsql")).toBe('"a""b"');
+    });
+
+    test("SQL Server: doubles an embedded closing bracket (]]), the asymmetric escape", () => {
+        expect(escapeIdentifier("a]b", "sqlserver")).toBe("[a]]b]");
+    });
+
+    test("SQL Server outlier: two separate embedded brackets both double correctly", () => {
+        expect(escapeIdentifier("a]b]c", "sqlserver")).toBe("[a]]b]]c]");
     });
 
     test("rejects empty / non-string / NUL identifiers", () => {
@@ -94,6 +103,7 @@ describe("getInsertValues does not double-escape parameter-bound values", () => 
 describe("CREATE TABLE identifier injection is neutralized", () => {
     const EVIL_COL = "a`, ADD COLUMN evil TEXT, ADD COLUMN `b"; // MySQL break-out attempt
     const EVIL_COL_PG = 'a", ADD COLUMN evil TEXT, ADD COLUMN "b';
+    const EVIL_COL_SS = "a], ADD COLUMN evil TEXT, ADD COLUMN [b"; // SQL Server break-out attempt
 
     test("MySQL: a malicious column name is emitted only as a fully-escaped identifier", () => {
         const headers: MetadataHeader = { [EVIL_COL]: { type: "varchar", length: 10 } };
@@ -109,6 +119,13 @@ describe("CREATE TABLE identifier injection is neutralized", () => {
         const query = sql(PostgresTableQueryBuilder.getCreateTableQuery("t", headers)[0]);
         expect(query).toContain(escapeIdentifier(EVIL_COL_PG, "pgsql"));
         expect(query).not.toContain('"a", ADD COLUMN evil TEXT');
+    });
+
+    test("SQL Server: a malicious column name is emitted only as a fully-escaped identifier", () => {
+        const headers: MetadataHeader = { [EVIL_COL_SS]: { type: "varchar", length: 10 } };
+        const query = sql(SqlServerTableQueryBuilder.getCreateTableQuery("t", headers)[0]);
+        expect(query).toContain(escapeIdentifier(EVIL_COL_SS, "sqlserver"));
+        expect(query).not.toContain("[a], ADD COLUMN evil TEXT");
     });
 
     test("normal names produce the exact expected SQL (escaping is transparent)", () => {
