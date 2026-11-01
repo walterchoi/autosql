@@ -16,4 +16,8 @@ export const SQL_SERVER_PERMANENT_ERRORS = [
   "229",   // Permission denied
   "8114",  // Error converting data type
   "8152",  // String or binary data would be truncated
+  "ELOGIN", // Connect-time auth/database-access failure (tedious's own code, not a T-SQL error
+            // number — a bad password or an inaccessible database never gets a numeric error at
+            // connect time, unlike a query-time failure; retrying with the same credentials can't
+            // succeed, same reasoning as 18456 for a query-time login error).
 ];

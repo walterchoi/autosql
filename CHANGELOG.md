@@ -1,3 +1,16 @@
+## [Unreleased]
+
+### 🐛 Bug Fixes
+- **SQL Server: a bad password or inaccessible database now fails fast instead of retrying 3×
+  and losing the real reason.** `normalizeError`'s `err.number` → `err.code` mapping only ever
+  applies to QUERY-time errors (`RequestError`, which carries a real numeric code); a CONNECT-time
+  failure (`ConnectionError`) never gets a `.number` at all — tedious gives it the generic `"ELOGIN"`
+  code instead, which wasn't in `SQL_SERVER_PERMANENT_ERRORS`. The base retry loop therefore
+  treated every login/database-access failure as transient, retried it `maxAttempts` times (~2s of
+  delay), and surfaced only the generic `"Database connection failed after multiple attempts."`
+  instead of the real `"Login failed for user '…'."`. `"ELOGIN"` is now in the permanent-errors
+  list, found and fixed while adding test coverage for a gap found via an owner-directed test audit.
+
 ## [3.0.0] - 2026-11-01
 
 ### Breaking (types)

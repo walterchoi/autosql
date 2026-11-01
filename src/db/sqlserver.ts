@@ -131,9 +131,11 @@ export class SqlServerDatabase extends Database {
         try {
             await pool.connect();
         } catch (error) {
-            // Map err.number -> err.code (A21) so the base connect-retry loop's permanent-error check
-            // classifies an unrecoverable connect failure — 18456 (login failed), 4060 (cannot open
-            // database) — and aborts instead of retrying it maxAttempts times.
+            // A connect-time failure (bad password, inaccessible database) arrives as tedious's own
+            // "ELOGIN" code, already classified permanent (A21) — normalizeError only has real work
+            // to do on a query-time error, but runs unconditionally here for one code path either
+            // way, so the base connect-retry loop's permanent-error check aborts instead of
+            // retrying it maxAttempts times.
             throw this.normalizeError(error);
         }
         this.connection = pool;
@@ -277,8 +279,12 @@ export class SqlServerDatabase extends Database {
         }
     }
 
-    /** mssql surfaces the real error number on err.number; map it to err.code so the retry logic
-     *  (which matches on error.code against getPermanentErrors) works. */
+    /** mssql surfaces a QUERY-time error's real number on err.number (code otherwise stays the
+     *  generic "EREQUEST"); map it to err.code so the retry logic (which matches on error.code
+     *  against getPermanentErrors) works. A CONNECT-time failure (bad password, inaccessible
+     *  database) never gets a number at all — tedious's connection-level "ELOGIN" code is already
+     *  on err.code, with nothing for this function to do; SQL_SERVER_PERMANENT_ERRORS lists
+     *  "ELOGIN" alongside the real numeric codes so that case classifies correctly too. */
     private normalizeError(error: unknown): unknown {
         if (typeof error === "object" && error !== null && "number" in error && error.number !== undefined) {
             try { (error as { code?: string }).code = stringifyScalar(error.number as number); } catch { /* frozen error; ignore */ }
