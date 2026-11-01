@@ -1,4 +1,4 @@
-## [Unreleased]
+## [3.0.0] - 2026-11-01
 
 ### 🐛 Bug Fixes
 - **SQL Server: a bad password or inaccessible database now fails fast instead of retrying 3×
@@ -18,7 +18,16 @@
   already guard `insertInput.length > 1` before calling), so this didn't affect any shipped
   behavior — closed as a latent trap for a future caller, found via the same test audit.
 
-## [3.0.0] - 2026-11-01
+### 🧪 Test coverage
+- **A full owner-directed test-coverage audit across the whole codebase**, run after the
+  `no-explicit-any` initiative landed: every exported function/method with real branching or
+  error-handling logic was checked against the test suite and classified as well-covered,
+  happy-path-only, or completely untested. Closed every gap the audit found — 23 items across
+  core orchestration, the 3 dialect adapters, the query builders, helpers, and the worker pool —
+  adding real edge-case coverage (nulls, empty inputs, wrong types, cross-schema/cross-process
+  scenarios, connect-vs-query-time error shapes) rather than just happy-path assertions. The two
+  bug fixes above were both found in the course of writing this coverage, not the other way
+  around. Full before/after: 1120 → 1287 tests, 158 → 179 suites.
 
 ### Breaking (types)
 
