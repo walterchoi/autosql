@@ -14,6 +14,12 @@
   (`predictType`) already handle as input. Found while investigating an owner-raised concern about
   bigint id precision, after 3.0.0 had already been published.
 
+### 🔒 Security
+- **`deepmerge` pinned to `4.1.2`** to clear a prototype-pollution advisory (`CVE-2026-93753`) with
+  no patched release — every version from `4.2.0` through latest (`4.3.1`) is vulnerable; `4.1.2`
+  predates the vulnerable range. Dev-only (`jest-config`'s own transitive dependency), never
+  shipped to a consumer.
+
 ## [3.0.0] - 2026-11-01
 
 ### 🐛 Bug Fixes
