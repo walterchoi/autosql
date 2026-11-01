@@ -82,7 +82,8 @@
     "handlebars": "^4.7.10",
     "js-yaml": "^4.3.2",
     "brace-expansion": "^5.0.12",
-    "@babel/core": "^7.29.7"
+    "@babel/core": "^7.29.7",
+    "deepmerge": "4.1.2"
   },
   "bugs": {
     "url": "https://github.com/walterchoi/autosql/issues"
