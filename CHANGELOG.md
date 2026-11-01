@@ -1,6 +1,6 @@
-## [Unreleased]
+## [3.0.0] - 2026-11-01
 
-### Breaking (types) — next release is 3.0.0
+### Breaking (types)
 
 Running list of every exported/public signature whose TYPE changed as part of the `no-explicit-any`
 initiative. None of these change runtime behavior by themselves (see the main entries below for
@@ -224,7 +224,7 @@ hit: `testQuery`'s return type (public on every `Database.create()` instance); `
   `error` for `src/`; `restrict-template-expressions` and `restrict-plus-operands` (left at `warn`
   above pending this) promoted to `error` too, now that their last shared findings are gone.
   All public/exported signature changes are listed in the Breaking (types) section at the top of
-  this file — **next release is 3.0.0.**
+  this file.
 
 ## [2.8.0] - 2026-10-25
 
