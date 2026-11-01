@@ -8,6 +8,11 @@ import { DEFAULTS } from "../config/defaults";
 // eslint-disable-next-line @typescript-eslint/naming-convention
 const WorkerHelper = {
   async run(dbConfig: DatabaseConfig, method: string, paramsArray: unknown[], workerSize: number = dbConfig.maxWorkers ?? DEFAULTS.maxWorkers): Promise<WorkerTaskResult[]> {
+    // Nothing to dispatch. Without this, the loop below never runs for an empty array (its
+    // bound is `i < paramsArray.length`), so processNextTask — the only place that resolves the
+    // returned promise — is never called, and run() hangs forever instead of resolving to [].
+    if (paramsArray.length === 0) return [];
+
     // Never spawn more workers than there are tasks (A8): configuring a single table shouldn't stand up
     // an 8-thread pool, each with its own DB connection pool.
     workerSize = Math.max(1, Math.min(workerSize, paramsArray.length || 1));

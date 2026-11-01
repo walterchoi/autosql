@@ -10,6 +10,13 @@
   delay), and surfaced only the generic `"Database connection failed after multiple attempts."`
   instead of the real `"Login failed for user '…'."`. `"ELOGIN"` is now in the permanent-errors
   list, found and fixed while adding test coverage for a gap found via an owner-directed test audit.
+- **`WorkerHelper.run` no longer hangs forever on an empty `paramsArray`.** Its dispatch loop is
+  bounded by `i < paramsArray.length`, so with zero params it never ran even once — and since
+  `processNextTask` (reached only from inside that loop, or from a task's own completion callback)
+  is the only place that resolves the returned promise, the call never settled at all. Added an
+  early `return []` for the empty case. Unreachable from autosql's own two call sites today (both
+  already guard `insertInput.length > 1` before calling), so this didn't affect any shipped
+  behavior — closed as a latent trap for a future caller, found via the same test audit.
 
 ## [3.0.0] - 2026-11-01
 
