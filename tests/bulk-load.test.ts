@@ -14,9 +14,25 @@ describe("escapeCopyValue", () => {
         expect(escapeCopyValue(undefined)).toBe(BS + "N");
     });
 
-    test("plain values pass through; numbers stringify", () => {
+    test("plain values pass through; numbers/booleans/bigints stringify", () => {
         expect(escapeCopyValue("abc")).toBe("abc");
         expect(escapeCopyValue(42)).toBe("42");
+        expect(escapeCopyValue(true)).toBe("true");
+        expect(escapeCopyValue(10n)).toBe("10");
+    });
+
+    // 3.0.0 (no-explicit-any Group B hardening): an unexpected value now throws instead of
+    // silently stringifying to "[object Object]" and writing a corrupt bulk-load row.
+    test("an unexpected object throws instead of stringifying to [object Object]", () => {
+        expect(() => escapeCopyValue({ a: 1 })).toThrow(/unsupported value type "object"/);
+    });
+
+    test("outlier: an array (also typeof \"object\") throws the same way", () => {
+        expect(() => escapeCopyValue([1, 2, 3])).toThrow(/unsupported value type "object"/);
+    });
+
+    test("outlier: a symbol throws, naming its own type", () => {
+        expect(() => escapeCopyValue(Symbol("x"))).toThrow(/unsupported value type "symbol"/);
     });
 
     test("escapes tab, newline, carriage return and backslash", () => {

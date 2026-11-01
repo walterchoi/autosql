@@ -1,4 +1,4 @@
-import { Database } from "../src/db/database";
+import { Database, driverErrorCode } from "../src/db/database";
 
 // §10/§11 — unit coverage for QueryResult.errorCode across every branch, DB-free by stubbing the
 // dialect's executeQuery / connection plumbing to throw shaped driver errors. (error-code-live.test.ts
@@ -72,5 +72,29 @@ describe("QueryResult.errorCode — unit branches", () => {
         const r = await db.runTransaction([{ query: "x", params: [] }]);
         expect(r.success).toBe(false);
         expect(r.errorCode).toBe("ECONNREFUSED");
+    });
+});
+
+// 3.0.0 (no-explicit-any Group D, worker IPC): a `.code` that's neither a string nor a number is
+// now dropped (undefined) instead of blindly stringified (e.g. an object reaching
+// `[object Object]`). Direct unit coverage of the shared helper, since it's otherwise only
+// exercised indirectly through driver-shaped errors that always use a string/number code.
+describe("driverErrorCode — direct unit (non-string/non-number codes, and non-object errors)", () => {
+    test("a non-string/non-number .code is dropped, not stringified", () => {
+        expect(driverErrorCode(Object.assign(new Error("e"), { code: { nested: true } }))).toBeUndefined();
+        expect(driverErrorCode(Object.assign(new Error("e"), { code: [1, 2, 3] }))).toBeUndefined();
+        expect(driverErrorCode(Object.assign(new Error("e"), { code: true }))).toBeUndefined();
+    });
+
+    test("outliers: a non-object thrown value never throws itself, just reports no code", () => {
+        expect(driverErrorCode("boom")).toBeUndefined(); // a bare string throw
+        expect(driverErrorCode(42)).toBeUndefined();
+        expect(driverErrorCode(null)).toBeUndefined();
+        expect(driverErrorCode(undefined)).toBeUndefined();
+    });
+
+    test("a valid string or number code still passes through (regression guard)", () => {
+        expect(driverErrorCode(Object.assign(new Error("e"), { code: "ER_X" }))).toBe("ER_X");
+        expect(driverErrorCode(Object.assign(new Error("e"), { code: 500 }))).toBe("500");
     });
 });
