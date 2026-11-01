@@ -49,6 +49,14 @@ export class MySQLDatabase extends Database {
                 database: this.config.database || this.config.schema,
                 port: this.config.port || 3306,
                 connectionLimit: this.config.connectionLimit || 5,
+                // Without this, mysql2 returns every BIGINT/large-DECIMAL value as a lossy JS
+                // Number — silently rounded past Number.MAX_SAFE_INTEGER (2^53-1), corrupting a
+                // large id on read and breaking uniqueness (two distinct bigints can round to the
+                // same double). pg/mssql's drivers already default to an exact string for these;
+                // this makes mysql2 match. A value already inside the safe range is unaffected
+                // (still a Number) — only genuinely-too-big values switch from a wrong Number to
+                // an exact String, which sqlize/predictType already handle as input.
+                supportBigNumbers: true,
                 // Pin the connection charset to a 4-byte-capable encoding. Without this mysql2 negotiates
                 // its default (historically 3-byte utf8_general_ci), so a 4-byte char (emoji, some CJK)
                 // throws `Incorrect string value` on INSERT even when the table is utf8mb4.
