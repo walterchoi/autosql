@@ -18,3 +18,60 @@ describe("Postgres USING cast uses server type tokens, not local ones (A12)", ()
         expect(getUsingClause("c", "binary", "datetime")).toBe(`NULLIF("c", '')::timestamp without time zone`);
     });
 });
+
+describe("Postgres USING cast — boolean conversions (previously untested)", () => {
+    test("boolean -> numeric: NULL-preserving CASE to 1/0", () => {
+        expect(getUsingClause("c", "boolean", "int")).toBe(`CASE WHEN "c" IS NULL THEN NULL WHEN "c" THEN 1 ELSE 0 END`);
+    });
+
+    test("numeric -> boolean: CASE on = 1", () => {
+        expect(getUsingClause("c", "int", "boolean")).toBe(`CASE WHEN "c" IS NULL THEN NULL WHEN "c" = 1 THEN TRUE ELSE FALSE END`);
+    });
+
+    test("boolean -> text: 'true'/'false' literals", () => {
+        expect(getUsingClause("c", "boolean", "varchar")).toBe(`CASE WHEN "c" IS NULL THEN NULL WHEN "c" THEN 'true' ELSE 'false' END`);
+    });
+
+    test("text -> boolean: accepted literal sets, case/whitespace-insensitive", () => {
+        const sql = getUsingClause("c", "varchar", "boolean");
+        expect(sql).toContain(`IN ('true', 't', 'yes', 'y', '1', 'on') THEN TRUE`);
+        expect(sql).toContain(`IN ('false', 'f', 'no', 'n', '0', 'off') THEN FALSE`);
+        expect(sql).toContain("ELSE NULL");
+    });
+});
+
+describe("Postgres USING cast — date/time conversions (previously untested)", () => {
+    test("text -> datetime: TO_TIMESTAMP with the full format", () => {
+        expect(getUsingClause("c", "varchar", "datetime")).toBe(`TO_TIMESTAMP(NULLIF("c", ''), 'YYYY-MM-DD HH24:MI:SS')`);
+    });
+
+    test("text -> datetimetz: TO_TIMESTAMP with a timezone format, distinct from plain datetime", () => {
+        expect(getUsingClause("c", "varchar", "datetimetz")).toBe(`TO_TIMESTAMP(NULLIF("c", ''), 'YYYY-MM-DD HH24:MI:SS TZ')`);
+    });
+
+    test("text -> date: TO_DATE", () => {
+        expect(getUsingClause("c", "varchar", "date")).toBe(`TO_DATE(NULLIF("c", ''), 'YYYY-MM-DD')`);
+    });
+
+    test("text -> time: TO_TIME", () => {
+        expect(getUsingClause("c", "varchar", "time")).toBe(`TO_TIME(NULLIF("c", ''), 'HH24:MI:SS')`);
+    });
+
+    test("date -> text: TO_CHAR with the full datetime format", () => {
+        expect(getUsingClause("c", "date", "varchar")).toBe(`TO_CHAR("c", 'YYYY-MM-DD HH24:MI:SS')`);
+    });
+
+    test("time -> text: TO_CHAR with the time-only format, distinct from date's", () => {
+        expect(getUsingClause("c", "time", "varchar")).toBe(`TO_CHAR("c", 'HH24:MI:SS')`);
+    });
+});
+
+describe("Postgres USING cast — JSON conversions (previously untested)", () => {
+    test("json -> text: plain ::TEXT cast", () => {
+        expect(getUsingClause("c", "json", "varchar")).toBe(`"c"::TEXT`);
+    });
+
+    test("text -> json: ::JSONB cast", () => {
+        expect(getUsingClause("c", "varchar", "json")).toBe(`"c"::JSONB`);
+    });
+});
