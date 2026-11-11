@@ -1,3 +1,48 @@
+## [3.1.0] - 2026-11-11
+
+> **A caller-provided partial primary-key hint is no longer diluted by an unrelated column, and
+> `updatePrimaryKey`'s existing widen path is hardened for a genuinely keyless table.** Nothing
+> changes by default unless you already pass a `primaryKey` hint with non-unique columns (now
+> correctly honored) or opt into the new `preferCompositeKeys`.
+
+### ✨ Features
+- **`preferCompositeKeys` (default `false`).** When `autoIndexing` finds no explicit `primaryKey`
+  hint, it tries the composite-key search before falling back to a single best-guess column — so a
+  column that merely happens to be unique in the current batch (a metric, a row-level id) can no
+  longer get picked over a real, more stable composite the search would otherwise have found. Off by
+  default (today's exact ordering is unchanged, since this can change inferred-key output for any
+  existing keyless table); falls back to the single-column guess if no composite is found, so turning
+  it on never produces a keyless table where the default would have found a key.
+
+### 🐛 Bug Fixes
+- **A `primaryKey` hint with non-unique columns could be silently diluted by an unrelated column.**
+  Reproduced concretely: hinting `primaryKey: ["property_id", "date"]` where both are constant in the
+  current batch (but must disambiguate once a second property/day lands) used to land
+  `(property_id, date, sessions)` — a metric — in the key, because the single-key fallback has no
+  notion of the hint and fires the moment any other column (here, a metric that happened to be fully
+  unique in this batch) looks unique. A hint now always goes straight to the composite search, which
+  already correctly combines the hint with the right columns; the result is the hint alone, or the
+  hint plus a real composite — never the hint plus something unrelated.
+- **MySQL: widening a genuinely keyless table's primary key via `updatePrimaryKey: true` no longer
+  throws.** MySQL's bare `DROP PRIMARY KEY` errors outright on a table with no key at all (Postgres'
+  `DROP CONSTRAINT IF EXISTS` and SQL Server's dynamic lookup already tolerated this). New
+  `AlterTableChanges.primaryKeyExistedBefore` suppresses the DROP across all three dialects when
+  there was nothing to drop — the actual shape of correcting a spec that initially declared no key.
+- **Primary-key widen: the cached metadata now reflects the widened key immediately.**
+  `compareMetaData`'s cached metadata never flipped `primary: true` onto a column that was only being
+  ADDED to the key (nothing else about it changed), so the SAME run's own `INSERT ... ON
+  CONFLICT`/`MERGE` — which reads the cache for its conflict key — kept targeting the OLD key right
+  after the ALTER had just widened it live (an immediate failure on Postgres), and every later load
+  recomputed the identical "change pending" forever. Fixed via a new `applyPendingPrimaryKeyFlags()`
+  helper, applied by the dialect layer only when the ALTER actually runs — so a blocked
+  (`updatePrimaryKey: false`) change never gets cached as if it had been applied.
+- **Primary-key widen: a column that's new this run, or otherwise nullable, is no longer forced into
+  the widened key.** Every dialect requires a primary-key column to be `NOT NULL`; a column added in
+  the same call is forced nullable (existing rows have no value for it) and would have failed the
+  whole `ALTER` (rolling back any unrelated, legitimate column adds bundled in the same call).
+  Excluded from the widen candidate set in `compareMetaData`; picked up on a later run once the
+  column is established and non-null.
+
 ## [3.0.1] - 2026-11-01
 
 ### 🐛 Bug Fixes

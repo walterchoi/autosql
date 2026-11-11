@@ -256,7 +256,14 @@ Object.values(DB_CONFIG).forEach((config) => {
             expect(result.renameColumns).toEqual([{ oldName: "id", newName: "uuid" }]);
         });
 
-        test("Handles transition from single-column primary key to composite primary key", () => {
+        // `email` doesn't exist on the live table yet, so it's a brand-new column — R11 forces it
+        // nullable (existing rows have no value for it), and a PK column must be NOT NULL on every
+        // dialect. Widening onto it this same run would either fail the whole ALTER (existing rows
+        // violate the constraint) or, if the table happens to be empty, succeed but leave a live PK on
+        // a column that's nullable the moment a real NULL shows up. So this is deliberately NOT a
+        // detected change — it's deferred to a later run, once `email` is an established NOT NULL
+        // column (see "Widens onto an already-existing non-null column").
+        test("Does not widen onto a column that is new this run (would be forced nullable)", () => {
             const oldMetaData: MetadataHeader = {
                 id: { type: "int", length: 11, allowNull: false, primary: true }
             };
@@ -267,7 +274,57 @@ Object.values(DB_CONFIG).forEach((config) => {
             };
 
             const { changes: result } = compareMetaData(oldMetaData, newMetaData, dialectConfig);
+            expect(result.primaryKeyChanges).toEqual([]);
+        });
+
+        test("Widens onto an already-existing non-null column", () => {
+            const oldMetaData: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true },
+                email: { type: "varchar", length: 255, allowNull: false }
+            };
+
+            const newMetaData: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true },
+                email: { type: "varchar", length: 255, allowNull: false, primary: true }
+            };
+
+            const { changes: result, updatedMetaData } = compareMetaData(oldMetaData, newMetaData, dialectConfig);
             expect(result.primaryKeyChanges).toEqual(["id", "email"]);
+            expect(result.primaryKeyExistedBefore).toBe(true);
+            // compareMetaData itself leaves `updatedMetaData` as-is (it doesn't know whether
+            // `updatePrimaryKey` is on) — the dialect layer flips the flag via
+            // `applyPendingPrimaryKeyFlags`, only when the ALTER actually runs. See
+            // pk-widen-keyless.test.ts for that gated behaviour end-to-end.
+            expect(updatedMetaData.email.primary).toBeFalsy();
+        });
+
+        test("Does not widen onto an already-existing but nullable column", () => {
+            const oldMetaData: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true },
+                email: { type: "varchar", length: 255, allowNull: true }
+            };
+
+            const newMetaData: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true },
+                email: { type: "varchar", length: 255, allowNull: true, primary: true }
+            };
+
+            const { changes: result } = compareMetaData(oldMetaData, newMetaData, dialectConfig);
+            expect(result.primaryKeyChanges).toEqual([]);
+        });
+
+        test("Adding a key to a currently-keyless table reports primaryKeyExistedBefore: false", () => {
+            const oldMetaData: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false }
+            };
+
+            const newMetaData: MetadataHeader = {
+                id: { type: "int", length: 11, allowNull: false, primary: true }
+            };
+
+            const { changes: result } = compareMetaData(oldMetaData, newMetaData, dialectConfig);
+            expect(result.primaryKeyChanges).toEqual(["id"]);
+            expect(result.primaryKeyExistedBefore).toBe(false);
         });
 
         test("Handles removal of a primary key by not allowing the change as it is not additive and would break existing data in the table", () => {

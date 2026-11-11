@@ -26,6 +26,7 @@ export function validateConfig(config: DatabaseConfig): DatabaseConfig {
             pseudoUnique: DEFAULTS.pseudoUnique,
             categorical: DEFAULTS.categorical,
             autoIndexing: DEFAULTS.autoIndexing,
+            preferCompositeKeys: DEFAULTS.preferCompositeKeys,
             inferUnique: DEFAULTS.inferUnique,
             inferAdditionalUniques: DEFAULTS.inferAdditionalUniques,
             sampling: DEFAULTS.sampling,

@@ -10,7 +10,7 @@ import { serializeRowsToCopyText } from "../helpers/bulkLoad";
 import { MYSQL_CONFIG } from "./config/mysqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { escapeIdentifier, escapeLiteral } from './utils/escape';
-import { compareMetaData } from '../helpers/metadata';
+import { compareMetaData, applyPendingPrimaryKeyFlags } from '../helpers/metadata';
 import { MySQLTableQueryBuilder } from "./queryBuilders/mysql/tableBuilder";
 import { MySQLIndexQueryBuilder } from "./queryBuilders/mysql/indexBuilder";
 import { MySQLInsertQueryBuilder } from "./queryBuilders/mysql/insertBuilder";
@@ -302,6 +302,11 @@ export class MySQLDatabase extends Database {
                 throw new Error("Missing new headers for ALTER TABLE query");
             }
             ({ changes: alterTableChanges, updatedMetaData }  = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig(), this.config.logger));
+            // Only cache the widened `primary` flag when the ALTER below actually runs — otherwise a
+            // blocked (updatePrimaryKey: false) change would get flagged primary in memory while the
+            // live table still has the old key, and the next INSERT's ON CONFLICT would target a
+            // constraint that doesn't exist.
+            if (alterPrimaryKey) applyPendingPrimaryKeyFlags(updatedMetaData, alterTableChanges.primaryKeyChanges);
             this.updateTableMetadata(table, updatedMetaData, "metaData")
         } else {
             alterTableChanges = alterTableChangesOrOldHeaders;
@@ -313,7 +318,10 @@ export class MySQLDatabase extends Database {
         // R9: surface schema changes that are computed but blocked by the safe-default flags.
         if (!isStagingTable) this.warnBlockedSchemaChanges(table, alterTableChanges);
 
-        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
+        // `primaryKeyExistedBefore` guards widening a genuinely keyless table: MySQL's `DROP PRIMARY
+        // KEY` has no `IF EXISTS` (unlike Postgres' `DROP CONSTRAINT IF EXISTS` and SQL Server's
+        // dynamic lookup) and errors outright against a table with no key at all.
+        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey && alterTableChanges.primaryKeyExistedBefore !== false) {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 

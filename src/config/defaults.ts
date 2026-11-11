@@ -9,6 +9,7 @@ export const DEFAULTS = {
     // risk on a wide table with no natural key. Raise only for a genuine 5+ column natural key.
     maxCompositeKeyColumns: 4,
     autoIndexing: true,
+    preferCompositeKeys: false,
     inferUnique: true,
     inferAdditionalUniques: true,
     insertType: "UPDATE",

@@ -67,7 +67,7 @@ export function applySurrogateKey(
     return { [name]: surrogateColumnDefinition(), ...metaData };
 }
 
-export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: number, primaryKey?: string[], data?: DataRow[], maxCompositeKeyColumns?: number): MetadataHeader {
+export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: number, primaryKey?: string[], data?: DataRow[], maxCompositeKeyColumns?: number, preferCompositeKeys?: boolean): MetadataHeader {
     // P4: bound the composite-key search. Without a cap it tries every subset of pseudo-unique
     // columns (O(2^N)), each scanned over all rows — a real hang on a wide, key-less table.
     const maxComposite = Math.max(1, maxCompositeKeyColumns ?? 4);
@@ -135,45 +135,58 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
         }
         
         if (!primaryKeyFound) {
-            let selectedPrimaryKey: string[] | null = null;
-            if (potentialPrimaryKeys.length > 0) {
+            // Pick the one best-guess unique column by the old heuristic (exactly "id"/"_id", else
+            // numeric, else shortest name). This alone has no notion of `requiredPrimaryKeys` — a
+            // caller's partial key hint — so it must never be allowed to run BEFORE the composite
+            // search when a hint exists: it would happily pick some unrelated column that merely
+            // looks unique in this batch (a metric, a row-level id) instead of the real composite the
+            // search below would find alongside the hint.
+            const singleKeyFallback = (): string[] | null => {
+                if (potentialPrimaryKeys.length === 0) return null;
                 let idLikeKey: string | null = null;
                 let numericKey: string | null = null;
                 let shortestKey: string = potentialPrimaryKeys[0];
-              
+
                 for (const key of potentialPrimaryKeys) {
                   const type = headers[key].type ?? "";
-              
+
                   // Prefer a key exactly "id" or ending in "_id". Anchored so words ending in "id"
                   // (paid, void, valid, grid, rapid) aren't mistaken for identifier columns.
                   if (!idLikeKey && /(^id$|_id$)/i.test(key)) {
                     idLikeKey = key;
                   }
-              
+
                   if (!numericKey && GROUPINGS.intGroup.includes(type)) {
                     numericKey = key;
                   }
-              
+
                   if (key.length < shortestKey.length) {
                     shortestKey = key;
                   }
                 }
-              
-                selectedPrimaryKey = idLikeKey
+
+                return idLikeKey
                   ? [idLikeKey]
                   : numericKey
                   ? [numericKey]
                   : shortestKey
                   ? [shortestKey]
                   : null;
-            }      
-            
+            };
+
+            const hasRequiredHint = requiredPrimaryKeys.length > 0;
+            // A hint always goes composite-first (never diluted by the fallback); an unhinted caller
+            // only does, opt-in, via `preferCompositeKeys` (today's exact default order otherwise).
+            const trySingleKeyFirst = !hasRequiredHint && preferCompositeKeys !== true;
+
+            let selectedPrimaryKey: string[] | null = trySingleKeyFirst ? singleKeyFallback() : null;
+
             // If no unique column exists, try pseudo-unique combinations using data
             let foundUniqueCombination = false;
             const dateColumns = Object.keys(headers).filter(
                 col => GROUPINGS.dateGroup.includes(headers[col].type ?? "") && headers[col].allowNull !== true
             );
-            
+
             if (!selectedPrimaryKey && data && data.length > 0) {
                 // Find the smallest set of pseudo-unique columns that together are unique
                 const cap1 = Math.min(potentialCompositeKeys.length, maxComposite);
@@ -209,6 +222,15 @@ export function predictIndexes(meta_data: MetadataHeader, maxKeyLengthInput?: nu
                     }
                     if (foundUniqueCombination) break;
                 }
+            }
+
+            // Composite-first (via preferCompositeKeys, no hint involved) found nothing — fall back to
+            // the single-key heuristic now, so a table doesn't end up with NO key where today's default
+            // order would have found one. A hinted call never reaches here with nothing selected: its
+            // hint columns were already marked primary unconditionally above, so "nothing more found"
+            // correctly means "just the hint," not "pick an unrelated column."
+            if (!selectedPrimaryKey && !trySingleKeyFirst && !hasRequiredHint) {
+                selectedPrimaryKey = singleKeyFallback();
             }
 
             if (selectedPrimaryKey) {

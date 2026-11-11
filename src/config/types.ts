@@ -111,6 +111,13 @@ export interface AlterTableChanges {
   nullableColumns: string[];
   noLongerUnique: string[];
   primaryKeyChanges: string[];
+  /**
+   * Whether the table already had a primary key before this change. Omitted/undefined is treated as
+   * `true` (the common case — this field only exists to flag the opposite). MySQL's bare `DROP PRIMARY
+   * KEY` errors on a table with no key at all, so a `false` here must suppress that DROP (Postgres'
+   * `IF EXISTS` and SQL Server's dynamic lookup are already safe either way).
+   */
+  primaryKeyExistedBefore?: boolean;
 }
   
 export interface DatabaseConfig {
@@ -162,6 +169,16 @@ export interface DatabaseConfig {
       pseudoUnique?: number;
       categorical?: number;
       autoIndexing?: boolean;
+      /**
+       * Try the composite-key search BEFORE the single-column fallback when no `primaryKey` hint is
+       * given (default `false` — preserves today's exact ordering). Off by default because it changes
+       * inferred-key output for any keyless table, not just a bug-for-bug fix: the single-column
+       * fallback can pick a column that's merely unique in THIS batch (a metric, a row-level id)
+       * instead of a real dimensional composite. A `primaryKey` hint with non-unique columns ALWAYS
+       * goes composite-first regardless of this flag — a caller-provided partial key must never be
+       * diluted by the single-column fallback picking something unrelated.
+       */
+      preferCompositeKeys?: boolean;
       /**
        * Infer `UNIQUE` constraints from the data (default `true`). Set `false` when one batch's
        * distinctness says nothing about the real key. Wins over `inferAdditionalUniques`; primary-key,

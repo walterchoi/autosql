@@ -5,7 +5,7 @@ import type { QueryInput, ColumnDefinition, DatabaseConfig, AlterTableChanges, M
 import { SQL_SERVER_CONFIG } from "./config/sqlServerConfig";
 import { isValidSingleQuery } from "./utils/validateQuery";
 import { escapeIdentifier, escapeLiteral } from "./utils/escape";
-import { compareMetaData } from "../helpers/metadata";
+import { compareMetaData, applyPendingPrimaryKeyFlags } from "../helpers/metadata";
 import { SqlServerTableQueryBuilder } from "./queryBuilders/sqlserver/tableBuilder";
 import { SqlServerIndexQueryBuilder } from "./queryBuilders/sqlserver/indexBuilder";
 import { SqlServerInsertQueryBuilder } from "./queryBuilders/sqlserver/insertBuilder";
@@ -411,6 +411,9 @@ export class SqlServerDatabase extends Database {
         if (isMetadataHeader(alterTableChangesOrOldHeaders)) {
             if (!newHeaders) throw new Error("Missing new headers for ALTER TABLE query");
             ({ changes: alterTableChanges, updatedMetaData } = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig(), this.config.logger));
+            // Only cache the widened `primary` flag when the ALTER below actually runs — see the
+            // mysql.ts/pgsql.ts twin of this comment.
+            if (alterPrimaryKey) applyPendingPrimaryKeyFlags(updatedMetaData, alterTableChanges.primaryKeyChanges);
             this.updateTableMetadata(table, updatedMetaData, "metaData");
         } else {
             alterTableChanges = alterTableChangesOrOldHeaders;
@@ -422,7 +425,7 @@ export class SqlServerDatabase extends Database {
 
         // SQL Server DDL is fully transactional, so (unlike Postgres) no COMMIT/BEGIN interleaving is
         // needed around a PK change. Drop the old PK first, apply column changes, then add the new PK.
-        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
+        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey && alterTableChanges.primaryKeyExistedBefore !== false) {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 

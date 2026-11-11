@@ -27,8 +27,8 @@ const db = Database.create({
 ## Metadata control
 
 - `metaData?: { [tableName: string]: MetadataHeader }` / `existingMetaData?: { [tableName: string]: MetadataHeader }` — pre-supplied schema for one or more tables. See [Metadata Format](#metadata-format) below.
-- `updatePrimaryKey?: boolean` — allow autosql to change a table's primary key. Defaults to `false`.
-- `primaryKey?: string[]` — explicit primary key columns, overriding auto-detection.
+- `updatePrimaryKey?: boolean` — allow autosql to widen or rename a table's primary key via `ALTER TABLE` when a later batch's inferred/declared key differs from the live one. Defaults to `false`. Widen-only by design: it only ever adds columns to the key or renames one, never narrows or drops one, so it can't collide with existing rows. Works whether the table already has a key or none at all.
+- `primaryKey?: string[]` — primary key columns. Honored in full even if not every column looks unique in the current batch: a column that's fully unique on its own becomes (part of) the key immediately; a column that ISN'T (e.g. constant in this batch but necessary across others — a `property_id` that's the same for every row today but must disambiguate once a second property's data lands) is forced into the key alongside whatever else is needed for uniqueness. A partial hint like this is never diluted by picking some unrelated column that merely looks unique in the current batch.
 
 ## Table creation & charset
 
@@ -49,6 +49,7 @@ const db = Database.create({
 - `decimalToVarchar?: boolean` — when a decimal exceeds the scale cap, store the column as `varchar` (exact text) instead of rounding. Defaults to `false`.
 - `maxKeyLength?: number` — excludes columns longer than this from indexes/primary keys. Defaults to `255`.
 - `maxCompositeKeyColumns?: number` — caps the auto-detected composite primary key search, which is otherwise O(2^N) over candidate columns — a hang risk on a wide table with no natural key. Defaults to `4`; raise only for a genuine 5+ column natural key.
+- `preferCompositeKeys?: boolean` — when `autoIndexing` finds no explicit `primaryKey` hint, try the composite-key search before falling back to a single best-guess column. Defaults to `false` (today's exact ordering — the single-column guess first). A column that merely looks unique in the current batch (a metric, a row-level id) can otherwise get picked over a real, more stable composite that the search would have found; turning this on prefers the composite, falling back to the single-column guess only if no composite is found (never produces a keyless table where the default would have found a key). A `primaryKey` hint with non-unique columns always searches composite-first regardless of this flag.
 - `maxVarcharLength?: number` — `varchar` columns past this length auto-convert to `text`. Defaults to `1024`.
 
 ### Overriding inferred types

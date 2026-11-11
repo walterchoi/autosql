@@ -513,7 +513,7 @@ export async function getMetaData(databaseOrConfig: Database | DatabaseConfig, d
         const effectivePrimaryKey = primaryKey || validatedConfig.primaryKey;
         let metaData : MetadataHeader
         if(validatedConfig.autoIndexing) {
-            metaData = predictIndexes(headers, validatedConfig.maxKeyLength, effectivePrimaryKey, data, validatedConfig.maxCompositeKeyColumns)
+            metaData = predictIndexes(headers, validatedConfig.maxKeyLength, effectivePrimaryKey, data, validatedConfig.maxCompositeKeyColumns, validatedConfig.preferCompositeKeys)
         } else {
             metaData = headers
         }
@@ -723,7 +723,14 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
         }
     }
 
-    const structuralPrimaryKeyChanges = newPrimaryKeys.filter(pk => !oldPrimaryKeys.includes(pk));
+    // A widen candidate must already exist on the live table and be NOT NULL: a column added THIS run
+    // is forced nullable (R11, existing rows have no value for it) and a column inferred nullable for
+    // any other reason can't satisfy `ADD PRIMARY KEY` (every dialect requires NOT NULL, and existing
+    // NULLs would fail the constraint outright). Excluding both here just defers them to a later run,
+    // once the column is established and non-null, rather than failing the whole ALTER.
+    const structuralPrimaryKeyChanges = newPrimaryKeys.filter(
+        pk => !oldPrimaryKeys.includes(pk) && oldHeaders.hasOwnProperty(pk) && !newHeaders[pk].allowNull
+    );
 
     if (structuralPrimaryKeyChanges.length > 0 || renamedPrimaryKeys.length > 0) {
     primaryKeyChanges = [...new Set([...oldPrimaryKeys, ...newPrimaryKeys])];
@@ -743,7 +750,7 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
         ...oldHeaders,
         ...addColumns
     };
-    
+
     for (const col in modifyColumns) {
         updatedMetaData[col] = modifyColumns[col];
     }
@@ -757,6 +764,14 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
         Reflect.deleteProperty(updatedMetaData, oldName);
     }
 
+    // NOTE: `updatedMetaData` deliberately does NOT get `primaryKeyChanges`' columns flipped to
+    // `primary: true` here. Whether that's safe to cache depends on whether the caller is actually
+    // GOING to apply the ALTER (`updatePrimaryKey: true`, which this function has no visibility into)
+    // — caching it unconditionally would mark a column primary in-memory for a change that
+    // `updatePrimaryKey: false` just blocked, so the next INSERT's ON CONFLICT/MERGE would target a
+    // constraint the live table doesn't have. See `applyPendingPrimaryKeyFlags`, called by the
+    // dialect layer only when the ALTER actually runs.
+
     return {
         changes: {
             addColumns,
@@ -766,7 +781,23 @@ export function compareMetaData(oldHeadersOriginal: MetadataHeader | null, newHe
             nullableColumns,
             noLongerUnique,
             primaryKeyChanges,
+            primaryKeyExistedBefore: oldPrimaryKeys.length > 0,
         },
         updatedMetaData
     };
+}
+
+/**
+ * Flip `primary: true` onto `primaryKeyChanges`' columns in the metadata a dialect is about to cache
+ * — call ONLY when the PK ALTER is actually being applied (`updatePrimaryKey: true`, not a staging
+ * table). Mutates and returns the same object for convenience; cheap no-op when `primaryKeyChanges`
+ * is empty. See the note in `compareMetaData` for why this can't happen unconditionally in there.
+ */
+export function applyPendingPrimaryKeyFlags(metaData: MetadataHeader, primaryKeyChanges: string[]): MetadataHeader {
+    for (const col of primaryKeyChanges) {
+        if (metaData.hasOwnProperty(col)) {
+            metaData[col] = { ...metaData[col], primary: true };
+        }
+    }
+    return metaData;
 }

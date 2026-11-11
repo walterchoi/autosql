@@ -7,7 +7,7 @@ import type { QueryInput, DatabaseConfig, AlterTableChanges, MetadataHeader, Ins
 import { PGSQL_CONFIG } from "./config/pgsqlConfig";
 import { isValidSingleQuery } from './utils/validateQuery';
 import { escapeIdentifier, escapeLiteral } from './utils/escape';
-import { compareMetaData } from '../helpers/metadata';
+import { compareMetaData, applyPendingPrimaryKeyFlags } from '../helpers/metadata';
 import { PostgresTableQueryBuilder } from "./queryBuilders/pgsql/tableBuilder";
 import { PostgresIndexQueryBuilder } from "./queryBuilders/pgsql/indexBuilder";
 import { PostgresInsertQueryBuilder } from "./queryBuilders/pgsql/insertBuilder";
@@ -298,6 +298,9 @@ export class PostgresDatabase extends Database {
                         throw new Error("Missing new headers for ALTER TABLE query");
                     }
                     ({ changes: alterTableChanges, updatedMetaData }  = compareMetaData(alterTableChangesOrOldHeaders, newHeaders, this.getDialectConfig(), this.config.logger));
+                    // Only cache the widened `primary` flag when the ALTER below actually runs — see
+                    // the mysql.ts/sqlserver.ts twin of this comment.
+                    if (alterPrimaryKey) applyPendingPrimaryKeyFlags(updatedMetaData, alterTableChanges.primaryKeyChanges);
                     this.updateTableMetadata(table, updatedMetaData, "metaData")
                 } else {
                     alterTableChanges = alterTableChangesOrOldHeaders;
@@ -311,7 +314,7 @@ export class PostgresDatabase extends Database {
         // drop-PK + column alters + add-PK all run in the ONE transaction runTransaction provides.
         // Committing mid-way split it into three, so a failure after the first COMMIT durably left the
         // table with NO primary key while the caller got success:false.
-        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey) {
+        if (alterTableChanges.primaryKeyChanges.length > 0 && alterPrimaryKey && alterTableChanges.primaryKeyExistedBefore !== false) {
             queries.push(this.getDropPrimaryKeyQuery(table));
         }
 
